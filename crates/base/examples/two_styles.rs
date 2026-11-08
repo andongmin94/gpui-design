@@ -8,8 +8,10 @@ use gpui::{
     rgb,
 };
 use gpui_design::{
-    Button, Checkbox, CheckboxState, Dialog, DialogBackdrop, DialogClose, DialogDescription,
-    DialogPopup, DialogState, DialogTitle, Input, InputBase, Popover, PopoverState, RadioGroup,
+    Accordion, AccordionHeader, AccordionItem, AccordionPanel, AccordionState, Button, Checkbox,
+    CheckboxState, Dialog, DialogBackdrop, DialogClose, DialogDescription, DialogPopup,
+    DialogState, DialogTitle, DropdownMenu, DropdownMenuEvent, DropdownMenuItem,
+    DropdownMenuOption, DropdownMenuState, Input, InputBase, Popover, PopoverState, RadioGroup,
     RadioGroupState, RadioItem, RadioOption, Select, SelectItem, SelectOption, SelectState, Switch,
     Tab, TabItem, TabList, TabPanel, TabsState,
     input::{InputAccessibility, InputEditorStyle, InputState},
@@ -90,6 +92,8 @@ pub(crate) struct Demo {
     pub(crate) stroke: Entity<RadioGroupState>,
     pub(crate) tabs: Entity<TabsState>,
     pub(crate) help: Entity<PopoverState>,
+    pub(crate) actions: Entity<DropdownMenuState>,
+    pub(crate) accordion: Entity<AccordionState>,
     pub(crate) show_cursor: bool,
     pub(crate) keep_toolbar: bool,
     pub(crate) trigger_focus: FocusHandle,
@@ -153,6 +157,28 @@ impl Demo {
             .default_value("preferences")
         });
         let help = cx.new(PopoverState::new);
+        let actions = cx.new(|cx| {
+            DropdownMenuState::new(
+                [
+                    DropdownMenuItem::new("edit", "Edit session"),
+                    DropdownMenuItem::new("share", "Share (unavailable)").disabled(true),
+                    DropdownMenuItem::new("cursor", "Toggle cursor"),
+                    DropdownMenuItem::new("toolbar", "Toggle toolbar pin"),
+                ],
+                cx,
+            )
+        });
+        let accordion = cx.new(|cx| {
+            AccordionState::new(
+                [
+                    AccordionItem::new("keyboard", "Keyboard shortcuts"),
+                    AccordionItem::new("sync", "Sync help (unavailable)").disabled(true),
+                    AccordionItem::new("state", "State ownership"),
+                ],
+                cx,
+            )
+            .default_open("keyboard")
+        });
         // The form summary and its presentation read these retained states.
         let subscriptions = vec![
             cx.observe(&input, |_, _, cx| cx.notify()),
@@ -160,7 +186,19 @@ impl Demo {
             cx.observe(&stroke, |_, _, cx| cx.notify()),
             cx.observe(&tabs, |_, _, cx| cx.notify()),
             cx.observe(&help, |_, _, cx| cx.notify()),
+            cx.observe(&actions, |_, _, cx| cx.notify()),
+            cx.observe(&accordion, |_, _, cx| cx.notify()),
             cx.observe(&dialog, |_, _, cx| cx.notify()),
+            cx.subscribe_in(&actions, window, |this, _, event, window, cx| {
+                let DropdownMenuEvent::Action(value) = event;
+                match value.as_ref() {
+                    "edit" => this.dialog.update(cx, |state, cx| state.open(window, cx)),
+                    "cursor" => this.show_cursor = !this.show_cursor,
+                    "toolbar" => this.keep_toolbar = !this.keep_toolbar,
+                    _ => return,
+                }
+                cx.notify();
+            }),
         ];
         Self {
             appearance,
@@ -170,6 +208,8 @@ impl Demo {
             stroke,
             tabs,
             help,
+            actions,
+            accordion,
             show_cursor: true,
             keep_toolbar: false,
             trigger_focus: cx.focus_handle().tab_stop(true),
@@ -409,6 +449,55 @@ impl Render for Demo {
                             .child("Close help"),
                     )),
             );
+        let accordion_state = self.accordion.read(cx);
+        let header = |index: usize| {
+            let item = &accordion_state.items()[index];
+            AccordionHeader::new(&self.accordion, index)
+                .heading_level(3)
+                .w_full()
+                .px_2()
+                .py_1()
+                .flex()
+                .items_center()
+                .justify_between()
+                .border_1()
+                .border_color(palette.border)
+                .rounded(palette.radius)
+                .focus_visible(|style| style.border_color(palette.accent))
+                .when(item.is_disabled(), |header| header.opacity(0.45))
+                .child(item.label().clone())
+                .child(if accordion_state.open_index() == Some(index) {
+                    "−"
+                } else {
+                    "+"
+                })
+        };
+        let help_sections = Accordion::new("help-sections", &self.accordion)
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(
+                div().child(header(0)).child(
+                    AccordionPanel::new(&self.accordion, 0)
+                        .p_2()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child("Use the keyboard guide to explore these controls.")
+                        .child(help),
+                ),
+            )
+            .child(div().child(header(1)))
+            .child(
+                div().child(header(2)).child(
+                    AccordionPanel::new(&self.accordion, 2)
+                        .tab_stop(true)
+                        .p_2()
+                        .rounded(palette.radius)
+                        .focus_visible(|style| style.bg(palette.highlight))
+                        .child("The application retains form values and supplies every style. Closing a panel or dialog preserves those values."),
+                ),
+            );
         let panels = div()
             .flex()
             .flex_col()
@@ -435,8 +524,7 @@ impl Render for Demo {
                     .flex()
                     .flex_col()
                     .gap(palette.gap)
-                    .child("These controls share behavior in both appearances. The application owns their styles and saved values.")
-                    .child(help),
+                    .child(help_sections),
             );
         let popup = DialogPopup::new()
             .w(palette.dialog_width)
@@ -479,6 +567,49 @@ impl Render for Demo {
                     .child(DialogClose::new(&self.dialog).trigger(|button| {
                         Self::button(palette, button.accessibility_label("Done").child("Done"))
                     })),
+            );
+
+        let action_state = self.actions.read(cx);
+        let actions = DropdownMenu::new("session-actions", &self.actions)
+            .accessibility_label("Session actions")
+            .offset(px(6.))
+            .trigger(|button| {
+                Self::button(
+                    palette,
+                    button
+                        .accessibility_label("Session actions")
+                        .child("Session actions ▾"),
+                )
+            })
+            .content(
+                div()
+                    .min_w(rems(14.))
+                    .p_1()
+                    .border_1()
+                    .border_color(palette.border)
+                    .rounded(palette.radius)
+                    .bg(palette.surface)
+                    .text_color(palette.foreground)
+                    .children(
+                        action_state
+                            .items()
+                            .iter()
+                            .enumerate()
+                            .map(|(index, item)| {
+                                DropdownMenuOption::new(&self.actions, index)
+                                    .h(palette.control_height)
+                                    .px_3()
+                                    .flex()
+                                    .items_center()
+                                    .rounded(palette.radius)
+                                    .when(
+                                        action_state.highlighted_index() == Some(index),
+                                        |option| option.bg(palette.highlight),
+                                    )
+                                    .when(item.is_disabled(), |option| option.opacity(0.45))
+                                    .child(item.label().clone())
+                            }),
+                    ),
             );
 
         div()
@@ -531,6 +662,7 @@ impl Render for Demo {
                             })
                             .child("Edit session"),
                     ))
+                    .child(actions)
                     .child(
                         div()
                             .text_color(palette.muted)

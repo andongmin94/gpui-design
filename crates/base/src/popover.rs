@@ -222,6 +222,7 @@ pub struct Popover {
     trigger: Button,
     content: Option<AnyElement>,
     label: Option<SharedString>,
+    content_role: Option<Role>,
     anchor: Anchor,
     offset: Pixels,
     style: StyleRefinement,
@@ -236,6 +237,7 @@ impl Popover {
             state: state.clone(),
             content: None,
             label: None,
+            content_role: Some(Role::Dialog),
             anchor: Anchor::TopLeft,
             offset: px(0.),
             style: StyleRefinement::default(),
@@ -255,6 +257,13 @@ impl Popover {
     /// Sets the accessible name of the non-modal dialog content.
     pub fn accessibility_label(mut self, label: impl Into<SharedString>) -> Self {
         self.label = Some(label.into());
+        self
+    }
+
+    // Composed primitives can provide their own semantic content scope while
+    // retaining this popover's focus, dismissal, and positioning behavior.
+    pub(crate) fn content_role(mut self, role: Option<Role>) -> Self {
+        self.content_role = role;
         self
     }
 
@@ -319,7 +328,7 @@ impl RenderOnce for Popover {
                 div()
                     .id(("popover-content", self.state.entity_id()))
                     .test_support()
-                    .role(Role::Dialog)
+                    .when_some(self.content_role, |this, role| this.role(role))
                     .when_some(self.label, |this, label| this.aria_label(label))
                     .track_focus(&content_focus)
                     .key_context(CONTEXT)

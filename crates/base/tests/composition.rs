@@ -13,7 +13,7 @@ use gpui::{
     AppContext as _, Entity, EntityInputHandler as _, Focusable as _, KeyDownEvent, KeyUpEvent,
     Keystroke, Modifiers, Role, TestAppContext, VisualTestContext,
 };
-use gpui_design::{RadioGroupEvent, Root, SelectEvent, TabsEvent, test_support};
+use gpui_design::{DropdownMenuEvent, RadioGroupEvent, Root, SelectEvent, TabsEvent, test_support};
 use two_styles::{Appearance, Demo};
 
 fn harness(
@@ -501,7 +501,7 @@ fn exercise_navigation_and_help(cx: &mut TestAppContext, appearance: Appearance)
         &[gpui::SharedString::from("help")]
     );
 
-    cx.simulate_keystrokes("tab");
+    cx.simulate_keystrokes("tab tab");
     draw(cx);
     cx.update(|window, cx| {
         assert!(
@@ -539,9 +539,9 @@ fn exercise_navigation_and_help(cx: &mut TestAppContext, appearance: Appearance)
         assert!(!demo.read(cx).help.read(cx).is_open());
         assert!(demo.read(cx).dialog.read(cx).is_open());
         assert!(
-            test_support::snapshots(window)
-                .iter()
-                .any(|item| { item.label() == Some("Done") && item.focused() == Some(true) }),
+            test_support::snapshots(window).iter().any(|item| {
+                item.label() == Some("State ownership") && item.focused() == Some(true)
+            }),
             "Tab exits the non-modal popup after its trigger inside the dialog"
         );
     });
@@ -608,7 +608,7 @@ fn exercise_navigation_and_help(cx: &mut TestAppContext, appearance: Appearance)
     });
 
     // Removing the parent surface must also finish the retained popup lifecycle.
-    cx.simulate_keystrokes("shift-tab end tab");
+    cx.simulate_keystrokes("shift-tab end tab tab");
     draw(cx);
     activate_key(cx, "enter");
     cx.update(|window, cx| {
@@ -642,6 +642,195 @@ fn compact_tabs_and_popover_preserve_nested_focus(cx: &mut TestAppContext) {
 #[gpui::test]
 fn settings_tabs_and_popover_preserve_nested_focus(cx: &mut TestAppContext) {
     exercise_navigation_and_help(cx, Appearance::Settings);
+}
+
+fn exercise_commands_and_sections(cx: &mut TestAppContext, appearance: Appearance) {
+    let (cx, demo) = harness(cx, appearance);
+    let commands = Rc::new(RefCell::new(Vec::new()));
+    cx.update(|_, cx| {
+        let menu = demo.read(cx).actions.clone();
+        let commands = commands.clone();
+        cx.subscribe(&menu, move |menu, event: &DropdownMenuEvent, cx| {
+            assert!(!menu.read(cx).is_open(cx), "commands observe a closed menu");
+            let DropdownMenuEvent::Action(value) = event;
+            commands.borrow_mut().push(value.clone());
+        })
+        .detach();
+    });
+
+    cx.simulate_keystrokes("tab down");
+    draw(cx);
+    cx.update(|window, cx| {
+        let menu = demo.read(cx).actions.read(cx);
+        assert!(menu.is_open(cx));
+        assert_eq!(menu.highlighted_index(), Some(0));
+        assert!(menu.content_focus_handle().is_focused(window));
+        assert!(test_support::snapshots(window).iter().any(|item| {
+            item.role() == Some(Role::Menu) && item.label() == Some("Session actions")
+        }));
+        assert!(test_support::snapshots(window).iter().any(|item| {
+            item.role() == Some(Role::MenuItem)
+                && item.label() == Some("Share (unavailable)")
+                && item.disabled() == Some(true)
+        }));
+    });
+    cx.simulate_keystrokes("down");
+    draw(cx);
+    cx.update(|_, cx| {
+        assert_eq!(demo.read(cx).actions.read(cx).highlighted_index(), Some(2));
+    });
+    activate_key(cx, "enter");
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        assert!(!demo.show_cursor);
+        assert!(!demo.actions.read(cx).is_open(cx));
+        assert!(demo.actions.read(cx).focus_handle().is_focused(window));
+    });
+
+    cx.simulate_keystrokes("up");
+    draw(cx);
+    cx.update(|_, cx| {
+        assert_eq!(demo.read(cx).actions.read(cx).highlighted_index(), Some(3));
+    });
+    activate_key(cx, "space");
+    cx.update(|_, cx| assert!(demo.read(cx).keep_toolbar));
+
+    cx.simulate_keystrokes("down e");
+    draw(cx);
+    activate_key(cx, "enter");
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        assert!(!demo.actions.read(cx).is_open(cx));
+        assert!(demo.dialog.read(cx).is_open());
+        assert!(demo.input.focus_handle(cx).is_focused(window));
+    });
+    assert_eq!(
+        commands.borrow().as_slice(),
+        &["cursor", "toolbar", "edit"].map(gpui::SharedString::from),
+        "native key-up must not execute a command twice"
+    );
+
+    cx.simulate_keystrokes("tab tab end tab");
+    draw(cx);
+    cx.update(|window, cx| {
+        let accordion = demo.read(cx).accordion.read(cx);
+        assert_eq!(accordion.open_index(), Some(0));
+        assert!(accordion.trigger_focus_handle(0).is_focused(window));
+    });
+    cx.simulate_keystrokes("down");
+    draw(cx);
+    cx.update(|window, cx| {
+        let accordion = demo.read(cx).accordion.read(cx);
+        assert!(accordion.trigger_focus_handle(2).is_focused(window));
+        assert_eq!(
+            accordion.open_index(),
+            Some(0),
+            "arrows only move header focus"
+        );
+    });
+    activate_key(cx, "enter");
+    cx.update(|window, cx| {
+        assert_eq!(demo.read(cx).accordion.read(cx).open_index(), Some(2));
+        assert!(test_support::find(window, &[], &"keyboard-help".into()).is_none());
+    });
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    cx.update(|window, cx| {
+        assert!(
+            demo.read(cx)
+                .accordion
+                .read(cx)
+                .panel_focus_handle(2)
+                .is_focused(window),
+            "the static text panel has an explicit Tab stop"
+        );
+    });
+    cx.simulate_keystrokes("shift-tab");
+    draw(cx);
+    activate_key(cx, "space");
+    cx.update(|_, cx| assert_eq!(demo.read(cx).accordion.read(cx).open_index(), None));
+
+    cx.simulate_keystrokes("home");
+    draw(cx);
+    activate_key(cx, "enter");
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    activate_key(cx, "enter");
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        assert!(demo.help.read(cx).is_open());
+        assert!(demo.help.read(cx).content_focus_handle().is_focused(window));
+        let accordion = demo.accordion.clone();
+        accordion.update(cx, |state, cx| state.close(window, cx));
+    });
+    draw(cx);
+    cx.run_until_parked();
+    draw(cx);
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        assert_eq!(demo.accordion.read(cx).open_index(), None);
+        assert!(!demo.help.read(cx).is_open());
+        assert!(
+            demo.accordion
+                .read(cx)
+                .trigger_focus_handle(0)
+                .is_focused(window)
+        );
+        assert!(test_support::find(window, &[], &"keyboard-help".into()).is_none());
+        assert!(demo.dialog.read(cx).is_open());
+    });
+    activate_key(cx, "enter");
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        assert_eq!(demo.accordion.read(cx).open_index(), Some(0));
+        assert!(!demo.help.read(cx).is_open());
+        assert!(test_support::find(window, &[], &"keyboard-help".into()).is_some());
+        assert!(!demo.show_cursor);
+        assert!(demo.keep_toolbar);
+    });
+
+    cx.simulate_keystrokes("escape");
+    draw(cx);
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        assert!(!demo.dialog.read(cx).is_open());
+        assert!(
+            demo.actions.read(cx).focus_handle().is_focused(window),
+            "the dialog returns to the command menu's surviving trigger"
+        );
+    });
+
+    // Pointer activation follows the same application callback as keyboard activation.
+    activate_key(cx, "enter");
+    let cursor_point = cx.update(|window, _| {
+        test_support::snapshots(window)
+            .into_iter()
+            .find(|item| {
+                item.role() == Some(Role::MenuItem) && item.label() == Some("Toggle cursor")
+            })
+            .unwrap()
+            .bounds()
+            .center()
+    });
+    cx.simulate_click(cursor_point, Modifiers::default());
+    draw(cx);
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        assert!(demo.show_cursor);
+        assert!(!demo.actions.read(cx).is_open(cx));
+        assert!(demo.actions.read(cx).focus_handle().is_focused(window));
+    });
+    assert_eq!(commands.borrow().len(), 4);
+}
+
+#[gpui::test]
+fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) {
+    exercise_commands_and_sections(cx, Appearance::Compact);
+}
+
+#[gpui::test]
+fn settings_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) {
+    exercise_commands_and_sections(cx, Appearance::Settings);
 }
 
 #[gpui::test]

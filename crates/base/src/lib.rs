@@ -7,6 +7,7 @@
 //! initialization are scoped to the documented controls and their support APIs.
 
 mod a11y_disabled;
+mod accordion;
 pub mod actions;
 mod animation;
 mod auto_scroll;
@@ -14,6 +15,7 @@ mod button;
 mod checkbox;
 mod component_traits;
 mod dialog;
+mod dropdown_menu;
 mod element_ext;
 mod event;
 mod focus_trap;
@@ -41,6 +43,9 @@ mod text_boundary;
 mod theme;
 mod touch_selection;
 
+pub use accordion::{
+    Accordion, AccordionEvent, AccordionHeader, AccordionItem, AccordionPanel, AccordionState,
+};
 pub(crate) use auto_scroll::AutoScroll;
 pub use button::{Button, ButtonStyles};
 pub use checkbox::{Checkbox, CheckboxState, CheckboxStyles};
@@ -48,6 +53,9 @@ pub use component_traits::Selectable;
 pub use dialog::{
     Dialog, DialogBackdrop, DialogChangeReason, DialogClose, DialogDescription, DialogEvent,
     DialogPopup, DialogState, DialogTitle,
+};
+pub use dropdown_menu::{
+    DropdownMenu, DropdownMenuEvent, DropdownMenuItem, DropdownMenuOption, DropdownMenuState,
 };
 pub use element_ext::ElementExt;
 pub use event::{InteractiveElementExt, OngoingScrollExt};
@@ -93,7 +101,9 @@ pub fn init(cx: &mut App) {
     let _ = Theme::global_mut(cx);
     GlobalState::init(cx);
     reduce_motion::init(cx);
+    accordion::init(cx);
     dialog::init(cx);
+    dropdown_menu::init(cx);
     focus_trap::init(cx);
     popover::init(cx);
     radio_group::init(cx);

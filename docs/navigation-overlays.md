@@ -2,8 +2,10 @@
 
 The [two-style example](../crates/base/examples/two_styles.rs) combines the same
 settings behavior with compact dark and spacious light presentation. Its
-Preferences and Help tabs demonstrate active panels, and Help opens a keyboard
-guide in a non-modal Popover inside Dialog. All styles live in the example.
+Session actions menu can open Dialog or toggle application values. Preferences
+and Help tabs demonstrate active panels; Help contains an Accordion, and its
+keyboard section opens a guide in a non-modal Popover. All styles live in the
+example.
 
 Call `gpui_design::init(cx)` and host the window in `gpui_design::Root`. Keep the
 state entities and their observation subscriptions in your view. The example
@@ -59,6 +61,56 @@ state but not a public sibling-node relationship API, so explicit native
 tab-to-panel controls/labelled-by relationships are not emitted. Native screen
 reader behavior still needs desktop validation.
 
+## Accordion
+
+`AccordionState` owns a fixed, ordered collection of `AccordionItem::new(value,
+label)` entries. Values must be unique. The initial state is fully collapsed;
+`.default_open(value)` opens one enabled entry. An unknown or disabled default is
+a configuration error and panics. Mark unavailable entries with `.disabled(true)`.
+
+Render `Accordion::new(id, &state)` around the headers and panels, then pair each
+`AccordionHeader::new(&state, index)` with its `AccordionPanel::new(&state, index)`
+in collection order. Plain GPUI containers can arrange each pair. The root supplies
+a focus scope and keyboard handling, without choosing a layout or appearance.
+
+The header contains a native heading and a button. Its children and styles apply
+to the button; use `.heading_level(level)` to change the heading level from 3.
+Place only non-interactive content inside the header. The application draws the
+indicator and may use `open_index()` to distinguish open and closed headers.
+
+| Input on a header | Behavior |
+| --- | --- |
+| Click / Enter / Space | Open this panel, closing the previous one; collapse if already open |
+| Up / Down | Focus the previous / next enabled header, wrapping at either end |
+| Home / End | Focus the first / last enabled header |
+| Tab / Shift-Tab | Follow normal document order through enabled headers and open content |
+
+Arrow navigation does not expand panels. Every enabled header is a normal Tab
+stop. Navigation actions only apply when a header itself has focus, so an Input
+inside a panel retains its own Home/End and arrow behavior. Disabled headers do
+not activate or participate in keyboard focus traversal.
+
+State methods include `items`, `open_index`, `open_item`, `trigger_focus_handle`,
+`panel_focus_handle`, `toggle(index, window, cx)`, and `close(window, cx)`. Subscribe
+to `AccordionEvent::Change(Some(value))` when a section opens and `Change(None)`
+when all sections close. A no-op does not emit another event. Observe the state
+to redraw the consumer.
+
+Closing a panel removes its layout, focus stops, and accessibility nodes. Keep
+form values and child entities in the application view if they must survive
+remounting. Panels are named regions without their own Tab stop by default; use
+`.tab_stop(true)` for static content that should receive focus itself.
+
+If a programmatic change closes the panel that owns keyboard focus, focus moves
+to its surviving header, or the newly opened header when switching sections. A
+change does not steal focus from an unrelated control. Moving focus before panel
+removal also lets a nested Popover complete its dismissal lifecycle. If the entire
+Accordion host is removed, the application must focus a surviving control.
+
+The library emits heading level, button role, expanded/disabled states, and a named
+Region. Explicit native button-to-panel controls/labelled-by relationships are not
+emitted: the pinned GPUI API does not expose the required sibling-node IDs.
+
 ## Popover
 
 `PopoverState` owns the open state, trigger focus, popup focus scope, and disabled
@@ -103,9 +155,72 @@ popup cleans up its open state without choosing an arbitrary replacement target.
 The example's tab switches and Dialog closure already move focus before removing
 the popup surface.
 
+## DropdownMenu
+
+The command menu reuses Popover for anchoring, open/close state, dismissal, and
+focus restoration. It adds a command cursor and activation events. Create
+`DropdownMenuState::new(items, cx)` with fixed, ordered
+`DropdownMenuItem::new(value, label)` entries. Values must be unique; use
+`.disabled(true)` for unavailable commands. Empty or entirely disabled collections
+can open but cannot execute a command.
+
+Render `DropdownMenu::new(id, &state)` with:
+
+- `.trigger(|button| ...)` for the native trigger's accessible name and appearance.
+- `.accessibility_label(...)` for the menu's accessible name.
+- `.content(...)` containing one `DropdownMenuOption::new(&state, index)` per item,
+  in collection order. Supply its text, spacing, colors, and other visual content.
+- `.anchor(...)` and `.offset(...)` to configure the existing popup positioning.
+
+Observe the state for rendering. Read `highlighted_index()` to style the active
+command and `items()` for labels and disabled state. The menu retains no selected
+value: commands represent actions and may execute repeatedly. Interactive form
+controls belong outside the menu's command content.
+
+| Input | Behavior |
+| --- | --- |
+| Trigger click / Enter / Space / Down | Open at the first enabled command |
+| Trigger Up | Open at the last enabled command |
+| Menu Up / Down | Move the cursor, wrapping and skipping disabled commands |
+| Menu Home / End | Move to the first / last enabled command |
+| One printable character | Cycle through enabled labels starting with that character, ignoring case |
+| Option click / Menu Enter / Space | Execute the command once and close |
+| Escape | Close and restore trigger focus |
+| Tab / Shift-Tab | Close and leave through Popover's normal focus traversal |
+
+Typeahead matches one character at a time; it has no buffered search or timer.
+Ctrl, Alt, platform, and Fn shortcuts do not feed this search. Pointer hover moves
+the same cursor used by keyboard navigation. Disabled commands remain visible
+and carry disabled metadata, but are skipped by navigation and cannot execute.
+
+Subscribe to `DropdownMenuEvent::Action(value)` to handle a command in the
+application. The menu closes and restores its trigger before delivering the
+event. A handler can therefore open Dialog, whose close operation later returns
+to the menu trigger. The example uses `cx.subscribe_in` to receive the window
+while handling commands.
+
+State methods include `open`, `close`, `set_disabled`, `focus_handle`, and
+`content_focus_handle`. `is_open(cx)` and `is_disabled(cx)` take an `&App` because
+they read the composed Popover state. There is one owner for the popup lifecycle.
+Options are not separate Tab stops; keyboard focus stays on the menu scope and
+the highlighted option supplies its active descendant. A containing Dialog still
+bounds Tab traversal, and external pointer presses retain their normal action.
+
+Keep the menu host mounted while closed. The same host-removal focus contract as
+Popover applies. This version provides plain commands; submenus, checked menu
+items, and radio menu groups are not included.
+
+Native metadata includes a Button trigger with expanded/disabled state, a Menu
+scope, named MenuItem commands, and the active descendant. It does not emit a
+native has-popup property or a trigger-to-menu controls relationship. These
+contracts describe the implemented behavior, not a claim of full accessibility
+pattern conformance or completed screen-reader validation.
+
 ## Validation
 
 The existing GPUI test framework checks selected and disabled metadata, orientation,
-focus traversal, inactive panels, popup dismissal, and the complete composed
-example in both appearances. These checks run in Windows and Ubuntu CI. They do
-not replace native IME, screen reader, DPI, and visual checks on a desktop.
+focus traversal, inactive panels, popup dismissal, command dispatch, and the
+complete composed example in both appearances. Composition tests cover a command
+opening Dialog, header navigation without expansion, and collapse of a panel with
+an open Popover. These checks run in Windows and Ubuntu CI. They do not replace
+native IME, screen reader, DPI, and visual checks on a desktop.
