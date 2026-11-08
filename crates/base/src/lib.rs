@@ -15,6 +15,7 @@ mod auto_scroll;
 mod button;
 mod checkbox;
 mod collapsible;
+mod command;
 mod component_traits;
 mod dialog;
 mod dropdown_menu;
@@ -38,6 +39,7 @@ mod root;
 mod scroll_bounce;
 mod scrollbar;
 mod select;
+mod separator;
 mod slider;
 mod state_style;
 mod styled;
@@ -59,6 +61,9 @@ pub use checkbox::{Checkbox, CheckboxState, CheckboxStyles};
 pub use collapsible::{
     Collapsible, CollapsibleContent, CollapsibleEvent, CollapsibleState, CollapsibleTrigger,
 };
+pub use command::{
+    Command, CommandEvent, CommandInput, CommandItem, CommandList, CommandOption, CommandState,
+};
 pub use component_traits::Selectable;
 pub use dialog::{
     Dialog, DialogBackdrop, DialogChangeReason, DialogClose, DialogDescription, DialogEvent,
@@ -73,7 +78,10 @@ pub use focus_trap::FocusTrapElement;
 pub(crate) use focus_trap::active_focus_trap;
 pub use geometry::*;
 pub(crate) use global_state::GlobalState;
-pub use input::{Input, InputAccessibility, InputBase, InputEditorStyle, InputState, InputStyles};
+pub use input::{
+    Input, InputAccessibility, InputBase, InputEditorStyle, InputState, InputStyles, Textarea,
+    TextareaState,
+};
 #[cfg(all(target_os = "macos", not(test)))]
 pub(crate) use macos_accessibility::install_window_hit_test_forwarder;
 pub use observe::{ObservedElement, ObservedTextElement, TestSupportExt, TestTextExt};
@@ -90,6 +98,7 @@ pub use scrollbar::{
     ScrollbarStyles, ScrollbarThumbStyle, ScrollbarTrackStyle,
 };
 pub use select::{Select, SelectEvent, SelectItem, SelectOption, SelectState};
+pub use separator::Separator;
 pub use slider::{Slider, SliderEvent, SliderState};
 pub use state_style::StateStyle;
 #[cfg(any(feature = "inspector", debug_assertions))]

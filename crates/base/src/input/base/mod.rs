@@ -1,4 +1,4 @@
-// Modified for GPUI Design: observe the public Input wrapper and update crate references.
+// Modified for GPUI Design: observe public input wrappers and update crate references.
 use crate::{StateStyle, StyledExt as _, TestSupportExt as _};
 use gpui::{
     AnyElement, App, Div, ElementId, InteractiveElement, Interactivity, IntoElement, ParentElement,
@@ -164,9 +164,10 @@ impl InputBase {
 
     /// Exposes an editor's native semantics through this frame's component ID.
     ///
-    /// `editor` must identify the state rendered by [`super::Input`] below this
-    /// frame, without additional identified wrappers. Anonymous layout wrappers
-    /// are allowed. ID queries retain the frame's path, bounds and visibility.
+    /// `E` must name the rendered wrapper, such as [`super::Input`] or
+    /// [`super::Textarea`], and `editor` must identify its state below this frame,
+    /// without additional identified wrappers. Anonymous layout wrappers are
+    /// allowed. ID queries retain the frame's path, bounds and visibility.
     /// Role, label, value, checked/indeterminate, selected, expanded, disabled
     /// and focus facts come from the editor's existing native node and observed
     /// focus scope, not independently focusable addon controls. Native snapshot
@@ -175,12 +176,12 @@ impl InputBase {
     /// This only declares an observation relationship with `test-support`; it
     /// never adds a native accessibility node or registers a focus handle. The
     /// relationship follows the frame's GPUI element-state lifetime.
-    pub fn semantic_owner(self, editor: gpui::EntityId) -> Self {
+    pub fn semantic_owner<E: RenderOnce>(self, editor: gpui::EntityId) -> Self {
         #[cfg(feature = "test-support")]
         {
             Self {
                 base: self.base.semantic_owner([
-                    std::any::type_name::<super::Input>().into(),
+                    std::any::type_name::<E>().into(),
                     ElementId::View(editor),
                     super::state::EDITOR_ELEMENT_ID.into(),
                 ]),

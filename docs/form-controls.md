@@ -3,7 +3,8 @@
 The [native settings example](../crates/base/examples/two_styles.rs) is a complete
 consumer of the public API. Run it in either appearance using the commands in the
 [README](../README.md#run-the-example). It combines Button, Input, Select,
-Checkbox, Switch, RadioGroup, Slider, Progress, Toggle, and ToggleGroup with the navigation and overlay controls,
+Textarea, Checkbox, Switch, RadioGroup, Slider, Progress, Toggle, and ToggleGroup
+with the navigation and overlay controls,
 without putting appearance in the library. The [navigation and overlay guide](navigation-overlays.md)
 describes its Preferences/Help tabs and keyboard-help popover.
 
@@ -15,6 +16,7 @@ control a stable element ID and an accessible label.
 
 | Control | State owner | Updating the application |
 | --- | --- | --- |
+| Textarea | Retained `Entity<TextareaState>` | Observe for surrounding presentation; the existing Input events report edits |
 | Checkbox | Application field of type `CheckboxState` or `bool` | `on_change` reports the next state; store it and call `cx.notify()` |
 | Toggle | Application `bool` | `on_change` requests the next pressed value; render it back with `pressed` |
 | ToggleGroup | Retained `Entity<ToggleGroupState>` | Observe for rendering; `ToggleGroupEvent::Change` reports selected values in item order |
@@ -32,6 +34,31 @@ the next render and does not call `on_change`.
 Keep retained entities and their subscriptions in the view, as the native example
 does. Recreating a RadioGroupState in every render would discard its selection
 and stable option focus handles.
+
+## Textarea
+
+`Textarea::new(&state)` renders the existing multiline editing engine. Construct
+`TextareaState::new(window, cx)` once, using `.rows(3)` for fixed rows or
+`.auto_grow(min, max)` for bounded automatic growth. The state also supports
+placeholder/default text and soft wrapping; selection, undo, scrolling, clipboard,
+and the native text-input interface stay in that same retained entity.
+
+Give it an `InputAccessibility` with `Role::MultilineTextInput` and an accessible
+label. Wrap the renderer in `InputBase` for the application-owned frame, setting
+the frame's `.role(None::<Role>)` and `.semantic_owner::<Textarea>(state.entity_id())` so the
+text entity is the sole native semantic/focus owner. The example uses the same
+application palette for both its single-line field and multiline notes.
+
+Enter inserts a newline by default. Tab and Shift-Tab follow ordinary form
+navigation for both row-based and auto-growing textareas; code-editor indentation
+remains separate. `set_disabled(bool, cx)` prevents edits and ordinary Tab entry.
+A field disabled while focused keeps its binding so Tab can leave. Re-enabling
+restores entry. `set_readonly(bool, cx)` prevents edits while retaining focus and
+selection. Programmatic `set_value` remains available for application updates.
+
+Keep the state outside a collapsible section, tab panel, or Dialog's render path
+so closing that surface preserves the text. The example retains Session notes
+when the settings dialog is closed and reopened.
 
 ## Checkbox and Switch
 

@@ -8,7 +8,7 @@ Headless separates control behavior from application-owned presentation; the
 examples render native GPUI windows.
 
 This is an early foundation for an independent component ecosystem. It currently
-includes seventeen controls and an executable example that gives the same behavior
+includes twenty controls and an executable example that gives the same behavior
 two visual treatments. The source is maintained in this repository, with GPUI
 kept as an exactly pinned rendering dependency.
 
@@ -23,6 +23,7 @@ kept as an exactly pinned rendering dependency.
 | **Switch** | Controlled on/off state, activation, disabled state, and focus | Track, thumb, label, and state styling |
 | **RadioGroup** | Single selection, one Tab stop, arrow navigation, disabled options, and focus | Group layout and option rendering |
 | **Input** | Text editing state, selection, clipboard, focus, and the native text-input interface | Field container, text style, caret, and surrounding controls |
+| **Textarea** | Multiline editing over the same engine, retained text, wrapping, and normal form Tab traversal | Field container, dimensions, text style, and surrounding content |
 | **Select** | Single selection from fixed options, keyboard navigation, disabled options, commit, and focus | Trigger, popup content, and option rendering |
 | **Slider** | One numeric value, bounded steps, keyboard and pointer adjustment, disabled state, and focus | Track, fill, thumb, sizing, and state styling |
 | **Progress** | Controlled percentage or indeterminate progress, accessible name and numeric range | Track, fill, label, and any animation |
@@ -31,12 +32,21 @@ kept as an exactly pinned rendering dependency.
 | **Collapsible** | One disclosure, active-only content, disabled trigger, and focus on content closure | Trigger content, indicator, region contents, and layout |
 | **Popover** | Non-modal open/close state, anchored placement, focus, outside dismissal, and Escape | Trigger, popup contents, and surface styling |
 | **DropdownMenu** | Command activation, enabled-item navigation, single-character search, dismissal, and focus | Trigger, menu surface, and command rendering |
+| **Command** | Text search, enabled-result navigation, pointer/Enter action dispatch, and highlighted-result scrolling | Query frame, result rows, empty state, and optional Dialog composition |
 | **Dialog** | Open/close state, modal focus, initial focus, dismissal, and focus restoration | Backdrop, popup, title, description, and close control |
 | **AlertDialog** | Dialog's modal lifecycle with alert semantics and blocked backdrop dismissal | Decision text, cancellation control, and explicit application confirmation |
+| **Separator** | Semantic or decorative separation, with horizontal/vertical orientation | Length, thickness, color, and spacing |
 
 Shared support includes the window root, popup positioning, input infrastructure,
 and opt-in test observations. Internal editing machinery retained for Input is
 not a separate editor product. Public APIs are still being developed.
+
+The breadth target is the range of screens and interactions supported by
+shadcn/ui. The [component coverage map](docs/component-coverage.md) compares all
+66 entries in its current main catalogue with the actual public scope here.
+It distinguishes behavior, source-owned presentation recipes, and larger
+compositions. Twenty available families do not imply full feature parity for
+twenty shadcn components; the map records current limits and remaining work.
 
 Input provides a small, readable baseline for unset text, caret, and selection
 colors. Explicit `InputEditorStyle` values take precedence. Applications own the
@@ -58,6 +68,10 @@ independent bold/italic emphasis to the summary text.
 These controls live inside a Collapsible that starts closed and preserves their
 retained values. The menu's Reset preview action opens an AlertDialog with Cancel
 initially focused; only confirmation restores known progress at 40%.
+Search commands opens a Command inside Dialog. Its query matches action labels,
+values, and keywords, then dispatches the same application actions as the menu.
+Session settings includes a retained multiline notes field and semantic separators;
+its body scrolls when the available window height cannot hold all fields.
 
 ## Layers and source ownership
 
@@ -81,6 +95,8 @@ records Zed revision `f816e1f9263e3a8ef63c4baaa02e1441ce1c6038`.
 The controls listed above belong to the behavior layer. Compound controls reuse
 that layer: Toggle and Collapsible triggers compose Button, ToggleGroup composes
 Toggle, DropdownMenu composes Popover, and AlertDialog composes Dialog.
+Command reuses Input for its query and can be hosted in Dialog. Textarea renders
+the existing multiline editing state.
 Appearance belongs in the application. A separately distributed
 styled component catalog, installation CLI, and registry have not been added.
 
@@ -91,7 +107,7 @@ RadioGroup retains selection and option focus in an entity, accepts fixed ordere
 options with unique values, and changes selection immediately on arrow navigation.
 
 The [navigation and overlay guide](docs/navigation-overlays.md) covers Tabs,
-Accordion, Collapsible, Popover, DropdownMenu, and AlertDialog. Inactive panels do
+Accordion, Collapsible, Popover, DropdownMenu, Command, and AlertDialog. Inactive panels do
 not contribute layout, focus, or accessibility nodes. Popover reuses the existing popup positioning
 primitive and lets keyboard focus leave its contents within the enclosing window
 or dialog. DropdownMenu builds on that lifecycle and closes before dispatching a
@@ -203,6 +219,10 @@ selection and roving focus to Toggle options.
 Collapsible adds retained visibility and content-closure focus to the upstream
 disclosure contract, reusing Button for its trigger. AlertDialog adapts the
 upstream Dialog specialization to the existing retained DialogState and parts.
+Command adds fixed-action search and activation over the existing Input engine.
+Textarea exposes that engine's retained multiline state as a public control,
+with form Tab traversal and disabled-input Tab skipping. Separator adds static
+native semantics without imposing visual geometry.
 
 Software source is licensed under [Apache-2.0](LICENSE-APACHE). The original
 Longbridge copyright and license notices are retained. Dependencies keep their

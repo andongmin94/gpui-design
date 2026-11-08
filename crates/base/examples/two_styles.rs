@@ -4,18 +4,19 @@
 use gpui::{
     AppContext as _, Axis, Context, Entity, FocusHandle, Focusable as _, FontWeight, Hsla,
     InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Rems, Render, Role,
-    SharedString, Styled as _, Subscription, Window, div, prelude::FluentBuilder as _, px,
-    relative, rems, rgb,
+    SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Window, div,
+    prelude::FluentBuilder as _, px, relative, rems, rgb,
 };
 use gpui_design::{
     Accordion, AccordionHeader, AccordionItem, AccordionPanel, AccordionState, AlertDialog, Button,
     Checkbox, CheckboxState, Collapsible, CollapsibleContent, CollapsibleState, CollapsibleTrigger,
+    Command, CommandEvent, CommandInput, CommandItem, CommandList, CommandOption, CommandState,
     Dialog, DialogBackdrop, DialogClose, DialogDescription, DialogPopup, DialogState, DialogTitle,
     DropdownMenu, DropdownMenuEvent, DropdownMenuItem, DropdownMenuOption, DropdownMenuState,
     Input, InputBase, Popover, PopoverState, Progress, RadioGroup, RadioGroupState, RadioItem,
-    RadioOption, Select, SelectItem, SelectOption, SelectState, Slider, SliderState, Switch, Tab,
-    TabItem, TabList, TabPanel, TabsState, Toggle, ToggleGroup, ToggleGroupState, ToggleItem,
-    ToggleOption,
+    RadioOption, Select, SelectItem, SelectOption, SelectState, Separator, Slider, SliderState,
+    Switch, Tab, TabItem, TabList, TabPanel, TabsState, Textarea, TextareaState, Toggle,
+    ToggleGroup, ToggleGroupState, ToggleItem, ToggleOption,
     input::{InputAccessibility, InputEditorStyle, InputState},
 };
 
@@ -89,6 +90,9 @@ impl Appearance {
 pub(crate) struct Demo {
     appearance: Appearance,
     pub(crate) input: Entity<InputState>,
+    pub(crate) notes: Entity<TextareaState>,
+    pub(crate) commands: Entity<CommandState>,
+    pub(crate) command_dialog: Entity<DialogState>,
     pub(crate) dialog: Entity<DialogState>,
     pub(crate) select: Entity<SelectState>,
     pub(crate) stroke: Entity<RadioGroupState>,
@@ -115,12 +119,7 @@ impl Demo {
             let mut state = InputState::new(window, cx)
                 .placeholder("Enter a session name")
                 .default_value("MiniCast");
-            let mut editor_style = InputEditorStyle::default();
-            editor_style.foreground = palette.foreground;
-            editor_style.muted_foreground = palette.muted;
-            editor_style.caret = palette.accent;
-            editor_style.selection = palette.highlight;
-            state.set_editor_style(editor_style);
+            state.set_editor_style(Self::input_style(palette));
             state.set_accessibility(
                 InputAccessibility::new(Some(Role::TextInput))
                     .with_label(Some("Session name".into()))
@@ -130,6 +129,36 @@ impl Demo {
         });
         let input_focus = input.focus_handle(cx);
         let dialog = cx.new(|cx| DialogState::new(cx).with_initial_focus(&input_focus));
+        let notes = cx.new(|cx| {
+            let mut state = TextareaState::new(window, cx)
+                .rows(3)
+                .placeholder("Add session notes");
+            state.set_editor_style(Self::input_style(palette));
+            state.set_accessibility(
+                InputAccessibility::new(Some(Role::MultilineTextInput))
+                    .with_label(Some("Session notes".into()))
+                    .with_placeholder(Some("Add session notes".into())),
+            );
+            state
+        });
+        let commands = cx.new(|cx| {
+            CommandState::new(
+                [
+                    CommandItem::new("edit", "Edit session").keywords(["settings", "설정"]),
+                    CommandItem::new("share", "Share (unavailable)").disabled(true),
+                    CommandItem::new("cursor", "Toggle cursor").keywords(["pointer"]),
+                    CommandItem::new("toolbar", "Toggle toolbar pin").keywords(["pin"]),
+                    CommandItem::new("reset", "Reset preview").keywords(["progress"]),
+                ],
+                window,
+                cx,
+            )
+        });
+        commands.read(cx).input().clone().update(cx, |state, _| {
+            state.set_editor_style(Self::input_style(palette));
+        });
+        let command_focus = commands.read(cx).focus_handle().clone();
+        let command_dialog = cx.new(|cx| DialogState::new(cx).with_initial_focus(&command_focus));
         let select = cx.new(|cx| {
             SelectState::new(
                 [
@@ -173,6 +202,7 @@ impl Demo {
                     DropdownMenuItem::new("cursor", "Toggle cursor"),
                     DropdownMenuItem::new("toolbar", "Toggle toolbar pin"),
                     DropdownMenuItem::new("reset", "Reset preview"),
+                    DropdownMenuItem::new("commands", "Search commands"),
                 ],
                 cx,
             )
@@ -207,6 +237,9 @@ impl Demo {
         // The form summary and its presentation read these retained states.
         let subscriptions = vec![
             cx.observe(&input, |_, _, cx| cx.notify()),
+            cx.observe(&notes, |_, _, cx| cx.notify()),
+            cx.observe(&commands, |_, _, cx| cx.notify()),
+            cx.observe(&command_dialog, |_, _, cx| cx.notify()),
             cx.observe(&select, |_, _, cx| cx.notify()),
             cx.observe(&stroke, |_, _, cx| cx.notify()),
             cx.observe(&tabs, |_, _, cx| cx.notify()),
@@ -220,21 +253,21 @@ impl Demo {
             cx.observe(&dialog, |_, _, cx| cx.notify()),
             cx.subscribe_in(&actions, window, |this, _, event, window, cx| {
                 let DropdownMenuEvent::Action(value) = event;
-                match value.as_ref() {
-                    "edit" => this.dialog.update(cx, |state, cx| state.open(window, cx)),
-                    "cursor" => this.show_cursor = !this.show_cursor,
-                    "toolbar" => this.keep_toolbar = !this.keep_toolbar,
-                    "reset" => this
-                        .reset_dialog
-                        .update(cx, |state, cx| state.open(window, cx)),
-                    _ => return,
-                }
-                cx.notify();
+                this.perform_action(value, window, cx);
+            }),
+            cx.subscribe_in(&commands, window, |this, _, event, window, cx| {
+                let CommandEvent::Action(value) = event;
+                this.command_dialog
+                    .update(cx, |state, cx| state.close(window, cx));
+                this.perform_action(value, window, cx);
             }),
         ];
         Self {
             appearance,
             input,
+            notes,
+            commands,
+            command_dialog,
             dialog,
             select,
             stroke,
@@ -253,6 +286,34 @@ impl Demo {
             trigger_focus: cx.focus_handle().tab_stop(true),
             _subscriptions: subscriptions,
         }
+    }
+
+    fn input_style(palette: Palette) -> InputEditorStyle {
+        let mut style = InputEditorStyle::default();
+        style.foreground = palette.foreground;
+        style.muted_foreground = palette.muted;
+        style.caret = palette.accent;
+        style.selection = palette.highlight;
+        style
+    }
+
+    fn perform_action(&mut self, value: &str, window: &mut Window, cx: &mut Context<Self>) {
+        match value {
+            "edit" => self.dialog.update(cx, |state, cx| state.open(window, cx)),
+            "cursor" => self.show_cursor = !self.show_cursor,
+            "toolbar" => self.keep_toolbar = !self.keep_toolbar,
+            "reset" => self
+                .reset_dialog
+                .update(cx, |state, cx| state.open(window, cx)),
+            "commands" => {
+                self.commands
+                    .update(cx, |state, cx| state.set_query("", window, cx));
+                self.command_dialog
+                    .update(cx, |state, cx| state.open(window, cx));
+            }
+            _ => return,
+        }
+        cx.notify();
     }
 
     fn button(palette: Palette, button: Button) -> Button {
@@ -297,7 +358,7 @@ impl Render for Demo {
         });
         let field = InputBase::new("session-name")
             .role(None::<Role>)
-            .semantic_owner(self.input.entity_id())
+            .semantic_owner::<Input>(self.input.entity_id())
             .focused(self.input.focus_handle(cx).is_focused(window))
             .h(palette.control_height)
             .px_3()
@@ -308,6 +369,20 @@ impl Render for Demo {
             .bg(palette.field)
             .styles(|styles| styles.focused(|style| style.border_color(palette.accent)))
             .child(Input::new(&self.input));
+        let notes = InputBase::new("session-notes")
+            .role(None::<Role>)
+            .semantic_owner::<Textarea>(self.notes.entity_id())
+            .focused(self.notes.focus_handle(cx).is_focused(window))
+            .h(px(84.))
+            .w_full()
+            .px_3()
+            .py_2()
+            .border_1()
+            .border_color(palette.border)
+            .rounded(palette.radius)
+            .bg(palette.field)
+            .styles(|styles| styles.focused(|style| style.border_color(palette.accent)))
+            .child(Textarea::new(&self.notes));
         let tool = Select::new("drawing-tool", &self.select)
             .accessibility_label("Drawing tool")
             .border_1()
@@ -555,6 +630,20 @@ impl Render for Demo {
                             .gap_1()
                             .child("Stroke width")
                             .child(stroke),
+                    )
+                    .child(
+                        Separator::new("notes-separator")
+                            .h(px(1.))
+                            .w_full()
+                            .bg(palette.border),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_1()
+                            .child("Session notes")
+                            .child(notes),
                     ),
             )
             .child(
@@ -566,6 +655,7 @@ impl Render for Demo {
             );
         let popup = DialogPopup::new()
             .w(palette.dialog_width)
+            .max_h(window.viewport_size().height - px(32.))
             .p(palette.padding)
             .flex()
             .flex_col()
@@ -583,21 +673,30 @@ impl Render for Demo {
             )
             .child(
                 div()
+                    .id("settings-fields")
+                    .min_h_0()
+                    .overflow_y_scroll()
                     .flex()
                     .flex_col()
-                    .gap_1()
-                    .child("Session name")
-                    .child(field),
+                    .gap(palette.gap)
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_1()
+                            .child("Session name")
+                            .child(field),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_1()
+                            .child("Drawing tool")
+                            .child(tool),
+                    )
+                    .child(panels),
             )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .child("Drawing tool")
-                    .child(tool),
-            )
-            .child(panels)
             .child(
                 div()
                     .flex()
@@ -860,6 +959,81 @@ impl Render for Demo {
                     )),
             );
 
+        let command_state = self.commands.read(cx);
+        let command_popup = DialogPopup::new()
+            .w(palette.dialog_width)
+            .p(palette.padding)
+            .flex()
+            .flex_col()
+            .gap(palette.gap)
+            .bg(palette.surface)
+            .text_color(palette.foreground)
+            .border_1()
+            .border_color(palette.border)
+            .rounded(palette.radius)
+            .child(DialogTitle::new().text_lg().child("Search commands"))
+            .child(
+                Command::new("session-commands", &self.commands)
+                    .accessibility_label("Session commands")
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(
+                        CommandInput::new("command-query", &self.commands)
+                            .accessibility_label("Search commands")
+                            .placeholder("Search actions or type 설정")
+                            .h(palette.control_height)
+                            .px_3()
+                            .w_full()
+                            .border_1()
+                            .border_color(palette.border)
+                            .rounded(palette.radius)
+                            .bg(palette.field)
+                            .styles(|styles| {
+                                styles.focused(|style| style.border_color(palette.accent))
+                            }),
+                    )
+                    .child(
+                        Separator::new("command-separator")
+                            .h(px(1.))
+                            .w_full()
+                            .bg(palette.border),
+                    )
+                    .child(
+                        CommandList::new("command-results", &self.commands)
+                            .accessibility_label("Matching commands")
+                            .max_h(px(220.))
+                            .children(command_state.visible_indices().iter().map(|&index| {
+                                let item = &command_state.items()[index];
+                                CommandOption::new(&self.commands, index)
+                                    .h(palette.control_height)
+                                    .px_3()
+                                    .flex()
+                                    .items_center()
+                                    .rounded(palette.radius)
+                                    .when(
+                                        command_state.highlighted_index() == Some(index),
+                                        |option| option.bg(palette.highlight),
+                                    )
+                                    .when(item.is_disabled(), |option| option.opacity(0.45))
+                                    .child(item.label().clone())
+                            })),
+                    )
+                    .when(command_state.visible_indices().is_empty(), |command| {
+                        command.child(
+                            div()
+                                .p_3()
+                                .text_color(palette.muted)
+                                .child("No commands found"),
+                        )
+                    }),
+            )
+            .child(
+                div()
+                    .text_color(palette.muted)
+                    .child("↑ ↓ to choose · Enter to run · Escape to close"),
+            );
+
         div()
             .size_full()
             .flex()
@@ -951,6 +1125,19 @@ impl Render for Demo {
                             .opacity(0.45),
                     )
                     .popup(reset_popup),
+            )
+            .child(
+                Dialog::new(&self.command_dialog)
+                    .accessibility_label("Search commands")
+                    .accessibility_description("Search and run a session action.")
+                    .backdrop(
+                        DialogBackdrop::new()
+                            .absolute()
+                            .inset_0()
+                            .bg(gpui::black())
+                            .opacity(0.45),
+                    )
+                    .popup(command_popup),
             )
     }
 }

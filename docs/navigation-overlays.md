@@ -4,6 +4,9 @@ The [two-style example](../crates/base/examples/two_styles.rs) combines the same
 settings behavior with compact dark and spacious light presentation. Its
 Session actions menu can open Dialog, toggle application values, or request a
 preview reset through AlertDialog. A Collapsible holds the preview controls.
+Search commands opens a Command query and result list inside Dialog; both menus
+dispatch the same application actions. Separator provides semantic division
+between content regions, and the settings form includes retained multiline notes.
 Preferences and Help tabs demonstrate active panels; Help contains an Accordion, and its
 keyboard section opens a guide in a non-modal Popover. All styles live in the
 example.
@@ -250,6 +253,66 @@ native has-popup property or a trigger-to-menu controls relationship. These
 contracts describe the implemented behavior, not a claim of full accessibility
 pattern conformance or completed screen-reader validation.
 
+## Command
+
+Create `CommandState::new(items, window, cx)` from fixed, ordered
+`CommandItem::new(value, label)` entries with unique values. Optional `.keywords`
+add search aliases; `.disabled(true)` makes an action unavailable. Observe the
+state for result rendering and subscribe to `CommandEvent::Action(value)` to
+handle execution in the application.
+
+`Command::new(id, &state)` hosts `CommandInput::new(id, &state)` and
+`CommandList::new(id, &state)`. Give the query and list accessible labels, and
+render `CommandOption::new(&state, index)` as direct list children for
+`visible_indices()`, in that order. Read `items()` for labels and
+`highlighted_index()` for application-owned active-row styling. The list uses
+the existing GPUI ScrollHandle; give it a height or maximum height so the active
+result can scroll into view. Render an application-owned empty message when no
+items match.
+
+The existing InputState is the query's source of truth, exposed through `input()`.
+`set_query(text, window, cx)` updates it programmatically. Each whitespace-separated
+query term must appear, ignoring case, in the item's value, label, or keywords.
+Matching retains item order and includes disabled matches for display. A changed
+query highlights its first enabled result; empty or all-disabled results have no
+active command. There is no asynchronous source, fuzzy ranking, or grouped list.
+
+| Input | Behavior |
+| --- | --- |
+| Up / Down | Move among enabled matching results, wrapping at either end |
+| Enter | Execute the highlighted enabled result once |
+| Pointer hover / click | Highlight an enabled result / execute that result |
+| Space, Home, End, Left, Right | Remain ordinary query editing |
+| Tab / Shift-Tab | Follow normal container focus traversal; result rows are not Tab stops |
+| Escape | Remains available to the surrounding surface |
+
+Native focus stays in the query. While an IME has marked composition text,
+command navigation and execution leave that interaction to the input. Automated
+marked-text checks do not replace desktop Korean/CJK IME validation.
+
+The native tree exposes a named text input, listbox, and selected/disabled options.
+The pinned GPUI active-descendant API requires a focused ancestor; a sibling
+query/list cannot truthfully emit that relationship, so this implementation does
+not claim one or completed screen-reader validation.
+
+Command itself owns no popup lifecycle. To make a command palette, place it
+inside the existing Dialog and set the DialogState's initial focus to
+`focus_handle()`. The example closes that dialog before executing an action that
+may open another Dialog, preserving the menu trigger as the return target.
+Opening the palette clears its query in application code.
+
+## Separator
+
+`Separator::new(id)` supplies a semantic horizontal separator.
+`.axis(Axis::Vertical)` changes its native orientation; `.decorative(true)` omits
+its accessibility node for purely visual division. The native semantic role is
+AccessKit's Splitter without focus or activation actions. This component is a
+static separator; Resizable pane-divider interaction is not implied.
+
+Use ordinary GPUI styles for its dimensions and color, such as
+`.h(px(1.)).w_full().bg(border)` for a horizontal line. Axis does not impose a
+visual layout. Separators have no children or Tab stop.
+
 ## AlertDialog
 
 `AlertDialog::new(&dialog_state)` composes the existing Dialog host for a short
@@ -281,6 +344,8 @@ focus traversal, inactive panels, popup dismissal, command dispatch, and the
 representative composed flows across both appearances. Composition tests cover a command
 opening Dialog, header navigation without expansion, collapse of a panel with
 an open Popover, disclosure mounting, and explicit preview reset confirmation.
+One additional consumer flow covers command search into the multiline settings
+form, normal and disabled-field Tab traversal, and retained notes.
 The full suite runs once on Linux; composition checks and native
 example builds also run on Windows and macOS. They do not replace
 native IME, screen reader, DPI, and visual checks on a desktop.

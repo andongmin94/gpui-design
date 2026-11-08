@@ -14,7 +14,9 @@ use gpui::{
     AppContext as _, Entity, EntityInputHandler as _, Focusable as _, KeyDownEvent, KeyUpEvent,
     Keystroke, Modifiers, Role, TestAppContext, VisualTestContext,
 };
-use gpui_design::{DropdownMenuEvent, RadioGroupEvent, Root, SelectEvent, TabsEvent, test_support};
+use gpui_design::{
+    CommandEvent, DropdownMenuEvent, RadioGroupEvent, Root, SelectEvent, TabsEvent, test_support,
+};
 use two_styles::{Appearance, Demo};
 
 fn harness(
@@ -255,11 +257,9 @@ fn compact_controls_complete_the_keyboard_flow(cx: &mut TestAppContext) {
     );
     cx.simulate_keystrokes("tab");
     draw(cx);
-    cx.update(|window, _| {
+    cx.update(|window, cx| {
         assert!(
-            test_support::snapshots(window)
-                .iter()
-                .any(|item| { item.label() == Some("Done") && item.focused() == Some(true) }),
+            demo.read(cx).notes.focus_handle(cx).is_focused(window),
             "the radio group has one Tab stop"
         );
     });
@@ -671,7 +671,7 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
         assert!(demo.actions.read(cx).focus_handle().is_focused(window));
     });
 
-    cx.simulate_keystrokes("up up");
+    cx.simulate_keystrokes("down t t");
     draw(cx);
     cx.update(|_, cx| {
         assert_eq!(demo.read(cx).actions.read(cx).highlighted_index(), Some(3));
@@ -948,6 +948,154 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
             ["bold", "italic"].map(gpui::SharedString::from),
         );
     });
+}
+
+#[gpui::test]
+fn command_search_opens_a_retained_multiline_form(cx: &mut TestAppContext) {
+    let (cx, demo) = harness(cx, Appearance::Settings);
+    let actions = Rc::new(RefCell::new(Vec::new()));
+    cx.update(|_, cx| {
+        let commands = demo.read(cx).commands.clone();
+        let actions = actions.clone();
+        cx.subscribe(&commands, move |_, event: &CommandEvent, _| {
+            let CommandEvent::Action(value) = event;
+            actions.borrow_mut().push(value.clone());
+        })
+        .detach();
+    });
+    cx.simulate_keystrokes("tab down s");
+    draw(cx);
+    activate_key(cx, "enter");
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        assert!(demo.command_dialog.read(cx).is_open());
+        assert!(demo.commands.read(cx).focus_handle().is_focused(window));
+        let input = test_support::find(window, &[], &"command-query".into()).unwrap();
+        assert_eq!(input.role(), Some(Role::TextInput));
+        assert_eq!(input.label(), Some("Search commands"));
+        assert_eq!(input.value(), Some(""));
+    });
+    cx.simulate_input("no matching command");
+    draw(cx);
+    activate_key(cx, "enter");
+    cx.update(|_, cx| {
+        assert!(demo.read(cx).commands.read(cx).visible_indices().is_empty());
+        assert!(demo.read(cx).command_dialog.read(cx).is_open());
+    });
+    assert!(actions.borrow().is_empty());
+    cx.simulate_keystrokes(if cfg!(target_os = "macos") {
+        "cmd-a"
+    } else {
+        "ctrl-a"
+    });
+    cx.simulate_input("설정");
+    draw(cx);
+    cx.update(|_, cx| {
+        let commands = demo.read(cx).commands.read(cx);
+        assert_eq!(commands.visible_indices(), &[0]);
+        assert_eq!(commands.highlighted_index(), Some(0));
+    });
+    activate_key(cx, "enter");
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        assert!(!demo.command_dialog.read(cx).is_open());
+        assert!(demo.dialog.read(cx).is_open());
+        assert!(demo.input.focus_handle(cx).is_focused(window));
+    });
+    assert_eq!(
+        actions.borrow().as_slice(),
+        &[gpui::SharedString::from("edit")]
+    );
+
+    cx.simulate_keystrokes("tab tab tab tab tab tab");
+    draw(cx);
+    cx.update(|window, cx| {
+        assert!(demo.read(cx).notes.focus_handle(cx).is_focused(window));
+        let notes = test_support::find(window, &[], &"session-notes".into()).unwrap();
+        assert_eq!(notes.role(), Some(Role::MultilineTextInput));
+        assert_eq!(notes.label(), Some("Session notes"));
+        assert_eq!(
+            test_support::find(window, &[], &"notes-separator".into())
+                .unwrap()
+                .role(),
+            Some(Role::Splitter),
+        );
+    });
+    cx.simulate_input("first line");
+    activate_key(cx, "enter");
+    cx.simulate_input("두 번째 줄");
+    draw(cx);
+    cx.update(|_, cx| {
+        assert_eq!(
+            demo.read(cx).notes.read(cx).value(),
+            "first line\n두 번째 줄"
+        );
+        assert!(
+            demo.read(cx).dialog.read(cx).is_open(),
+            "Enter edits multiline text"
+        );
+        demo.read(cx)
+            .notes
+            .clone()
+            .update(cx, |state, cx| state.set_disabled(true, cx));
+    });
+    draw(cx);
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    cx.update(|window, _| {
+        assert!(
+            test_support::snapshots(window)
+                .iter()
+                .any(|item| { item.label() == Some("Done") && item.focused() == Some(true) })
+        );
+    });
+    cx.simulate_keystrokes("shift-tab");
+    draw(cx);
+    cx.update(|window, cx| {
+        assert!(
+            demo.read(cx)
+                .stroke
+                .read(cx)
+                .option_focus_handle(0)
+                .is_focused(window)
+        );
+        demo.read(cx)
+            .notes
+            .clone()
+            .update(cx, |state, cx| state.set_disabled(false, cx));
+    });
+    draw(cx);
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    cx.update(|window, cx| assert!(demo.read(cx).notes.focus_handle(cx).is_focused(window)));
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    activate_key(cx, "enter");
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        assert!(!demo.dialog.read(cx).is_open());
+        assert!(demo.actions.read(cx).focus_handle().is_focused(window));
+        assert_eq!(demo.notes.read(cx).value(), "first line\n두 번째 줄");
+    });
+    cx.simulate_keystrokes("down s");
+    draw(cx);
+    activate_key(cx, "enter");
+    cx.update(|_, cx| {
+        assert_eq!(demo.read(cx).commands.read(cx).input().read(cx).value(), "");
+    });
+    cx.simulate_keystrokes("escape");
+    draw(cx);
+    cx.update(|window, cx| {
+        assert!(!demo.read(cx).command_dialog.read(cx).is_open());
+        assert!(
+            demo.read(cx)
+                .actions
+                .read(cx)
+                .focus_handle()
+                .is_focused(window)
+        );
+    });
+    assert_eq!(actions.borrow().len(), 1);
 }
 
 #[gpui::test]

@@ -1397,6 +1397,8 @@ impl<M: InputModeKind> InputBaseState<M> {
         self
     }
 
+    /// Disables editing and normal Tab entry. An already-focused field retains
+    /// its focus binding so Tab and Shift-Tab can leave it.
     pub fn set_disabled(&mut self, disabled: bool, cx: &mut Context<Self>) {
         if self.disabled == disabled {
             return;
@@ -5274,9 +5276,11 @@ impl<M: InputModeKind> Render for InputBaseState<M> {
 
         // Actions only one mode handles are registered by that mode, where
         // `Self` is concrete enough to name its own entity type.
+        // Keep the dispatch binding when disabling a focused field so Tab can
+        // leave, while excluding disabled fields from normal Tab entry.
         M::register_actions(element, &entity, window)
             .test_support()
-            .track_focus(&self.focus_handle)
+            .track_focus(&self.focus_handle.clone().tab_stop(!self.disabled))
     }
 }
 
@@ -12036,7 +12040,7 @@ mod tests {
         setup_cursors(&mut cx, &input, "|1\n|2\n|3");
         cx.update(|window, cx| {
             input.update(cx, |state, cx| {
-                state.indent_inline(&IndentInline, window, cx);
+                state.indent(false, window, cx);
                 assert_eq!(state.undo_manager.undo_count(), 1);
                 state.undo(&Undo, window, cx);
             });
@@ -12112,7 +12116,7 @@ mod tests {
                 let before: Vec<_> = state.selections.iter().copied().collect();
                 state.set_readonly(true, cx);
                 state.backspace(&Backspace, window, cx);
-                state.indent_inline(&IndentInline, window, cx);
+                state.indent(false, window, cx);
 
                 assert_eq!(state.value(), "ab\ncd\n");
                 assert_eq!(state.selections.iter().copied().collect::<Vec<_>>(), before);
