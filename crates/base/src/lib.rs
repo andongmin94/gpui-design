@@ -1,4 +1,4 @@
-//! Headless form controls and dialog primitives for GPUI.
+//! Headless form, navigation, and overlay primitives for GPUI.
 //!
 //! Applications own presentation. Call [`init`] once and host each window's
 //! content in [`Root`] for keyboard navigation and modal focus containment.
@@ -24,6 +24,7 @@ pub mod input;
 mod macos_accessibility;
 mod observe;
 mod overscroll;
+mod popover;
 mod popup;
 mod positioner;
 mod radio_group;
@@ -35,6 +36,7 @@ mod select;
 mod state_style;
 mod styled;
 mod switch;
+mod tabs;
 mod text_boundary;
 mod theme;
 mod touch_selection;
@@ -57,6 +59,7 @@ pub use input::{Input, InputAccessibility, InputBase, InputEditorStyle, InputSta
 #[cfg(all(target_os = "macos", not(test)))]
 pub(crate) use macos_accessibility::install_window_hit_test_forwarder;
 pub use observe::{ObservedElement, ObservedTextElement, TestSupportExt, TestTextExt};
+pub use popover::{Popover, PopoverState};
 pub use popup::{POPUP_PRIORITY, Popup};
 pub use positioner::{Align, Positioner, ResolvedPosition};
 pub use radio_group::{RadioGroup, RadioGroupEvent, RadioGroupState, RadioItem, RadioOption};
@@ -73,6 +76,7 @@ pub use state_style::StateStyle;
 pub use styled::styled_ext_reflection_methods;
 pub use styled::{RoleOverride, StyledExt, box_shadow, h_flex, v_flex};
 pub use switch::{Switch, SwitchStyles};
+pub use tabs::{Tab, TabItem, TabList, TabPanel, TabsEvent, TabsState};
 pub use theme::{InputColors, ScrollbarTheme, Theme, ThemeAppearance};
 pub use touch_selection::{SelectionEdge, TouchHandle, TouchSelectionSnapshot};
 
@@ -91,8 +95,10 @@ pub fn init(cx: &mut App) {
     reduce_motion::init(cx);
     dialog::init(cx);
     focus_trap::init(cx);
+    popover::init(cx);
     radio_group::init(cx);
     select::init(cx);
+    tabs::init(cx);
     input::init(cx);
     root::init(cx);
 }

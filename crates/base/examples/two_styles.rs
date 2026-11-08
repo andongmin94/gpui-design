@@ -9,8 +9,9 @@ use gpui::{
 };
 use gpui_design::{
     Button, Checkbox, CheckboxState, Dialog, DialogBackdrop, DialogClose, DialogDescription,
-    DialogPopup, DialogState, DialogTitle, Input, InputBase, RadioGroup, RadioGroupState,
-    RadioItem, RadioOption, Select, SelectItem, SelectOption, SelectState, Switch,
+    DialogPopup, DialogState, DialogTitle, Input, InputBase, Popover, PopoverState, RadioGroup,
+    RadioGroupState, RadioItem, RadioOption, Select, SelectItem, SelectOption, SelectState, Switch,
+    Tab, TabItem, TabList, TabPanel, TabsState,
     input::{InputAccessibility, InputEditorStyle, InputState},
 };
 
@@ -87,6 +88,8 @@ pub(crate) struct Demo {
     pub(crate) dialog: Entity<DialogState>,
     pub(crate) select: Entity<SelectState>,
     pub(crate) stroke: Entity<RadioGroupState>,
+    pub(crate) tabs: Entity<TabsState>,
+    pub(crate) help: Entity<PopoverState>,
     pub(crate) show_cursor: bool,
     pub(crate) keep_toolbar: bool,
     pub(crate) trigger_focus: FocusHandle,
@@ -138,11 +141,25 @@ impl Demo {
             )
             .default_value("fine")
         });
+        let tabs = cx.new(|cx| {
+            TabsState::new(
+                [
+                    TabItem::new("preferences", "Preferences"),
+                    TabItem::new("sync", "Sync (unavailable)").disabled(true),
+                    TabItem::new("help", "Help"),
+                ],
+                cx,
+            )
+            .default_value("preferences")
+        });
+        let help = cx.new(PopoverState::new);
         // The form summary and its presentation read these retained states.
         let subscriptions = vec![
             cx.observe(&input, |_, _, cx| cx.notify()),
             cx.observe(&select, |_, _, cx| cx.notify()),
             cx.observe(&stroke, |_, _, cx| cx.notify()),
+            cx.observe(&tabs, |_, _, cx| cx.notify()),
+            cx.observe(&help, |_, _, cx| cx.notify()),
             cx.observe(&dialog, |_, _, cx| cx.notify()),
         ];
         Self {
@@ -151,6 +168,8 @@ impl Demo {
             dialog,
             select,
             stroke,
+            tabs,
+            help,
             show_cursor: true,
             keep_toolbar: false,
             trigger_focus: cx.focus_handle().tab_stop(true),
@@ -334,6 +353,91 @@ impl Render for Demo {
                             .child(item.label().clone())
                     }),
             );
+        let tab_state = self.tabs.read(cx);
+        let tab_list = TabList::new("session-sections", &self.tabs)
+            .axis(Axis::Horizontal)
+            .accessibility_label("Session sections")
+            .flex()
+            .flex_wrap()
+            .gap_1()
+            .children(tab_state.items().iter().enumerate().map(|(index, item)| {
+                Tab::new(&self.tabs, index)
+                    .px_2()
+                    .py_1()
+                    .border_1()
+                    .border_color(palette.border)
+                    .rounded(palette.radius)
+                    .focus_visible(|style| style.border_color(palette.accent))
+                    .when(tab_state.selected_index() == Some(index), |tab| {
+                        tab.bg(palette.accent).text_color(palette.accent_foreground)
+                    })
+                    .when(item.is_disabled(), |tab| tab.opacity(0.45))
+                    .child(item.label().clone())
+            }));
+        let help_state = self.help.clone();
+        let help = Popover::new("keyboard-help", &self.help)
+            .accessibility_label("Keyboard help")
+            .offset(px(6.))
+            .trigger(|button| {
+                Self::button(
+                    palette,
+                    button
+                        .accessibility_label("Show keyboard help")
+                        .child("Show keyboard help"),
+                )
+            })
+            .content(
+                div()
+                    .w(palette.dialog_width - palette.padding * 2.)
+                    .p_3()
+                    .flex()
+                    .flex_col()
+                    .gap_3()
+                    .bg(palette.surface)
+                    .text_color(palette.foreground)
+                    .border_1()
+                    .border_color(palette.border)
+                    .rounded(palette.radius)
+                    .child("Tab moves between controls. Arrow keys choose options and tabs. Escape closes this help before the settings dialog.")
+                    .child(Self::button(
+                        palette,
+                        Button::new("close-help")
+                            .accessibility_label("Close help")
+                            .on_click(move |_, window, cx| {
+                                help_state.update(cx, |state, cx| state.close(window, cx));
+                            })
+                            .child("Close help"),
+                    )),
+            );
+        let panels = div()
+            .flex()
+            .flex_col()
+            .gap(palette.gap)
+            .child(tab_list)
+            .child(
+                TabPanel::new(&self.tabs, 0)
+                    .flex()
+                    .flex_col()
+                    .gap(palette.gap)
+                    .child(show_cursor)
+                    .child(keep_toolbar)
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_1()
+                            .child("Stroke width")
+                            .child(stroke),
+                    ),
+            )
+            .child(
+                TabPanel::new(&self.tabs, 2)
+                    .flex()
+                    .flex_col()
+                    .gap(palette.gap)
+                    .child("These controls share behavior in both appearances. The application owns their styles and saved values.")
+                    .child(help),
+            );
         let popup = DialogPopup::new()
             .w(palette.dialog_width)
             .p(palette.padding)
@@ -367,16 +471,7 @@ impl Render for Demo {
                     .child("Drawing tool")
                     .child(tool),
             )
-            .child(show_cursor)
-            .child(keep_toolbar)
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .child("Stroke width")
-                    .child(stroke),
-            )
+            .child(panels)
             .child(
                 div()
                     .flex()

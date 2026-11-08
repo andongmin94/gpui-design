@@ -3,7 +3,9 @@
 The [native settings example](../crates/base/examples/two_styles.rs) is a complete
 consumer of the public API. Run it in either appearance using the commands in the
 [README](../README.md#run-the-example). It combines Button, Input, Select,
-Checkbox, Switch, RadioGroup, and Dialog without putting appearance in the library.
+Checkbox, Switch, and RadioGroup with the navigation and overlay controls,
+without putting appearance in the library. The [navigation and overlay guide](navigation-overlays.md)
+describes its Preferences/Help tabs and keyboard-help popover.
 
 Call `gpui_design::init(cx)` once and host window content in `gpui_design::Root`.
 Root supplies Tab traversal and contains it inside an open Dialog. Give each
