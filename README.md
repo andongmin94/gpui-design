@@ -7,8 +7,8 @@ Applications own their component source, layout, colors, typography, and assets.
 Headless separates control behavior from application-owned presentation; the
 examples render native GPUI windows.
 
-This is an early foundation for an independent component ecosystem. Development
-starts with four controls and an executable example that gives the same behavior
+This is an early foundation for an independent component ecosystem. It currently
+includes seven controls and an executable example that gives the same behavior
 two visual treatments. The source is maintained in this repository, with GPUI
 kept as an exactly pinned rendering dependency.
 
@@ -17,6 +17,9 @@ kept as an exactly pinned rendering dependency.
 | Control | Behavior supplied by the library | Application-owned presentation |
 | --- | --- | --- |
 | **Button** | Pointer and keyboard activation, disabled state, focus, accessible name and role | Content, spacing, shape, and state styling |
+| **Checkbox** | Controlled unchecked/checked/mixed state, activation, disabled state, and focus | Indicator, label, layout, and state styling |
+| **Switch** | Controlled on/off state, activation, disabled state, and focus | Track, thumb, label, and state styling |
+| **RadioGroup** | Single selection, one Tab stop, arrow navigation, disabled options, and focus | Group layout and option rendering |
 | **Input** | Text editing state, selection, clipboard, focus, and the native text-input interface | Field container, text style, caret, and surrounding controls |
 | **Select** | Single selection from fixed options, keyboard navigation, disabled options, commit, and focus | Trigger, popup content, and option rendering |
 | **Dialog** | Open/close state, modal focus, initial focus, dismissal, and focus restoration | Backdrop, popup, title, description, and close control |
@@ -34,7 +37,14 @@ option has a unique value; the state owns the selected value and keyboard cursor
 
 The [two-style example](crates/base/examples/two_styles.rs) applies a compact dark
 presentation and a light settings presentation to the same controls. Its styles
-live in application code, outside the behavior layer.
+live in application code, outside the behavior layer. The settings dialog combines
+all seven controls and retains their values when it is closed and reopened.
+
+See the [form control guide](docs/form-controls.md) for state ownership, keyboard
+contracts, and application-owned styling. Checkbox and Switch report the next
+value through a callback; the application stores it and notifies its view.
+RadioGroup retains selection and option focus in an entity, accepts fixed ordered
+options with unique values, and changes selection immediately on arrow navigation.
 
 ## Run the example
 
@@ -74,6 +84,7 @@ The GPUI snapshot family is pinned to **`=0.3.11`**. Update those pins and
 | `crates/base/src/` | The `gpui-design` library and its behavior-level tests |
 | `crates/base/tests/` | Integration tests using the public API |
 | `crates/base/examples/two_styles.rs` | Native example and application-owned styles |
+| `docs/form-controls.md` | Form control usage and interaction contracts |
 | `Cargo.toml` / `Cargo.lock` | Workspace and matching dependency set |
 
 Initialize the library with `gpui_design::init(cx)` and host application content
@@ -115,6 +126,9 @@ The initial changes narrow the upstream workspace to a headless library, remove
 the styled catalog and unrelated applications, retain the editing and interaction
 code required by the four controls, and add focused Select/Dialog composition,
 two application styles, and project-specific verification.
+
+The form layer adapts the upstream Checkbox and Switch roots without their
+decorative parts, and adds retained selection and roving focus to RadioGroup.
 
 Software source is licensed under [Apache-2.0](LICENSE-APACHE). The original
 Longbridge copyright and license notices are retained. Dependencies keep their

@@ -1,16 +1,17 @@
-//! Headless Button, Input, Select, and Dialog primitives for GPUI.
+//! Headless form controls and dialog primitives for GPUI.
 //!
 //! Applications own presentation. Call [`init`] once and host each window's
 //! content in [`Root`] for keyboard navigation and modal focus containment.
 //!
 //! Derived from GPUI Kit v0.9.0 under Apache-2.0; the public surface and
-//! initialization are scoped to these four primitives and their support APIs.
+//! initialization are scoped to the documented controls and their support APIs.
 
 mod a11y_disabled;
 pub mod actions;
 mod animation;
 mod auto_scroll;
 mod button;
+mod checkbox;
 mod component_traits;
 mod dialog;
 mod element_ext;
@@ -25,6 +26,7 @@ mod observe;
 mod overscroll;
 mod popup;
 mod positioner;
+mod radio_group;
 mod reduce_motion;
 mod root;
 mod scroll_bounce;
@@ -32,12 +34,14 @@ mod scrollbar;
 mod select;
 mod state_style;
 mod styled;
+mod switch;
 mod text_boundary;
 mod theme;
 mod touch_selection;
 
 pub(crate) use auto_scroll::AutoScroll;
 pub use button::{Button, ButtonStyles};
+pub use checkbox::{Checkbox, CheckboxState, CheckboxStyles};
 pub use component_traits::Selectable;
 pub use dialog::{
     Dialog, DialogBackdrop, DialogChangeReason, DialogClose, DialogDescription, DialogEvent,
@@ -55,6 +59,7 @@ pub(crate) use macos_accessibility::install_window_hit_test_forwarder;
 pub use observe::{ObservedElement, ObservedTextElement, TestSupportExt, TestTextExt};
 pub use popup::{POPUP_PRIORITY, Popup};
 pub use positioner::{Align, Positioner, ResolvedPosition};
+pub use radio_group::{RadioGroup, RadioGroupEvent, RadioGroupState, RadioItem, RadioOption};
 pub use reduce_motion::apply_system_reduce_motion;
 pub use root::Root;
 pub use scroll_bounce::{ScrollBounce, ScrollBounceMotion};
@@ -67,6 +72,7 @@ pub use state_style::StateStyle;
 #[cfg(any(feature = "inspector", debug_assertions))]
 pub use styled::styled_ext_reflection_methods;
 pub use styled::{RoleOverride, StyledExt, box_shadow, h_flex, v_flex};
+pub use switch::{Switch, SwitchStyles};
 pub use theme::{InputColors, ScrollbarTheme, Theme, ThemeAppearance};
 pub use touch_selection::{SelectionEdge, TouchHandle, TouchSelectionSnapshot};
 
@@ -85,6 +91,7 @@ pub fn init(cx: &mut App) {
     reduce_motion::init(cx);
     dialog::init(cx);
     focus_trap::init(cx);
+    radio_group::init(cx);
     select::init(cx);
     input::init(cx);
     root::init(cx);

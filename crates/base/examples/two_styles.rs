@@ -2,13 +2,15 @@
 //! Run with `compact` (the default) or `settings`.
 
 use gpui::{
-    AppContext as _, Context, Entity, FocusHandle, Focusable as _, Hsla, InteractiveElement as _,
-    IntoElement, ParentElement as _, Pixels, Rems, Render, Role, SharedString, Styled as _,
-    Subscription, Window, div, prelude::FluentBuilder as _, px, rems, rgb,
+    AppContext as _, Axis, Context, Entity, FocusHandle, Focusable as _, Hsla,
+    InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Rems, Render, Role,
+    SharedString, Styled as _, Subscription, Window, div, prelude::FluentBuilder as _, px, rems,
+    rgb,
 };
 use gpui_design::{
-    Button, Dialog, DialogBackdrop, DialogClose, DialogDescription, DialogPopup, DialogState,
-    DialogTitle, Input, InputBase, Select, SelectItem, SelectOption, SelectState,
+    Button, Checkbox, CheckboxState, Dialog, DialogBackdrop, DialogClose, DialogDescription,
+    DialogPopup, DialogState, DialogTitle, Input, InputBase, RadioGroup, RadioGroupState,
+    RadioItem, RadioOption, Select, SelectItem, SelectOption, SelectState, Switch,
     input::{InputAccessibility, InputEditorStyle, InputState},
 };
 
@@ -84,6 +86,9 @@ pub(crate) struct Demo {
     pub(crate) input: Entity<InputState>,
     pub(crate) dialog: Entity<DialogState>,
     pub(crate) select: Entity<SelectState>,
+    pub(crate) stroke: Entity<RadioGroupState>,
+    pub(crate) show_cursor: bool,
+    pub(crate) keep_toolbar: bool,
     pub(crate) trigger_focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
 }
@@ -122,10 +127,22 @@ impl Demo {
             )
             .default_value("pen")
         });
+        let stroke = cx.new(|cx| {
+            RadioGroupState::new(
+                [
+                    RadioItem::new("fine", "Fine"),
+                    RadioItem::new("medium", "Medium (unavailable)").disabled(true),
+                    RadioItem::new("bold", "Bold"),
+                ],
+                cx,
+            )
+            .default_value("fine")
+        });
         // The form summary and its presentation read these retained states.
         let subscriptions = vec![
             cx.observe(&input, |_, _, cx| cx.notify()),
             cx.observe(&select, |_, _, cx| cx.notify()),
+            cx.observe(&stroke, |_, _, cx| cx.notify()),
             cx.observe(&dialog, |_, _, cx| cx.notify()),
         ];
         Self {
@@ -133,6 +150,9 @@ impl Demo {
             input,
             dialog,
             select,
+            stroke,
+            show_cursor: true,
+            keep_toolbar: false,
             trigger_focus: cx.focus_handle().tab_stop(true),
             _subscriptions: subscriptions,
         }
@@ -218,6 +238,102 @@ impl Render for Demo {
                     .bg(palette.surface)
                     .children(options),
             );
+        let owner = cx.entity();
+        let show_cursor = Checkbox::new("show-cursor")
+            .checked(self.show_cursor)
+            .accessibility_label("Show cursor")
+            .flex()
+            .items_center()
+            .gap_2()
+            .py_1()
+            .rounded(palette.radius)
+            .focus_visible(|style| style.bg(palette.highlight))
+            .on_change(move |state, _, _, cx| {
+                owner.update(cx, |this, cx| {
+                    this.show_cursor = state == CheckboxState::Checked;
+                    cx.notify();
+                });
+            })
+            .child(
+                div()
+                    .size_4()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .border_1()
+                    .border_color(palette.accent)
+                    .rounded(px(3.))
+                    .when(self.show_cursor, |indicator| {
+                        indicator
+                            .bg(palette.accent)
+                            .text_color(palette.accent_foreground)
+                            .child("✓")
+                    }),
+            )
+            .child("Show cursor");
+        let owner = cx.entity();
+        let keep_toolbar = Switch::new("keep-toolbar")
+            .checked(self.keep_toolbar)
+            .accessibility_label("Keep toolbar visible")
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap_3()
+            .py_1()
+            .rounded(palette.radius)
+            .focus_visible(|style| style.bg(palette.highlight))
+            .on_change(move |checked, _, _, cx| {
+                owner.update(cx, |this, cx| {
+                    this.keep_toolbar = checked;
+                    cx.notify();
+                });
+            })
+            .child("Keep toolbar visible")
+            .child(
+                div()
+                    .w_8()
+                    .h_5()
+                    .p(px(2.))
+                    .flex()
+                    .items_center()
+                    .rounded_full()
+                    .bg(palette.border)
+                    .when(self.keep_toolbar, |track| {
+                        track.justify_end().bg(palette.accent)
+                    })
+                    .child(div().size_4().rounded_full().bg(palette.surface)),
+            );
+        let stroke_state = self.stroke.read(cx);
+        let stroke_label = stroke_state.selected_item().unwrap().label().clone();
+        let stroke = RadioGroup::new("stroke-width", &self.stroke)
+            .axis(Axis::Horizontal)
+            .accessibility_label("Stroke width")
+            .flex()
+            .flex_wrap()
+            .gap_2()
+            .children(
+                stroke_state
+                    .items()
+                    .iter()
+                    .enumerate()
+                    .map(|(index, item)| {
+                        RadioOption::new(&self.stroke, index)
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .px_2()
+                            .py_1()
+                            .border_1()
+                            .border_color(palette.border)
+                            .rounded(palette.radius)
+                            .focus_visible(|style| style.border_color(palette.accent))
+                            .when(stroke_state.selected_index() == Some(index), |option| {
+                                option.bg(palette.highlight)
+                            })
+                            .when(item.is_disabled(), |option| option.opacity(0.45))
+                            .child(item.label().clone())
+                    }),
+            );
         let popup = DialogPopup::new()
             .w(palette.dialog_width)
             .p(palette.padding)
@@ -233,7 +349,7 @@ impl Render for Demo {
             .child(
                 DialogDescription::new()
                     .text_color(palette.muted)
-                    .child("Name this session and choose its drawing tool."),
+                    .child("Choose the session's drawing and toolbar settings."),
             )
             .child(
                 div()
@@ -250,6 +366,16 @@ impl Render for Demo {
                     .gap_1()
                     .child("Drawing tool")
                     .child(tool),
+            )
+            .child(show_cursor)
+            .child(keep_toolbar)
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child("Stroke width")
+                    .child(stroke),
             )
             .child(
                 div()
@@ -282,9 +408,23 @@ impl Render for Demo {
                         Appearance::Settings => "Workspace settings",
                     }))
                     .child(div().text_color(palette.muted).child(format!(
-                        "{} · {}",
+                        "{} · {} · {} stroke",
                         self.input.read(cx).value(),
-                        selected_label
+                        selected_label,
+                        stroke_label
+                    )))
+                    .child(div().text_color(palette.muted).child(format!(
+                        "Cursor {} · Toolbar {}",
+                        if self.show_cursor {
+                            "visible"
+                        } else {
+                            "hidden"
+                        },
+                        if self.keep_toolbar {
+                            "pinned"
+                        } else {
+                            "automatic"
+                        }
                     )))
                     .child(Self::button(
                         palette,
@@ -299,13 +439,13 @@ impl Render for Demo {
                     .child(
                         div()
                             .text_color(palette.muted)
-                            .child("Keyboard: Tab, arrows, Enter and Escape"),
+                            .child("Keyboard: Tab, arrows, Space, Enter and Escape"),
                     ),
             )
             .child(
                 Dialog::new(&self.dialog)
                     .accessibility_label("Session settings")
-                    .accessibility_description("Name this session and choose its drawing tool.")
+                    .accessibility_description("Choose the session's drawing and toolbar settings.")
                     .backdrop(
                         DialogBackdrop::new()
                             .absolute()
@@ -341,7 +481,7 @@ fn main() {
         .detach();
         cx.open_window(
             WindowOptions {
-                window_bounds: Some(WindowBounds::centered(size(px(720.), px(600.)), cx)),
+                window_bounds: Some(WindowBounds::centered(size(px(760.), px(780.)), cx)),
                 ..WindowOptions::default()
             },
             move |window, cx| {

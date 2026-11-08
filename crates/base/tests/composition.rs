@@ -13,7 +13,7 @@ use gpui::{
     AppContext as _, Entity, EntityInputHandler as _, Focusable as _, KeyDownEvent, KeyUpEvent,
     Keystroke, Modifiers, Role, TestAppContext, VisualTestContext,
 };
-use gpui_design::{Root, SelectEvent, test_support};
+use gpui_design::{RadioGroupEvent, Root, SelectEvent, test_support};
 use two_styles::{Appearance, Demo};
 
 fn harness(
@@ -43,10 +43,10 @@ fn draw(cx: &mut VisualTestContext) {
     cx.update(|window, cx| window.draw(cx).clear(cx));
 }
 
-fn open_dialog(cx: &mut VisualTestContext, demo: &Entity<Demo>) {
-    // GPUI's native button activates on key-up; simulate_keystrokes sends only down.
+fn activate_key(cx: &mut VisualTestContext, key: &str) {
+    // GPUI's native controls activate on key-up; simulate_keystrokes sends only down.
     let keystroke =
-        cx.update(|_, cx| Keystroke::parse_with_os("enter", cx.platform_info().os).unwrap());
+        cx.update(|_, cx| Keystroke::parse_with_os(key, cx.platform_info().os).unwrap());
     cx.simulate_event(KeyDownEvent {
         keystroke: keystroke.clone(),
         is_held: false,
@@ -54,6 +54,10 @@ fn open_dialog(cx: &mut VisualTestContext, demo: &Entity<Demo>) {
     });
     cx.simulate_event(KeyUpEvent { keystroke });
     draw(cx);
+}
+
+fn open_dialog(cx: &mut VisualTestContext, demo: &Entity<Demo>) {
+    activate_key(cx, "enter");
     cx.update(|window, cx| {
         let demo = demo.read(cx);
         assert!(demo.dialog.read(cx).is_open());
@@ -64,12 +68,20 @@ fn open_dialog(cx: &mut VisualTestContext, demo: &Entity<Demo>) {
 fn exercise_keyboard_flow(cx: &mut TestAppContext, appearance: Appearance) {
     let (cx, demo) = harness(cx, appearance);
     let changes = Rc::new(RefCell::new(Vec::new()));
+    let stroke_changes = Rc::new(RefCell::new(Vec::new()));
     cx.update(|_, cx| {
         let changes = changes.clone();
         let select = demo.read(cx).select.clone();
         cx.subscribe(&select, move |_, event: &SelectEvent, _| {
             let SelectEvent::Change(value) = event;
             changes.borrow_mut().push(value.clone());
+        })
+        .detach();
+        let stroke = demo.read(cx).stroke.clone();
+        let stroke_changes = stroke_changes.clone();
+        cx.subscribe(&stroke, move |_, event: &RadioGroupEvent, _| {
+            let RadioGroupEvent::Change(value) = event;
+            stroke_changes.borrow_mut().push(value.clone());
         })
         .detach();
     });
@@ -157,6 +169,97 @@ fn exercise_keyboard_flow(cx: &mut TestAppContext, appearance: Appearance) {
         );
         assert!(demo.select.read(cx).focus_handle().is_focused(window));
     });
+
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    cx.update(|window, _| {
+        let checkbox = test_support::find(window, &[], &"show-cursor".into()).unwrap();
+        assert_eq!(checkbox.role(), Some(Role::CheckBox));
+        assert_eq!(checkbox.label(), Some("Show cursor"));
+        assert_eq!(checkbox.checked(), Some(true));
+        assert_eq!(checkbox.focused(), Some(true));
+    });
+    activate_key(cx, "space");
+    cx.update(|window, cx| {
+        assert!(!demo.read(cx).show_cursor);
+        assert_eq!(
+            test_support::find(window, &[], &"show-cursor".into())
+                .unwrap()
+                .checked(),
+            Some(false)
+        );
+    });
+
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    cx.update(|window, _| {
+        let switch = test_support::find(window, &[], &"keep-toolbar".into()).unwrap();
+        assert_eq!(switch.role(), Some(Role::Switch));
+        assert_eq!(switch.label(), Some("Keep toolbar visible"));
+        assert_eq!(switch.checked(), Some(false));
+        assert_eq!(switch.focused(), Some(true));
+    });
+    activate_key(cx, "space");
+    cx.update(|window, cx| {
+        assert!(demo.read(cx).keep_toolbar);
+        assert_eq!(
+            test_support::find(window, &[], &"keep-toolbar".into())
+                .unwrap()
+                .checked(),
+            Some(true)
+        );
+    });
+
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    cx.update(|window, cx| {
+        let stroke = demo.read(cx).stroke.read(cx);
+        assert!(stroke.option_focus_handle(0).is_focused(window));
+        let group = test_support::find(window, &[], &"stroke-width".into()).unwrap();
+        assert_eq!(group.role(), Some(Role::RadioGroup));
+        assert_eq!(group.label(), Some("Stroke width"));
+    });
+    cx.simulate_keystrokes("right");
+    draw(cx);
+    cx.update(|window, cx| {
+        let stroke = demo.read(cx).stroke.read(cx);
+        assert_eq!(stroke.selected_index(), Some(2), "skip the disabled width");
+        assert!(stroke.option_focus_handle(2).is_focused(window));
+        assert!(test_support::snapshots(window).iter().any(|item| {
+            item.role() == Some(Role::RadioButton)
+                && item.label() == Some("Bold")
+                && item.checked() == Some(true)
+                && item.focused() == Some(true)
+        }));
+    });
+    activate_key(cx, "space");
+    assert_eq!(
+        stroke_changes.borrow().as_slice(),
+        &[gpui::SharedString::from("bold")],
+        "reselecting the current radio emits no duplicate change"
+    );
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    cx.update(|window, _| {
+        assert!(
+            test_support::snapshots(window)
+                .iter()
+                .any(|item| { item.label() == Some("Done") && item.focused() == Some(true) }),
+            "the radio group has one Tab stop"
+        );
+    });
+    cx.simulate_keystrokes("shift-tab");
+    draw(cx);
+    cx.update(|window, cx| {
+        assert!(
+            demo.read(cx)
+                .stroke
+                .read(cx)
+                .option_focus_handle(2)
+                .is_focused(window),
+            "returning to the group focuses its selected option"
+        );
+    });
     cx.simulate_keystrokes("escape");
     draw(cx);
     cx.update(|window, cx| {
@@ -165,13 +268,16 @@ fn exercise_keyboard_flow(cx: &mut TestAppContext, appearance: Appearance) {
     });
     assert_eq!(changes.borrow().len(), 1);
 
-    // Reopening retains both values and renews the initial focus contract.
+    // Reopening retains all consumer state and renews the initial focus contract.
     open_dialog(cx, &demo);
     cx.update(|_, cx| {
         let demo = demo.read(cx);
         assert_eq!(demo.input.read(cx).value(), "미니캐스트");
         assert_eq!(demo.select.read(cx).selected_index(), Some(2));
         assert!(!demo.select.read(cx).is_open());
+        assert!(!demo.show_cursor);
+        assert!(demo.keep_toolbar);
+        assert_eq!(demo.stroke.read(cx).selected_index(), Some(2));
     });
 }
 
@@ -203,9 +309,9 @@ fn select_dismissal_preserves_tab_pointer_and_dialog_focus(cx: &mut TestAppConte
                 .contains_focused(window, cx)
         );
         assert!(
-            test_support::snapshots(window)
-                .iter()
-                .any(|item| { item.label() == Some("Done") && item.focused() == Some(true) }),
+            test_support::snapshots(window).iter().any(|item| {
+                item.label() == Some("Show cursor") && item.focused() == Some(true)
+            }),
             "Tab from the popup advances after its trigger"
         );
     });
@@ -371,9 +477,9 @@ fn disabled_select_and_composition_commit_do_not_leak_actions(cx: &mut TestAppCo
         assert!(!demo.select.read(cx).is_open());
         assert!(!demo.select.read(cx).focus_handle().is_focused(window));
         assert!(
-            test_support::snapshots(window)
-                .iter()
-                .any(|item| { item.label() == Some("Done") && item.focused() == Some(true) })
+            test_support::snapshots(window).iter().any(|item| {
+                item.label() == Some("Show cursor") && item.focused() == Some(true)
+            })
         );
         assert_eq!(
             test_support::find(window, &[], &"drawing-tool".into())
