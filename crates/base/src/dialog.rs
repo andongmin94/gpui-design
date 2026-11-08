@@ -132,6 +132,7 @@ pub struct Dialog {
     style: StyleRefinement,
     label: Option<SharedString>,
     description: Option<SharedString>,
+    role: Role,
     keyboard: bool,
     overlay_closable: bool,
     backdrop: Option<AnyElement>,
@@ -145,6 +146,7 @@ impl Dialog {
             style: StyleRefinement::default(),
             label: None,
             description: None,
+            role: Role::Dialog,
             keyboard: true,
             overlay_closable: true,
             backdrop: None,
@@ -159,6 +161,12 @@ impl Dialog {
 
     pub fn accessibility_description(mut self, description: impl Into<SharedString>) -> Self {
         self.description = Some(description.into());
+        self
+    }
+
+    // Composed modal controls reuse this host's retained focus and dismissal.
+    pub(crate) fn role(mut self, role: Role) -> Self {
+        self.role = role;
         self
     }
 
@@ -214,7 +222,7 @@ impl RenderOnce for Dialog {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .role(Role::Dialog)
+                    .role(self.role)
                     .when_some(self.label, |this, label| this.aria_label(label))
                     .when_some(self.description, |this, description| {
                         this.aria_description(description)

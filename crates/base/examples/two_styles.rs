@@ -8,13 +8,14 @@ use gpui::{
     relative, rems, rgb,
 };
 use gpui_design::{
-    Accordion, AccordionHeader, AccordionItem, AccordionPanel, AccordionState, Button, Checkbox,
-    CheckboxState, Dialog, DialogBackdrop, DialogClose, DialogDescription, DialogPopup,
-    DialogState, DialogTitle, DropdownMenu, DropdownMenuEvent, DropdownMenuItem,
-    DropdownMenuOption, DropdownMenuState, Input, InputBase, Popover, PopoverState, Progress,
-    RadioGroup, RadioGroupState, RadioItem, RadioOption, Select, SelectItem, SelectOption,
-    SelectState, Slider, SliderState, Switch, Tab, TabItem, TabList, TabPanel, TabsState, Toggle,
-    ToggleGroup, ToggleGroupState, ToggleItem, ToggleOption,
+    Accordion, AccordionHeader, AccordionItem, AccordionPanel, AccordionState, AlertDialog, Button,
+    Checkbox, CheckboxState, Collapsible, CollapsibleContent, CollapsibleState, CollapsibleTrigger,
+    Dialog, DialogBackdrop, DialogClose, DialogDescription, DialogPopup, DialogState, DialogTitle,
+    DropdownMenu, DropdownMenuEvent, DropdownMenuItem, DropdownMenuOption, DropdownMenuState,
+    Input, InputBase, Popover, PopoverState, Progress, RadioGroup, RadioGroupState, RadioItem,
+    RadioOption, Select, SelectItem, SelectOption, SelectState, Slider, SliderState, Switch, Tab,
+    TabItem, TabList, TabPanel, TabsState, Toggle, ToggleGroup, ToggleGroupState, ToggleItem,
+    ToggleOption,
     input::{InputAccessibility, InputEditorStyle, InputState},
 };
 
@@ -96,6 +97,9 @@ pub(crate) struct Demo {
     pub(crate) actions: Entity<DropdownMenuState>,
     pub(crate) accordion: Entity<AccordionState>,
     pub(crate) preview: Entity<SliderState>,
+    pub(crate) preview_options: Entity<CollapsibleState>,
+    pub(crate) reset_dialog: Entity<DialogState>,
+    pub(crate) reset_cancel_focus: FocusHandle,
     pub(crate) formatting: Entity<ToggleGroupState>,
     pub(crate) preview_indeterminate: bool,
     pub(crate) show_cursor: bool,
@@ -168,6 +172,7 @@ impl Demo {
                     DropdownMenuItem::new("share", "Share (unavailable)").disabled(true),
                     DropdownMenuItem::new("cursor", "Toggle cursor"),
                     DropdownMenuItem::new("toolbar", "Toggle toolbar pin"),
+                    DropdownMenuItem::new("reset", "Reset preview"),
                 ],
                 cx,
             )
@@ -184,6 +189,10 @@ impl Demo {
             .default_open("keyboard")
         });
         let preview = cx.new(|cx| SliderState::new(0.0..=100.0, 5.0, cx).default_value(40.0));
+        let preview_options = cx.new(CollapsibleState::new);
+        let reset_cancel_focus = cx.focus_handle();
+        let reset_dialog =
+            cx.new(|cx| DialogState::new(cx).with_initial_focus(&reset_cancel_focus));
         let formatting = cx.new(|cx| {
             ToggleGroupState::new(
                 [
@@ -205,6 +214,8 @@ impl Demo {
             cx.observe(&actions, |_, _, cx| cx.notify()),
             cx.observe(&accordion, |_, _, cx| cx.notify()),
             cx.observe(&preview, |_, _, cx| cx.notify()),
+            cx.observe(&preview_options, |_, _, cx| cx.notify()),
+            cx.observe(&reset_dialog, |_, _, cx| cx.notify()),
             cx.observe(&formatting, |_, _, cx| cx.notify()),
             cx.observe(&dialog, |_, _, cx| cx.notify()),
             cx.subscribe_in(&actions, window, |this, _, event, window, cx| {
@@ -213,6 +224,9 @@ impl Demo {
                     "edit" => this.dialog.update(cx, |state, cx| state.open(window, cx)),
                     "cursor" => this.show_cursor = !this.show_cursor,
                     "toolbar" => this.keep_toolbar = !this.keep_toolbar,
+                    "reset" => this
+                        .reset_dialog
+                        .update(cx, |state, cx| state.open(window, cx)),
                     _ => return,
                 }
                 cx.notify();
@@ -229,6 +243,9 @@ impl Demo {
             actions,
             accordion,
             preview,
+            preview_options,
+            reset_dialog,
+            reset_cancel_focus,
             formatting,
             preview_indeterminate: false,
             show_cursor: true,
@@ -761,6 +778,88 @@ impl Render for Demo {
                     })),
             );
 
+        let preview_options = Collapsible::new("preview-options", &self.preview_options)
+            .flex()
+            .flex_col()
+            .gap_3()
+            .child(
+                CollapsibleTrigger::new(&self.preview_options)
+                    .accessibility_label("Preview options")
+                    .w_full()
+                    .h(palette.control_height)
+                    .px_3()
+                    .justify_between()
+                    .border_1()
+                    .border_color(palette.border)
+                    .rounded(palette.radius)
+                    .focus_visible(|style| style.border_color(palette.accent))
+                    .child("Preview options")
+                    .child(if self.preview_options.read(cx).is_open() {
+                        "−"
+                    } else {
+                        "+"
+                    }),
+            )
+            .child(
+                CollapsibleContent::new(&self.preview_options)
+                    .accessibility_label("Preview options")
+                    .flex()
+                    .flex_col()
+                    .gap_3()
+                    .child(progress_preview)
+                    .child(emphasis),
+            );
+        let owner = cx.entity();
+        let reset_popup = DialogPopup::new()
+            .w(palette.dialog_width)
+            .p(palette.padding)
+            .flex()
+            .flex_col()
+            .gap(palette.gap)
+            .bg(palette.surface)
+            .text_color(palette.foreground)
+            .border_1()
+            .border_color(palette.border)
+            .rounded(palette.radius)
+            .child(DialogTitle::new().text_lg().child("Reset preview?"))
+            .child(
+                DialogDescription::new()
+                    .text_color(palette.muted)
+                    .child("Set progress back to 40% and show its known value."),
+            )
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap_2()
+                    .child(DialogClose::new(&self.reset_dialog).trigger(|button| {
+                        Self::button(
+                            palette,
+                            button
+                                .track_focus(&self.reset_cancel_focus)
+                                .accessibility_label("Cancel reset")
+                                .child("Cancel"),
+                        )
+                    }))
+                    .child(Self::button(
+                        palette,
+                        Button::new("confirm-preview-reset")
+                            .accessibility_label("Reset preview")
+                            .on_click(move |_, window, cx| {
+                                owner.update(cx, |this, cx| {
+                                    this.preview.update(cx, |state, cx| {
+                                        state.set_value(40.0, window, cx);
+                                    });
+                                    this.preview_indeterminate = false;
+                                    this.reset_dialog
+                                        .update(cx, |state, cx| state.close(window, cx));
+                                    cx.notify();
+                                });
+                            })
+                            .child("Reset preview"),
+                    )),
+            );
+
         div()
             .size_full()
             .flex()
@@ -820,8 +919,7 @@ impl Render for Demo {
                             .child("Edit session"),
                     ))
                     .child(actions)
-                    .child(progress_preview)
-                    .child(emphasis)
+                    .child(preview_options)
                     .child(
                         div()
                             .text_color(palette.muted)
@@ -840,6 +938,19 @@ impl Render for Demo {
                             .opacity(0.45),
                     )
                     .popup(popup),
+            )
+            .child(
+                AlertDialog::new(&self.reset_dialog)
+                    .accessibility_label("Reset preview?")
+                    .accessibility_description("Set progress back to 40% and show its known value.")
+                    .backdrop(
+                        DialogBackdrop::new()
+                            .absolute()
+                            .inset_0()
+                            .bg(gpui::black())
+                            .opacity(0.45),
+                    )
+                    .popup(reset_popup),
             )
     }
 }

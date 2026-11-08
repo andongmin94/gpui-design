@@ -2,8 +2,9 @@
 
 The [two-style example](../crates/base/examples/two_styles.rs) combines the same
 settings behavior with compact dark and spacious light presentation. Its
-Session actions menu can open Dialog or toggle application values. Preferences
-and Help tabs demonstrate active panels; Help contains an Accordion, and its
+Session actions menu can open Dialog, toggle application values, or request a
+preview reset through AlertDialog. A Collapsible holds the preview controls.
+Preferences and Help tabs demonstrate active panels; Help contains an Accordion, and its
 keyboard section opens a guide in a non-modal Popover. All styles live in the
 example.
 
@@ -111,6 +112,39 @@ The library emits heading level, button role, expanded/disabled states, and a na
 Region. Explicit native button-to-panel controls/labelled-by relationships are not
 emitted: the pinned GPUI API does not expose the required sibling-node IDs.
 
+## Collapsible
+
+Create `CollapsibleState::new(cx)` once for a single disclosure. It starts closed;
+`.default_open(true)` opens it initially without emitting an event. Observe the
+state for rendering, and keep child entities in the application view so their
+values survive the content being removed and mounted again.
+
+Render `Collapsible::new(id, &state)` around one
+`CollapsibleTrigger::new(&state)` and one `CollapsibleContent::new(&state)`.
+Keep the root and trigger mounted while closed. Supply an `accessibility_label`
+on both the trigger and content, and application-owned styling and children.
+The trigger composes Button and exposes expanded/disabled state. The open
+content is a named Region; closed content has no layout, focus stops, or
+accessibility nodes. Explicit native trigger-to-content relationships are not
+emitted by the pinned GPUI API.
+
+Click, Enter, and Space toggle the disclosure. Opening leaves focus on the
+trigger, and normal Tab traversal enters its children. The component introduces
+no heading or arrow/Home/End key handling. Use content `.tab_stop(true)` when
+static content should itself receive focus.
+
+State methods include `is_open`, `is_disabled`, `trigger_focus_handle`,
+`content_focus_handle`, `set_open(open, window, cx)`, `toggle(window, cx)`, and
+`set_disabled(disabled, window, cx)`. `CollapsibleEvent::Change(bool)` reports an
+actual change; repeated requests emit no event. Disabling prevents user toggling
+but preserves the current visibility and does not disable the content.
+Programmatic `set_open` remains available while disabled.
+
+Closing content that owns focus moves focus to its still-mounted trigger. If
+that trigger is disabled, the existing non-Tab root scope receives focus so Tab
+can leave. Focus outside the disclosure is preserved. As with Accordion, removing
+the whole host requires the application to focus a surviving control first.
+
 ## Popover
 
 `PopoverState` owns the open state, trigger focus, popup focus scope, and disabled
@@ -216,12 +250,37 @@ native has-popup property or a trigger-to-menu controls relationship. These
 contracts describe the implemented behavior, not a claim of full accessibility
 pattern conformance or completed screen-reader validation.
 
+## AlertDialog
+
+`AlertDialog::new(&dialog_state)` composes the existing Dialog host for a short
+decision. Use the same retained `DialogState`, `DialogBackdrop`, `DialogPopup`,
+`DialogTitle`, `DialogDescription`, and `DialogClose` parts; there is no separate
+alert state or duplicated modal lifecycle. Keep the host mounted while closed.
+
+Give the host an `accessibility_label` and `accessibility_description`, and
+provide its backdrop and popup. The wrapper fixes the native role to AlertDialog
+and prevents backdrop presses from dismissing it. Escape still cancels through
+Dialog's existing close path. Tab containment and return focus also belong to
+Dialog and Root.
+
+Create a stable focus handle for the cancellation button and pass it to
+`DialogState::new(cx).with_initial_focus(&cancel_focus)`. Apply that same handle
+to the Button supplied by `DialogClose::trigger`. The confirmation is an ordinary
+Button whose application callback performs the action and closes the state.
+Closing the dialog by itself never implies confirmation; do not attach the
+confirmation action to a generic `DialogEvent::Closed` notification.
+
+The example's Reset preview menu command opens this host. Cancel initially owns
+focus and preserves the current preview. Only the explicit Reset preview button
+restores 40% known progress, then returns focus to the menu trigger.
+
 ## Validation
 
 The existing GPUI test framework checks selected and disabled metadata, orientation,
 focus traversal, inactive panels, popup dismissal, command dispatch, and the
 representative composed flows across both appearances. Composition tests cover a command
-opening Dialog, header navigation without expansion, and collapse of a panel with
-an open Popover. The full suite runs once on Linux; composition checks and native
+opening Dialog, header navigation without expansion, collapse of a panel with
+an open Popover, disclosure mounting, and explicit preview reset confirmation.
+The full suite runs once on Linux; composition checks and native
 example builds also run on Windows and macOS. They do not replace
 native IME, screen reader, DPI, and visual checks on a desktop.

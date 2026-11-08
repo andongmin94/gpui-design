@@ -9,10 +9,12 @@
 mod a11y_disabled;
 mod accordion;
 pub mod actions;
+mod alert_dialog;
 mod animation;
 mod auto_scroll;
 mod button;
 mod checkbox;
+mod collapsible;
 mod component_traits;
 mod dialog;
 mod dropdown_menu;
@@ -50,9 +52,13 @@ mod touch_selection;
 pub use accordion::{
     Accordion, AccordionEvent, AccordionHeader, AccordionItem, AccordionPanel, AccordionState,
 };
+pub use alert_dialog::AlertDialog;
 pub(crate) use auto_scroll::AutoScroll;
 pub use button::{Button, ButtonStyles};
 pub use checkbox::{Checkbox, CheckboxState, CheckboxStyles};
+pub use collapsible::{
+    Collapsible, CollapsibleContent, CollapsibleEvent, CollapsibleState, CollapsibleTrigger,
+};
 pub use component_traits::Selectable;
 pub use dialog::{
     Dialog, DialogBackdrop, DialogChangeReason, DialogClose, DialogDescription, DialogEvent,

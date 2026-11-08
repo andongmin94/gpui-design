@@ -671,7 +671,7 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
         assert!(demo.actions.read(cx).focus_handle().is_focused(window));
     });
 
-    cx.simulate_keystrokes("up");
+    cx.simulate_keystrokes("up up");
     draw(cx);
     cx.update(|_, cx| {
         assert_eq!(demo.read(cx).actions.read(cx).highlighted_index(), Some(3));
@@ -806,6 +806,17 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
     });
     assert_eq!(commands.borrow().len(), 4);
 
+    // The preview controls mount only after their disclosure is opened.
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    cx.update(|window, cx| {
+        let options = demo.read(cx).preview_options.read(cx);
+        assert!(!options.is_open());
+        assert!(options.trigger_focus_handle().is_focused(window));
+        assert!(test_support::find(window, &[], &"preview-progress".into()).is_none());
+    });
+    activate_key(cx, "space");
+
     // The same retained Slider value drives the application's progress preview.
     cx.simulate_keystrokes("tab right");
     draw(cx);
@@ -872,6 +883,69 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
         assert!(
             demo.read(cx).trigger_focus.is_focused(window),
             "ToggleGroup has one Tab stop"
+        );
+    });
+
+    // Reset is an explicit confirmation, with cancellation as the initial focus.
+    cx.simulate_keystrokes("tab down r");
+    draw(cx);
+    activate_key(cx, "enter");
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        assert!(demo.reset_dialog.read(cx).is_open());
+        assert!(demo.reset_cancel_focus.is_focused(window));
+        assert_eq!(demo.preview.read(cx).value(), 100.0);
+        assert!(demo.preview_indeterminate);
+        assert!(test_support::snapshots(window).iter().any(|item| {
+            item.role() == Some(Role::AlertDialog) && item.label() == Some("Reset preview?")
+        }));
+    });
+    cx.simulate_click(
+        gpui::point(gpui::px(2.), gpui::px(2.)),
+        Modifiers::default(),
+    );
+    draw(cx);
+    cx.update(|window, cx| {
+        assert!(demo.read(cx).reset_dialog.read(cx).is_open());
+        assert!(demo.read(cx).reset_cancel_focus.is_focused(window));
+    });
+    activate_key(cx, "space");
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        assert!(!demo.reset_dialog.read(cx).is_open());
+        assert_eq!(demo.preview.read(cx).value(), 100.0);
+        assert!(demo.preview_indeterminate);
+        assert!(demo.actions.read(cx).focus_handle().is_focused(window));
+    });
+    cx.simulate_keystrokes("down r");
+    draw(cx);
+    activate_key(cx, "enter");
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    activate_key(cx, "enter");
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        assert!(!demo.reset_dialog.read(cx).is_open());
+        assert_eq!(demo.preview.read(cx).value(), 40.0);
+        assert!(!demo.preview_indeterminate);
+        assert!(demo.actions.read(cx).focus_handle().is_focused(window));
+    });
+
+    // Closing the disclosure removes its Tab stops without losing application data.
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    activate_key(cx, "enter");
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        assert!(!demo.preview_options.read(cx).is_open());
+        assert!(test_support::find(window, &[], &"preview-progress".into()).is_none());
+        assert!(demo.trigger_focus.is_focused(window));
+        assert_eq!(demo.preview.read(cx).value(), 40.0);
+        assert_eq!(
+            demo.formatting.read(cx).selected_values(),
+            ["bold", "italic"].map(gpui::SharedString::from),
         );
     });
 }

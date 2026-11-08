@@ -8,7 +8,7 @@ Headless separates control behavior from application-owned presentation; the
 examples render native GPUI windows.
 
 This is an early foundation for an independent component ecosystem. It currently
-includes fifteen controls and an executable example that gives the same behavior
+includes seventeen controls and an executable example that gives the same behavior
 two visual treatments. The source is maintained in this repository, with GPUI
 kept as an exactly pinned rendering dependency.
 
@@ -28,9 +28,11 @@ kept as an exactly pinned rendering dependency.
 | **Progress** | Controlled percentage or indeterminate progress, accessible name and numeric range | Track, fill, label, and any animation |
 | **Tabs** | Active panel, one tab-list stop, automatic activation, orientation-aware keys, and disabled tabs | Tab-list layout, tab styling, and panel contents |
 | **Accordion** | One collapsible section, header navigation, disabled items, and focused-panel closure | Header, indicator, panel contents, and layout |
+| **Collapsible** | One disclosure, active-only content, disabled trigger, and focus on content closure | Trigger content, indicator, region contents, and layout |
 | **Popover** | Non-modal open/close state, anchored placement, focus, outside dismissal, and Escape | Trigger, popup contents, and surface styling |
 | **DropdownMenu** | Command activation, enabled-item navigation, single-character search, dismissal, and focus | Trigger, menu surface, and command rendering |
 | **Dialog** | Open/close state, modal focus, initial focus, dismissal, and focus restoration | Backdrop, popup, title, description, and close control |
+| **AlertDialog** | Dialog's modal lifecycle with alert semantics and blocked backdrop dismissal | Decision text, cancellation control, and explicit application confirmation |
 
 Shared support includes the window root, popup positioning, input infrastructure,
 and opt-in test observations. Internal editing machinery retained for Input is
@@ -53,6 +55,9 @@ A slider on the summary card drives a progress preview, using the same retained
 value for its label, thumb position, and progress fill.
 Toggle switches the progress preview to an unknown amount, and ToggleGroup applies
 independent bold/italic emphasis to the summary text.
+These controls live inside a Collapsible that starts closed and preserves their
+retained values. The menu's Reset preview action opens an AlertDialog with Cancel
+initially focused; only confirmation restores known progress at 40%.
 
 ## Layers and source ownership
 
@@ -74,8 +79,9 @@ publishes version-aligned snapshots of Zed's GPUI. The pinned 0.3.11 package
 records Zed revision `f816e1f9263e3a8ef63c4baaa02e1441ce1c6038`.
 
 The controls listed above belong to the behavior layer. Compound controls reuse
-that layer: Toggle composes Button, ToggleGroup composes Toggle, and DropdownMenu
-composes Popover. Appearance belongs in the application. A separately distributed
+that layer: Toggle and Collapsible triggers compose Button, ToggleGroup composes
+Toggle, DropdownMenu composes Popover, and AlertDialog composes Dialog.
+Appearance belongs in the application. A separately distributed
 styled component catalog, installation CLI, and registry have not been added.
 
 See the [form control guide](docs/form-controls.md) for state ownership, keyboard
@@ -85,8 +91,8 @@ RadioGroup retains selection and option focus in an entity, accepts fixed ordere
 options with unique values, and changes selection immediately on arrow navigation.
 
 The [navigation and overlay guide](docs/navigation-overlays.md) covers Tabs,
-Accordion, Popover, and DropdownMenu. Inactive panels do not contribute layout,
-focus, or accessibility nodes. Popover reuses the existing popup positioning
+Accordion, Collapsible, Popover, DropdownMenu, and AlertDialog. Inactive panels do
+not contribute layout, focus, or accessibility nodes. Popover reuses the existing popup positioning
 primitive and lets keyboard focus leave its contents within the enclosing window
 or dialog. DropdownMenu builds on that lifecycle and closes before dispatching a
 command, so a command can open another surface without losing its new focus.
@@ -194,6 +200,9 @@ retained focus and keyboard adjustment. Progress retains the controlled numeric
 semantics while the application supplies its track and fill.
 Toggle delegates activation to Button, and ToggleGroup adds retained multiple
 selection and roving focus to Toggle options.
+Collapsible adds retained visibility and content-closure focus to the upstream
+disclosure contract, reusing Button for its trigger. AlertDialog adapts the
+upstream Dialog specialization to the existing retained DialogState and parts.
 
 Software source is licensed under [Apache-2.0](LICENSE-APACHE). The original
 Longbridge copyright and license notices are retained. Dependencies keep their
