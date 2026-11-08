@@ -8,7 +8,7 @@ Headless separates control behavior from application-owned presentation; the
 examples render native GPUI windows.
 
 This is an early foundation for an independent component ecosystem. It currently
-includes thirteen controls and an executable example that gives the same behavior
+includes fifteen controls and an executable example that gives the same behavior
 two visual treatments. The source is maintained in this repository, with GPUI
 kept as an exactly pinned rendering dependency.
 
@@ -17,6 +17,8 @@ kept as an exactly pinned rendering dependency.
 | Control | Behavior supplied by the library | Application-owned presentation |
 | --- | --- | --- |
 | **Button** | Pointer and keyboard activation, disabled state, focus, accessible name and role | Content, spacing, shape, and state styling |
+| **Toggle** | Controlled pressed state over Button's activation, focus, and disabled behavior | Content and pressed-state styling |
+| **ToggleGroup** | Multiple pressed values, one Tab stop, orientation-aware navigation, and disabled items | Group layout and Toggle option styling |
 | **Checkbox** | Controlled unchecked/checked/mixed state, activation, disabled state, and focus | Indicator, label, layout, and state styling |
 | **Switch** | Controlled on/off state, activation, disabled state, and focus | Track, thumb, label, and state styling |
 | **RadioGroup** | Single selection, one Tab stop, arrow navigation, disabled options, and focus | Group layout and option rendering |
@@ -49,6 +51,32 @@ and Help tabs, and retains values when it is closed and reopened. Help uses an
 Accordion whose keyboard section opens a guide in a non-modal Popover.
 A slider on the summary card drives a progress preview, using the same retained
 value for its label, thumb position, and progress fill.
+Toggle switches the progress preview to an unknown amount, and ToggleGroup applies
+independent bold/italic emphasis to the summary text.
+
+## Layers and source ownership
+
+| Layer | Implementation and origin | Responsibility |
+| --- | --- | --- |
+| Rendering and application runtime | Zed's GPUI, consumed through the pinned `gpui-pre` snapshot packages | Windows, layout, drawing, text, events, entities, and focus infrastructure |
+| Headless behavior | This repository's `gpui-design` crate, extracted from Longbridge's `gpui-base` 0.9.0 | Control state, interaction contracts, focus policy, and accessibility semantics |
+| Presentation and composition | Application code, currently demonstrated in `two_styles` | Colors, sizes, icons, component arrangement, and application actions |
+
+`crates/base` is the directory name inherited from GPUI Kit. Its Cargo package is
+now `gpui-design`; the selected source is maintained here. The original
+[`gpui-base` README](https://github.com/longbridge/gpui-kit/blob/7591a35eced761e3613c01e71ff04c10129dae1a/crates/base/README.md)
+already described an unstyled behavior foundation. GPUI Design builds on that
+work with a narrower public surface and independently maintained state and focus
+contracts. Upstream source changes are reviewed and adopted explicitly.
+
+[`gpui-pre`](https://gpui-kit.com/docs/installation/#why-the-dependency-is-named-gpui-pre)
+publishes version-aligned snapshots of Zed's GPUI. The pinned 0.3.11 package
+records Zed revision `f816e1f9263e3a8ef63c4baaa02e1441ce1c6038`.
+
+The controls listed above belong to the behavior layer. Compound controls reuse
+that layer: Toggle composes Button, ToggleGroup composes Toggle, and DropdownMenu
+composes Popover. Appearance belongs in the application. A separately distributed
+styled component catalog, installation CLI, and registry have not been added.
 
 See the [form control guide](docs/form-controls.md) for state ownership, keyboard
 contracts, and application-owned styling. Checkbox and Switch report the next
@@ -164,6 +192,8 @@ Popover with command dispatch and a keyboard/pointer cursor.
 Slider adapts the upstream pointer interaction to a single linear value with
 retained focus and keyboard adjustment. Progress retains the controlled numeric
 semantics while the application supplies its track and fill.
+Toggle delegates activation to Button, and ToggleGroup adds retained multiple
+selection and roving focus to Toggle options.
 
 Software source is licensed under [Apache-2.0](LICENSE-APACHE). The original
 Longbridge copyright and license notices are retained. Dependencies keep their

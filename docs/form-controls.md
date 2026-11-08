@@ -3,7 +3,7 @@
 The [native settings example](../crates/base/examples/two_styles.rs) is a complete
 consumer of the public API. Run it in either appearance using the commands in the
 [README](../README.md#run-the-example). It combines Button, Input, Select,
-Checkbox, Switch, RadioGroup, Slider, and Progress with the navigation and overlay controls,
+Checkbox, Switch, RadioGroup, Slider, Progress, Toggle, and ToggleGroup with the navigation and overlay controls,
 without putting appearance in the library. The [navigation and overlay guide](navigation-overlays.md)
 describes its Preferences/Help tabs and keyboard-help popover.
 
@@ -16,6 +16,8 @@ control a stable element ID and an accessible label.
 | Control | State owner | Updating the application |
 | --- | --- | --- |
 | Checkbox | Application field of type `CheckboxState` or `bool` | `on_change` reports the next state; store it and call `cx.notify()` |
+| Toggle | Application `bool` | `on_change` requests the next pressed value; render it back with `pressed` |
+| ToggleGroup | Retained `Entity<ToggleGroupState>` | Observe for rendering; `ToggleGroupEvent::Change` reports selected values in item order |
 | Switch | Application `bool` | `on_change` reports the next value; store it and call `cx.notify()` |
 | RadioGroup | Retained `Entity<RadioGroupState>` | Observe the entity for rendering; subscribe to `RadioGroupEvent::Change` for user selection changes |
 | Select | Retained `Entity<SelectState>` | Observe the entity for rendering; subscribe to `SelectEvent::Change` for committed user changes |
@@ -151,6 +153,44 @@ Supply the visual track and fill with ordinary GPUI children. The application
 also owns labels and any animation for unknown progress. Progress adds no focus
 handle or Tab stop. The example connects a Slider to Progress to demonstrate a
 controlled fill updating from the application's retained numeric state.
+
+## Toggle and ToggleGroup
+
+`Toggle::new(id).pressed(bool)` is a controlled toggle button. It composes the
+existing Button, reusing native click/Enter/Space activation, disabled behavior,
+and focus. Its added contract is the pressed accessibility state and
+`on_change(next_pressed, event, window, cx)`. The application stores that value,
+notifies its view, and supplies content and pressed-state styling. A stable label
+names the action while the pressed metadata describes its current state.
+
+Toggle accepts `accessibility_label`, `disabled`, `track_focus`, `tab_index`,
+and `tab_stop`, along with normal GPUI styling and children.
+
+For independent options that can be pressed together, create
+`ToggleGroupState::new(items, cx)` from fixed, ordered
+`ToggleItem::new(value, label)` entries with unique values. Mark unavailable items
+with `.disabled(true)` and optionally set `.default_values([values])`. Defaults
+must identify enabled items. Selection starts empty when no defaults are supplied.
+
+Render `ToggleGroup::new(id, &state).accessibility_label(...)` and one
+`ToggleOption::new(&state, index)` for each item. Each option composes Toggle.
+The group supplies a Group role and orientation; application code supplies layout
+separately. Read `items()`, `is_pressed(index)`, and `selected_values()` for the
+current presentation. Observe the entity and subscribe to
+`ToggleGroupEvent::Change(values)` for changes to the selected set; values follow
+the original item order.
+
+The group has one Tab stop, at its last focused enabled option or initially its
+first enabled option. Horizontal Left/Right or vertical Up/Down move between
+enabled options and wrap. Home/End reach the first/last enabled option. The other
+axis propagates. Moving focus never changes the selected set; click, Enter, and
+Space independently toggle the focused option. Tab leaves the group.
+
+`set_disabled(disabled, window, cx)` disables the whole group while preserving
+selection. `option_focus_handle(index)` exposes stable option focus. This version
+supports multiple selection; RadioGroup supplies exclusive choice. The example
+uses Toggle for unknown progress and ToggleGroup for independent bold/italic
+summary-text styling.
 
 ## Verification boundary
 

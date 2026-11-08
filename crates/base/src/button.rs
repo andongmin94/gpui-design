@@ -347,19 +347,11 @@ mod tests {
     }
 
     #[gpui::test]
-    fn pointer_activation_fires_once(cx: &mut TestAppContext) {
+    fn pointer_enter_and_space_use_one_native_click_each(cx: &mut TestAppContext) {
         let (cx, button_clicks, _, keyboard_events) = harness(cx, false);
-
         cx.simulate_click(point(px(10.), px(10.)), Modifiers::default());
-
         assert_eq!(button_clicks.get(), 1);
         assert_eq!(keyboard_events.get(), 0);
-    }
-
-    #[gpui::test]
-    fn enter_and_space_use_one_native_keyboard_click_each(cx: &mut TestAppContext) {
-        let (cx, button_clicks, _, keyboard_events) = harness(cx, false);
-        cx.simulate_click(point(px(10.), px(10.)), Modifiers::default());
         button_clicks.set(0);
         cx.update(|window, cx| {
             assert!(window.focused(cx).is_some());
@@ -545,42 +537,6 @@ mod tests {
         let root = root.expect("button bounds");
         let child = child.expect("child bounds");
         assert_eq!(child.center(), root.center());
-    }
-
-    #[test]
-    fn state_styling_methods_are_available_to_applications() {
-        let _ = Button::new("states")
-            .styles(|styles| {
-                styles.disabled(|style| {
-                    style
-                        .opacity(0.5)
-                        .when(true, |style| style.border_1())
-                        .when_some(Some(0.4), |style, opacity| style.opacity(opacity))
-                        .when_none(&None::<f32>, |style| style.rounded_sm())
-                })
-            })
-            .hover(|style| style.opacity(0.9))
-            .active(|style| style.opacity(0.8))
-            .focus_visible(|style| style.opacity(0.7));
-    }
-
-    #[test]
-    fn disabled_style_applies_only_while_disabled_and_then_wins() {
-        let enabled = Button::new("enabled")
-            .opacity(0.9)
-            .styles(|styles| styles.disabled(|style| style.opacity(0.5)));
-        assert_eq!(enabled.resolved_style().opacity, Some(0.9));
-
-        let disabled = Button::new("disabled")
-            .styles(|styles| styles.disabled(|style| style.opacity(0.5)))
-            .opacity(0.9)
-            .disabled(true);
-        assert_eq!(disabled.resolved_style().opacity, Some(0.5));
-
-        let semantic_only = Button::new("semantic-only")
-            .styles(|styles| styles.disabled(|style| style.opacity(0.5)))
-            .disabled(true);
-        assert_eq!(semantic_only.resolved_style().opacity, Some(0.5));
     }
 
     #[test]

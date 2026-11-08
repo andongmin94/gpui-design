@@ -2,7 +2,7 @@
 //! Run with `compact` (the default) or `settings`.
 
 use gpui::{
-    AppContext as _, Axis, Context, Entity, FocusHandle, Focusable as _, Hsla,
+    AppContext as _, Axis, Context, Entity, FocusHandle, Focusable as _, FontWeight, Hsla,
     InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Rems, Render, Role,
     SharedString, Styled as _, Subscription, Window, div, prelude::FluentBuilder as _, px,
     relative, rems, rgb,
@@ -13,7 +13,8 @@ use gpui_design::{
     DialogState, DialogTitle, DropdownMenu, DropdownMenuEvent, DropdownMenuItem,
     DropdownMenuOption, DropdownMenuState, Input, InputBase, Popover, PopoverState, Progress,
     RadioGroup, RadioGroupState, RadioItem, RadioOption, Select, SelectItem, SelectOption,
-    SelectState, Slider, SliderState, Switch, Tab, TabItem, TabList, TabPanel, TabsState,
+    SelectState, Slider, SliderState, Switch, Tab, TabItem, TabList, TabPanel, TabsState, Toggle,
+    ToggleGroup, ToggleGroupState, ToggleItem, ToggleOption,
     input::{InputAccessibility, InputEditorStyle, InputState},
 };
 
@@ -95,6 +96,8 @@ pub(crate) struct Demo {
     pub(crate) actions: Entity<DropdownMenuState>,
     pub(crate) accordion: Entity<AccordionState>,
     pub(crate) preview: Entity<SliderState>,
+    pub(crate) formatting: Entity<ToggleGroupState>,
+    pub(crate) preview_indeterminate: bool,
     pub(crate) show_cursor: bool,
     pub(crate) keep_toolbar: bool,
     pub(crate) trigger_focus: FocusHandle,
@@ -181,6 +184,17 @@ impl Demo {
             .default_open("keyboard")
         });
         let preview = cx.new(|cx| SliderState::new(0.0..=100.0, 5.0, cx).default_value(40.0));
+        let formatting = cx.new(|cx| {
+            ToggleGroupState::new(
+                [
+                    ToggleItem::new("bold", "Bold"),
+                    ToggleItem::new("underline", "Underline (unavailable)").disabled(true),
+                    ToggleItem::new("italic", "Italic"),
+                ],
+                cx,
+            )
+            .default_values(["bold"])
+        });
         // The form summary and its presentation read these retained states.
         let subscriptions = vec![
             cx.observe(&input, |_, _, cx| cx.notify()),
@@ -191,6 +205,7 @@ impl Demo {
             cx.observe(&actions, |_, _, cx| cx.notify()),
             cx.observe(&accordion, |_, _, cx| cx.notify()),
             cx.observe(&preview, |_, _, cx| cx.notify()),
+            cx.observe(&formatting, |_, _, cx| cx.notify()),
             cx.observe(&dialog, |_, _, cx| cx.notify()),
             cx.subscribe_in(&actions, window, |this, _, event, window, cx| {
                 let DropdownMenuEvent::Action(value) = event;
@@ -214,6 +229,8 @@ impl Demo {
             actions,
             accordion,
             preview,
+            formatting,
+            preview_indeterminate: false,
             show_cursor: true,
             keep_toolbar: false,
             trigger_focus: cx.focus_handle().tab_stop(true),
@@ -616,13 +633,39 @@ impl Render for Demo {
                     ),
             );
 
+        let owner = cx.entity();
+        let unknown_progress = Toggle::new("unknown-progress")
+            .pressed(self.preview_indeterminate)
+            .accessibility_label("Unknown progress")
+            .h(palette.control_height)
+            .px_3()
+            .border_1()
+            .border_color(palette.border)
+            .rounded(palette.radius)
+            .focus_visible(|style| style.border_color(palette.accent))
+            .when(self.preview_indeterminate, |toggle| {
+                toggle
+                    .bg(palette.accent)
+                    .text_color(palette.accent_foreground)
+            })
+            .on_change(move |pressed, _, _, cx| {
+                owner.update(cx, |this, cx| {
+                    this.preview_indeterminate = pressed;
+                    cx.notify();
+                });
+            })
+            .child("Unknown progress");
         let preview = self.preview.read(cx);
         let progress_preview = div()
             .flex()
             .flex_col()
             .gap_2()
             .px_2()
-            .child(format!("Progress preview · {:.0}%", preview.value()))
+            .child(if self.preview_indeterminate {
+                "Progress preview · Unknown".to_string()
+            } else {
+                format!("Progress preview · {:.0}%", preview.value())
+            })
             .child(
                 Slider::new("preview-percentage", &self.preview)
                     .accessibility_label("Preview percentage")
@@ -668,6 +711,7 @@ impl Render for Demo {
                 Progress::new("preview-progress")
                     .accessibility_label("Preview progress")
                     .value(preview.value())
+                    .indeterminate(self.preview_indeterminate)
                     .h_2()
                     .rounded_full()
                     .overflow_hidden()
@@ -676,10 +720,45 @@ impl Render for Demo {
                         div()
                             .debug_selector(|| "preview-progress-fill".into())
                             .h_full()
-                            .w(relative(preview.percentage()))
+                            .w(relative(if self.preview_indeterminate {
+                                1. / 3.
+                            } else {
+                                preview.percentage()
+                            }))
                             .rounded_full()
+                            .when(self.preview_indeterminate, |fill| fill.opacity(0.5))
                             .bg(palette.accent),
                     ),
+            )
+            .child(unknown_progress);
+        let formatting = self.formatting.read(cx);
+        let emphasis = div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child("Summary text emphasis")
+            .child(
+                ToggleGroup::new("text-emphasis", &self.formatting)
+                    .accessibility_label("Summary text emphasis")
+                    .flex()
+                    .flex_wrap()
+                    .gap_2()
+                    .children(formatting.items().iter().enumerate().map(|(index, item)| {
+                        ToggleOption::new(&self.formatting, index)
+                            .h(palette.control_height)
+                            .px_2()
+                            .border_1()
+                            .border_color(palette.border)
+                            .rounded(palette.radius)
+                            .focus_visible(|style| style.border_color(palette.accent))
+                            .when(formatting.is_pressed(index), |option| {
+                                option
+                                    .bg(palette.accent)
+                                    .text_color(palette.accent_foreground)
+                            })
+                            .when(item.is_disabled(), |option| option.opacity(0.45))
+                            .child(item.label().clone())
+                    })),
             );
 
         div()
@@ -703,12 +782,20 @@ impl Render for Demo {
                         Appearance::Compact => "MiniCast controls",
                         Appearance::Settings => "Workspace settings",
                     }))
-                    .child(div().text_color(palette.muted).child(format!(
-                        "{} · {} · {} stroke",
-                        self.input.read(cx).value(),
-                        selected_label,
-                        stroke_label
-                    )))
+                    .child(
+                        div()
+                            .text_color(palette.muted)
+                            .when(formatting.is_pressed(0), |text| {
+                                text.font_weight(FontWeight::BOLD)
+                            })
+                            .when(formatting.is_pressed(2), |text| text.italic())
+                            .child(format!(
+                                "{} · {} · {} stroke",
+                                self.input.read(cx).value(),
+                                selected_label,
+                                stroke_label
+                            )),
+                    )
                     .child(div().text_color(palette.muted).child(format!(
                         "Cursor {} · Toolbar {}",
                         if self.show_cursor {
@@ -734,6 +821,7 @@ impl Render for Demo {
                     ))
                     .child(actions)
                     .child(progress_preview)
+                    .child(emphasis)
                     .child(
                         div()
                             .text_color(palette.muted)

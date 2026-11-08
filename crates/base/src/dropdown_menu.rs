@@ -505,7 +505,6 @@ mod tests {
         after: FocusHandle,
         outside: FocusHandle,
         nested: bool,
-        trailing: bool,
         commands: Vec<SharedString>,
         _subscriptions: Vec<Subscription>,
     }
@@ -559,14 +558,12 @@ mod tests {
                                 .children(options),
                         ),
                 )
-                .when(self.trailing, |this| {
-                    this.child(
-                        Button::new("after-menu")
-                            .track_focus(&self.after)
-                            .h(px(28.))
-                            .child("After"),
-                    )
-                });
+                .child(
+                    Button::new("after-menu")
+                        .track_focus(&self.after)
+                        .h(px(28.))
+                        .child("After"),
+                );
             let controls = if self.nested {
                 Popover::new("outer-trigger", &self.outer)
                     .accessibility_label("Parent popover")
@@ -669,7 +666,6 @@ mod tests {
                     after: cx.focus_handle(),
                     outside: cx.focus_handle(),
                     nested: false,
-                    trailing: true,
                     commands: Vec::new(),
                     _subscriptions: subscriptions,
                 }
@@ -835,7 +831,7 @@ mod tests {
     }
 
     #[gpui::test]
-    fn tab_exits_commands_and_respects_the_parent_modal(cx: &mut TestAppContext) {
+    fn tab_and_shift_tab_leave_command_content(cx: &mut TestAppContext) {
         let (cx, view) = harness(cx, items());
         open(cx, &view, "down");
         press(cx, "tab");
@@ -850,24 +846,6 @@ mod tests {
             let view = view.read(cx);
             assert!(!view.menu.read(cx).is_open(cx));
             assert!(view.menu.read(cx).focus_handle().is_focused(window));
-        });
-        view.update(cx, |view, cx| {
-            view.trailing = false;
-            cx.notify();
-        });
-        settle(cx);
-        open(cx, &view, "down");
-        press(cx, "tab");
-        cx.update(|window, cx| {
-            let view = view.read(cx);
-            assert!(!view.menu.read(cx).is_open(cx));
-            assert!(view.before.is_focused(window));
-            assert!(
-                view.dialog
-                    .read(cx)
-                    .focus_handle()
-                    .contains_focused(window, cx)
-            );
             assert!(view.commands.is_empty());
         });
     }

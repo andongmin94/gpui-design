@@ -320,20 +320,12 @@ mod tests {
     }
 
     #[gpui::test]
-    fn pointer_reports_the_next_value_once(cx: &mut TestAppContext) {
+    fn pointer_enter_and_space_report_one_activation_each(cx: &mut TestAppContext) {
         let (cx, toggles, keyboard_events, last_value, _) = harness(cx, false, false);
-
         cx.simulate_click(point(px(10.), px(10.)), Modifiers::default());
-
         assert_eq!(toggles.get(), 1);
         assert_eq!(keyboard_events.get(), 0);
         assert!(last_value.get());
-    }
-
-    #[gpui::test]
-    fn enter_and_space_report_one_native_keyboard_activation_each(cx: &mut TestAppContext) {
-        let (cx, toggles, keyboard_events, last_value, _) = harness(cx, false, false);
-        cx.simulate_click(point(px(10.), px(10.)), Modifiers::default());
         toggles.set(0);
         cx.update(|window, cx| {
             assert!(window.focused(cx).is_some());

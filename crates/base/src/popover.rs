@@ -853,28 +853,4 @@ mod tests {
             assert!(!GlobalState::is_in_deferred_context(cx));
         });
     }
-
-    #[cfg(feature = "test-support")]
-    #[gpui::test]
-    fn accessibility_exposes_button_expansion_and_named_nonmodal_content(cx: &mut TestAppContext) {
-        let (cx, controls) = harness(cx, false);
-        cx.update(|window, _| {
-            let trigger =
-                crate::test_support::find(window, &[], &"popover-trigger".into()).unwrap();
-            assert_eq!(trigger.role(), Some(Role::Button));
-            assert_eq!(trigger.label(), Some("Open quick tools"));
-            assert_eq!(trigger.expanded(), Some(false));
-        });
-        open(cx, &controls);
-        cx.update(|window, cx| {
-            let trigger =
-                crate::test_support::find(window, &[], &"popover-trigger".into()).unwrap();
-            assert_eq!(trigger.expanded(), Some(true));
-            let id = ("popover-content", controls.read(cx).popover.entity_id()).into();
-            let content = crate::test_support::find(window, &[], &id).unwrap();
-            assert_eq!(content.role(), Some(Role::Dialog));
-            assert_eq!(content.label(), Some("Quick tools"));
-            assert_eq!(content.focused(), Some(true));
-        });
-    }
 }

@@ -43,6 +43,8 @@ mod switch;
 mod tabs;
 mod text_boundary;
 mod theme;
+mod toggle;
+mod toggle_group;
 mod touch_selection;
 
 pub use accordion::{
@@ -90,6 +92,8 @@ pub use styled::{RoleOverride, StyledExt, box_shadow, h_flex, v_flex};
 pub use switch::{Switch, SwitchStyles};
 pub use tabs::{Tab, TabItem, TabList, TabPanel, TabsEvent, TabsState};
 pub use theme::{InputColors, ScrollbarTheme, Theme, ThemeAppearance};
+pub use toggle::Toggle;
+pub use toggle_group::{ToggleGroup, ToggleGroupEvent, ToggleGroupState, ToggleItem, ToggleOption};
 pub use touch_selection::{SelectionEdge, TouchHandle, TouchSelectionSnapshot};
 
 use gpui::App;
@@ -114,6 +118,7 @@ pub fn init(cx: &mut App) {
     select::init(cx);
     slider::init(cx);
     tabs::init(cx);
+    toggle_group::init(cx);
     input::init(cx);
     root::init(cx);
 }

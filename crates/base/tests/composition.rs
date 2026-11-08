@@ -833,10 +833,45 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
     );
     cx.simulate_keystrokes("tab");
     draw(cx);
+    cx.update(|window, _| {
+        let toggle = test_support::find(window, &[], &"unknown-progress".into()).unwrap();
+        assert_eq!(toggle.role(), Some(Role::Button));
+        assert_eq!(toggle.focused(), Some(true), "Progress has no Tab stop");
+        assert_eq!(toggle.checked(), Some(false));
+    });
+    activate_key(cx, "space");
+    cx.update(|window, cx| {
+        assert!(demo.read(cx).preview_indeterminate);
+        assert_eq!(
+            test_support::find(window, &[], &"unknown-progress".into())
+                .unwrap()
+                .checked(),
+            Some(true),
+        );
+    });
+    cx.simulate_keystrokes("tab right");
+    draw(cx);
+    cx.update(|window, cx| {
+        let formatting = demo.read(cx).formatting.read(cx);
+        assert!(formatting.option_focus_handle(2).is_focused(window));
+        assert_eq!(
+            formatting.selected_values(),
+            [gpui::SharedString::from("bold")]
+        );
+    });
+    activate_key(cx, "space");
+    cx.update(|_, cx| {
+        assert_eq!(
+            demo.read(cx).formatting.read(cx).selected_values(),
+            ["bold", "italic"].map(gpui::SharedString::from),
+        );
+    });
+    cx.simulate_keystrokes("tab");
+    draw(cx);
     cx.update(|window, cx| {
         assert!(
             demo.read(cx).trigger_focus.is_focused(window),
-            "Progress has no Tab stop"
+            "ToggleGroup has one Tab stop"
         );
     });
 }
