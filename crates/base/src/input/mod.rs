@@ -1,3 +1,4 @@
+// Modified for GPUI Design: expose Input while retaining its shared editing engine.
 //! Text input: the shared editing engine and the three states built on it.
 //!
 //! Nothing here should be `pub` unless it is reachable from outside the crate.
@@ -83,7 +84,6 @@ pub(crate) fn init(cx: &mut App) {
     state::init(cx);
 }
 
-pub use crate::number_input::{NumberInputEvent, NumberStep};
 pub use base::{InputBase, InputContextMenuCapabilities, InputStyles};
 pub use blink_cursor::CursorBlink;
 pub use cursor::Selection;
@@ -97,11 +97,12 @@ pub use diagnostics::{
     DiagnosticSummary, DiagnosticTag, RelatedInformation,
 };
 pub use display_map::{BufferPoint, DisplayMap, DisplayPoint, FoldRange, WrappingIndent};
-pub use editor::{Editor, EditorState};
+#[cfg(test)]
+pub(crate) use editor::Editor;
+pub use editor::EditorState;
 pub use highlighting::{
-    DiagnosticColors, FoldIconRenderer, FoldPlaceholderRenderer, HighlightStyleResolver,
-    InputEditorStyle, InputHighlighter, InputHighlighterFactory, SharedHighlightStyleResolver,
-    SyntaxContext, SyntaxContextProvider,
+    DiagnosticColors, FoldIconRenderer, HighlightStyleResolver, InputEditorStyle, InputHighlighter,
+    InputHighlighterFactory, SharedHighlightStyleResolver, SyntaxContext, SyntaxContextProvider,
 };
 pub use indent::TabSize;
 pub use input::{Input, InputState};
@@ -129,4 +130,4 @@ pub use rope_ext::{InputEdit, Point, RopeExt, RopeLines};
 pub use ropey::Rope;
 pub use search::{SearchMatcher, SearchSession};
 pub use state::*;
-pub use textarea::{Textarea, TextareaState};
+pub use textarea::TextareaState;

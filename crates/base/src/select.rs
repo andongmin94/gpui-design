@@ -1,160 +1,314 @@
-use std::rc::Rc;
+//! Selection behavior and composable, unstyled trigger/listbox parts.
+//! Modified for GPUI Design: retained option navigation and focus lifecycle.
 
 use gpui::{
-    AccessibleAction, AnyElement, App, ElementId, FocusHandle, InteractiveElement as _,
-    IntoElement, KeyBinding, ParentElement, RenderOnce, Role, SharedString,
-    StatefulInteractiveElement as _, StyleRefinement, Styled, Window, div,
+    AccessibleAction, AnyElement, App, Context, ElementId, Entity, EventEmitter, FocusHandle,
+    InteractiveElement, Interactivity, IntoElement, KeyBinding, ParentElement, RenderOnce, Role,
+    SharedString, StatefulInteractiveElement, StyleRefinement, Styled, Subscription, Window, div,
     prelude::FluentBuilder as _,
 };
 
-use crate::actions::{Cancel, Confirm, SelectDown, SelectUp};
-use crate::{StyledExt as _, TestSupportExt as _, a11y_disabled::A11yDisabledExt as _};
+use crate::{
+    Popup, StyledExt as _, TestSupportExt as _,
+    a11y_disabled::A11yDisabledExt as _,
+    actions::{Cancel, Confirm, SelectDown, SelectUp},
+    global_state::{DeferredPopover, GlobalState},
+};
 
 const CONTEXT: &str = "Select";
 
-#[doc(hidden)]
-pub fn init(cx: &mut App) {
+pub(crate) fn init(cx: &mut App) {
     cx.bind_keys([
-        KeyBinding::new(
-            "space",
-            Confirm { secondary: false },
-            Some("Select && !Input"),
-        ),
+        KeyBinding::new("space", Confirm { secondary: false }, Some(CONTEXT)),
         KeyBinding::new("up", SelectUp, Some(CONTEXT)),
         KeyBinding::new("down", SelectDown, Some(CONTEXT)),
         KeyBinding::new("enter", Confirm { secondary: false }, Some(CONTEXT)),
-        KeyBinding::new(
-            if cx.platform_info().is_mac() {
-                "cmd-enter"
-            } else {
-                "ctrl-enter"
-            },
-            Confirm { secondary: true },
-            Some(CONTEXT),
-        ),
         KeyBinding::new("escape", Cancel, Some(CONTEXT)),
     ]);
 }
 
-type OpenChangeHandler = Rc<dyn Fn(bool, &mut Window, &mut App)>;
-type ActionHandler = Rc<dyn Fn(&mut Window, &mut App)>;
-
-/// An unstyled controlled select root.
-///
-/// Applications own the trigger and popup presentation, the option collection,
-/// and the selected value. This root owns combobox accessibility semantics,
-/// keyboard opening and dismissal, and focus transfer between the trigger and
-/// popup content.
-///
-/// GPUI marks the active option on the option element itself rather than on the
-/// container, so the application marks its highlighted option with
-/// `aria_active_descendant()`; this root cannot do it on the caller's behalf.
-#[derive(IntoElement)]
-pub struct Select {
-    base: crate::ObservedElement<gpui::Stateful<gpui::Div>>,
-    open: bool,
+/// One value in a select's fixed collection. Values must be unique.
+#[derive(Clone, Debug)]
+pub struct SelectItem {
+    value: SharedString,
+    label: SharedString,
     disabled: bool,
-    focus_handle: Option<FocusHandle>,
-    content_focus_handle: Option<FocusHandle>,
-    accessibility_label: Option<SharedString>,
-    accessibility_value: Option<SharedString>,
-    style: StyleRefinement,
-    children: Vec<AnyElement>,
-    on_open_change: Option<OpenChangeHandler>,
-    key_context: &'static str,
-    on_dismiss: Option<ActionHandler>,
-    on_confirm: Option<ActionHandler>,
 }
 
-impl Select {
-    pub fn new(id: impl Into<ElementId>) -> Self {
+impl SelectItem {
+    pub fn new(value: impl Into<SharedString>, label: impl Into<SharedString>) -> Self {
         Self {
-            base: div().id(id).test_support(),
-            open: false,
+            value: value.into(),
+            label: label.into(),
             disabled: false,
-            focus_handle: None,
-            content_focus_handle: None,
-            accessibility_label: None,
-            accessibility_value: None,
-            style: StyleRefinement::default(),
-            children: Vec::new(),
-            on_open_change: None,
-            key_context: CONTEXT,
-            on_dismiss: None,
-            on_confirm: None,
         }
     }
 
-    /// Sets the application-controlled open state.
-    pub fn open(mut self, open: bool) -> Self {
-        self.open = open;
-        self
-    }
-
-    /// Prevents keyboard and accessible activation and removes the trigger from tab traversal.
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
     }
 
-    /// Supplies the focus handle for the select trigger.
-    pub fn focus_handle(mut self, focus_handle: &FocusHandle) -> Self {
-        self.focus_handle = Some(focus_handle.clone());
+    pub fn value(&self) -> &SharedString {
+        &self.value
+    }
+
+    pub fn label(&self) -> &SharedString {
+        &self.label
+    }
+
+    pub fn is_disabled(&self) -> bool {
+        self.disabled
+    }
+}
+
+/// Emitted once when a user commits a different value.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SelectEvent {
+    Change(SharedString),
+}
+
+/// Retained selection, keyboard cursor, disabled state and popup focus.
+///
+/// The first release accepts a fixed, ordered collection. Arrow keys wrap and
+/// skip disabled items; opening highlights the committed item or first enabled
+/// item. Enter/Space commits, Escape discards the pending cursor and restores
+/// trigger focus. The application owns option presentation, not this behavior.
+pub struct SelectState {
+    items: Vec<SelectItem>,
+    selected: Option<usize>,
+    highlighted: Option<usize>,
+    open: bool,
+    disabled: bool,
+    focus: FocusHandle,
+    content_focus: FocusHandle,
+    deferred_context: Option<DeferredPopover>,
+    dismiss_subscription: Option<Subscription>,
+}
+
+impl SelectState {
+    pub fn new(items: impl IntoIterator<Item = SelectItem>, cx: &mut Context<Self>) -> Self {
+        let items: Vec<_> = items.into_iter().collect();
+        for (ix, item) in items.iter().enumerate() {
+            assert!(
+                items[..ix].iter().all(|other| other.value != item.value),
+                "SelectItem values must be unique"
+            );
+        }
+        Self {
+            items,
+            selected: None,
+            highlighted: None,
+            open: false,
+            disabled: false,
+            focus: cx.focus_handle().tab_stop(true),
+            content_focus: cx.focus_handle(),
+            deferred_context: None,
+            dismiss_subscription: None,
+        }
+    }
+
+    pub fn default_value(mut self, value: impl AsRef<str>) -> Self {
+        self.selected = self
+            .items
+            .iter()
+            .position(|item| item.value.as_ref() == value.as_ref() && !item.disabled);
         self
     }
 
-    /// Supplies the focus handle that receives keyboard navigation while open.
-    pub fn content_focus_handle(mut self, focus_handle: &FocusHandle) -> Self {
-        self.content_focus_handle = Some(focus_handle.clone());
-        self
+    pub fn items(&self) -> &[SelectItem] {
+        &self.items
     }
 
-    /// Sets the accessible name exposed by the controlled root.
+    pub fn selected_index(&self) -> Option<usize> {
+        self.selected
+    }
+
+    pub fn highlighted_index(&self) -> Option<usize> {
+        self.highlighted
+    }
+
+    pub fn selected_item(&self) -> Option<&SelectItem> {
+        self.selected.map(|ix| &self.items[ix])
+    }
+
+    pub fn is_open(&self) -> bool {
+        self.open
+    }
+
+    pub fn is_disabled(&self) -> bool {
+        self.disabled
+    }
+
+    pub fn focus_handle(&self) -> &FocusHandle {
+        &self.focus
+    }
+
+    pub fn content_focus_handle(&self) -> &FocusHandle {
+        &self.content_focus
+    }
+
+    pub fn set_disabled(&mut self, disabled: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.disabled == disabled {
+            return;
+        }
+        if disabled {
+            self.close(window, cx);
+        }
+        self.disabled = disabled;
+        cx.notify();
+        window.refresh();
+    }
+
+    pub fn open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.disabled || self.open {
+            return;
+        }
+        self.highlighted = self
+            .selected
+            .or_else(|| self.items.iter().position(|item| !item.disabled));
+        if self.highlighted.is_none() {
+            return;
+        }
+        self.open = true;
+        self.deferred_context = Some(GlobalState::register_deferred_popover(cx));
+        self.dismiss_subscription =
+            Some(
+                cx.on_focus_out(&self.content_focus, window, |_, _, window, cx| {
+                    // Focus callbacks run while drawing. Close after that phase so
+                    // notify/refresh can schedule the frame that removes the popup.
+                    cx.defer_in(window, |state, window, cx| {
+                        if !window.is_window_active()
+                            || (!state.content_focus.is_focused(window)
+                                && !state.content_focus.contains_focused(window, cx))
+                        {
+                            state.close(window, cx);
+                        }
+                    });
+                }),
+            );
+        self.content_focus.focus(window, cx);
+        cx.notify();
+        window.refresh();
+    }
+
+    pub fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.open {
+            return;
+        }
+        self.open = false;
+        self.highlighted = None;
+        self.deferred_context = None;
+        self.dismiss_subscription = None;
+        // A pointer press or an ancestor closing may already have moved focus.
+        // Do not move it back into a control the user has just left.
+        if self.content_focus.is_focused(window) || self.content_focus.contains_focused(window, cx)
+        {
+            self.focus.focus(window, cx);
+        }
+        cx.notify();
+        window.refresh();
+    }
+
+    fn move_cursor(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.disabled {
+            return;
+        }
+        if !self.open {
+            self.open(window, cx);
+            return;
+        }
+        let Some(current) = self.highlighted else {
+            return;
+        };
+        let len = self.items.len();
+        self.highlighted = (1..=len)
+            .map(|step| {
+                if forward {
+                    (current + step) % len
+                } else {
+                    (current + len - step) % len
+                }
+            })
+            .find(|&ix| !self.items[ix].disabled);
+        cx.notify();
+        window.refresh();
+    }
+
+    fn highlight(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.open || self.disabled || self.items[ix].disabled || self.highlighted == Some(ix) {
+            return;
+        }
+        self.highlighted = Some(ix);
+        cx.notify();
+        window.refresh();
+    }
+
+    fn commit(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.open || self.disabled || self.items[ix].disabled {
+            return;
+        }
+        let changed = self.selected != Some(ix);
+        self.selected = Some(ix);
+        self.close(window, cx);
+        if changed {
+            cx.emit(SelectEvent::Change(self.items[ix].value.clone()));
+        }
+    }
+
+    fn confirm(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.disabled {
+            return;
+        }
+        if !self.open {
+            self.open(window, cx);
+        } else if let Some(ix) = self.highlighted {
+            self.commit(ix, window, cx);
+        }
+    }
+}
+
+impl EventEmitter<SelectEvent> for SelectState {}
+
+/// A select root with application-owned trigger and option-list presentation.
+///
+/// The root keeps the positioned listbox inside its keyboard/focus ancestry.
+/// Its `trigger` is visual content; the root supplies activation and semantics.
+/// Build `content` from [`SelectOption`] elements for the same retained state.
+#[derive(IntoElement)]
+pub struct Select {
+    base: crate::ObservedElement<gpui::Stateful<gpui::Div>>,
+    state: Entity<SelectState>,
+    label: Option<SharedString>,
+    trigger: Option<AnyElement>,
+    content: Option<AnyElement>,
+    style: StyleRefinement,
+}
+
+impl Select {
+    pub fn new(id: impl Into<ElementId>, state: &Entity<SelectState>) -> Self {
+        Self {
+            base: div().id(id).test_support(),
+            state: state.clone(),
+            label: None,
+            trigger: None,
+            content: None,
+            style: StyleRefinement::default(),
+        }
+    }
+
     pub fn accessibility_label(mut self, label: impl Into<SharedString>) -> Self {
-        self.accessibility_label = Some(label.into());
+        self.label = Some(label.into());
         self
     }
 
-    /// Sets the committed value exposed by the controlled root.
-    ///
-    /// Supply a readable selection title, not the current search query or cursor.
-    pub fn accessibility_value(mut self, value: impl Into<SharedString>) -> Self {
-        self.accessibility_value = Some(value.into());
+    pub fn trigger(mut self, trigger: impl IntoElement) -> Self {
+        self.trigger = Some(trigger.into_any_element());
         self
     }
 
-    /// Handles requests to update the controlled open state.
-    pub fn on_open_change(
-        mut self,
-        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
-    ) -> Self {
-        self.on_open_change = Some(Rc::new(handler));
-        self
-    }
-
-    #[doc(hidden)]
-    pub fn key_context(mut self, key_context: &'static str) -> Self {
-        self.key_context = key_context;
-        self
-    }
-
-    /// Handles a dismissal, however it was requested: the Cancel action, or
-    /// the accessible activation that closes an open control.
-    ///
-    /// This runs before the controlled open state is asked to close, so a
-    /// caller that commits its pending value on dismissal can still read that
-    /// value here.
-    pub fn on_dismiss(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
-        self.on_dismiss = Some(Rc::new(handler));
-        self
-    }
-
-    /// Handles the Confirm action while the select is open.
-    ///
-    /// Confirming a closed select opens it instead, so this never runs for
-    /// that case.
-    pub fn on_confirm(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
-        self.on_confirm = Some(Rc::new(handler));
+    pub fn content(mut self, content: impl IntoElement) -> Self {
+        self.content = Some(content.into_any_element());
         self
     }
 }
@@ -165,439 +319,181 @@ impl Styled for Select {
     }
 }
 
-impl ParentElement for Select {
-    fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>) {
-        self.children.extend(elements);
+impl InteractiveElement for Select {
+    fn interactivity(&mut self) -> &mut Interactivity {
+        self.base.interactivity()
     }
 }
 
-impl RenderOnce for Select {
-    fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
-        let open = self.open;
-        let disabled = self.disabled;
-        let focus_handle = self.focus_handle;
-        let content_focus_handle = self.content_focus_handle;
-        let on_open_change = self.on_open_change;
-        let on_dismiss = self.on_dismiss;
-        let on_confirm = self.on_confirm;
+impl StatefulInteractiveElement for Select {}
 
-        // Every way of closing runs the same steps. A caller that tracks
-        // dismissal has to see one however the popup was closed, and the
-        // accessible activation closes exactly what Escape closes.
-        let close: ActionHandler = Rc::new({
-            let on_open_change = on_open_change.clone();
-            let on_dismiss = on_dismiss.clone();
-            let focus_handle = focus_handle.clone();
-            move |window: &mut Window, cx: &mut App| {
-                if let Some(handler) = on_dismiss.as_ref() {
-                    handler(window, cx);
-                }
-                if let Some(handler) = on_open_change.as_ref() {
-                    handler(false, window, cx);
-                }
-                if let Some(handle) = focus_handle.as_ref() {
-                    handle.focus(window, cx);
-                }
-            }
-        });
+impl RenderOnce for Select {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let model = self.state.read(cx);
+        let open = model.open;
+        let disabled = model.disabled;
+        let focus = model.focus.clone();
+        let content_focus = model.content_focus.clone();
+        let value = model.selected_item().map(|item| item.label.clone());
+        let trigger_state = self.state.clone();
+        let accessible_state = self.state.clone();
+        let up_state = self.state.clone();
+        let down_state = self.state.clone();
+        let confirm_state = self.state.clone();
+        let cancel_state = self.state.clone();
+        let outside_state = self.state.clone();
+        let tab_state = self.state.clone();
+        let tab_prev_state = self.state.clone();
+
+        let trigger = div()
+            .id("select-trigger")
+            .when(!disabled, |this| {
+                this.on_click(move |_, window, cx| {
+                    trigger_state.update(cx, |state, cx| {
+                        // Use the rendered state: an outside-down handler may
+                        // already have closed the list before this click.
+                        if open {
+                            state.close(window, cx);
+                        } else {
+                            state.open(window, cx);
+                        }
+                    });
+                })
+            })
+            .children(self.trigger);
+        let popup =
+            Popup::new(("select-popup", self.state.entity_id()), trigger).when(open, |this| {
+                this.content(
+                    div()
+                        .id("select-listbox")
+                        .test_support()
+                        .role(Role::ListBox)
+                        .track_focus(&content_focus)
+                        .on_mouse_down_out(move |_, window, cx| {
+                            outside_state.update(cx, |state, cx| state.close(window, cx));
+                        })
+                        .children(self.content),
+                )
+            });
 
         self.base
             .role(Role::ComboBox)
             .aria_expanded(open)
-            .when_some(self.accessibility_label, |this, label| {
-                this.aria_label(label)
+            .when_some(self.label, |this, label| this.aria_label(label))
+            .when_some(value, |this, value| this.aria_value(value))
+            .key_context(CONTEXT)
+            .when(!disabled || focus.is_focused(window), |this| {
+                this.track_focus(&focus.tab_stop(!disabled))
             })
-            .when_some(self.accessibility_value, |this, value| {
-                this.aria_value(value)
-            })
-            .key_context(self.key_context)
-            .when_some(
-                focus_handle.clone().filter(|_| !disabled),
-                |this, handle| this.track_focus(&handle.tab_stop(true)),
-            )
             .when(!disabled, |this| {
-                let on_open_change = on_open_change.clone();
-                let content_focus_handle = content_focus_handle.clone();
-                let close = close.clone();
-
-                // Platform adapters may flatten the trigger child.
-                // Expose activation on the semantic root itself.
                 this.on_a11y_action(AccessibleAction::Click, move |_, window, cx| {
-                    if open {
-                        close(window, cx);
-                        return;
-                    }
-
-                    if let Some(handler) = on_open_change.as_ref() {
-                        handler(true, window, cx);
-                    }
-                    if let Some(handle) = content_focus_handle.as_ref() {
-                        handle.focus(window, cx);
-                    }
+                    accessible_state.update(cx, |state, cx| {
+                        if state.is_open() {
+                            state.close(window, cx);
+                        } else {
+                            state.open(window, cx);
+                        }
+                    });
                 })
             })
-            .on_action({
-                let on_open_change = on_open_change.clone();
-                let content_focus_handle = content_focus_handle.clone();
-                move |_: &SelectUp, window, cx| {
-                    if disabled {
-                        cx.propagate();
-                        return;
-                    }
-
-                    if !open {
-                        if let Some(handler) = on_open_change.as_ref() {
-                            handler(true, window, cx);
-                        }
-                    }
-
-                    if let Some(handle) = content_focus_handle.as_ref() {
-                        handle.focus(window, cx);
-                    }
-                    cx.propagate();
-                }
+            .on_action(move |_: &SelectUp, window, cx| {
+                up_state.update(cx, |state, cx| state.move_cursor(false, window, cx));
             })
-            .on_action({
-                let on_open_change = on_open_change.clone();
-                let content_focus_handle = content_focus_handle.clone();
-                move |_: &SelectDown, window, cx| {
-                    if disabled {
-                        cx.propagate();
-                        return;
-                    }
-
-                    if !open {
-                        if let Some(handler) = on_open_change.as_ref() {
-                            handler(true, window, cx);
-                        }
-                    }
-
-                    if let Some(handle) = content_focus_handle.as_ref() {
-                        handle.focus(window, cx);
-                    }
-                    cx.propagate();
-                }
+            .on_action(move |_: &SelectDown, window, cx| {
+                down_state.update(cx, |state, cx| state.move_cursor(true, window, cx));
             })
-            .on_action({
-                let on_open_change = on_open_change.clone();
-                move |_: &Confirm, window, cx| {
-                    if disabled {
-                        cx.propagate();
-                        return;
-                    }
-
-                    if open {
-                        if let Some(handler) = on_confirm.as_ref() {
-                            handler(window, cx);
-                        }
-                    } else if let Some(handler) = on_open_change.as_ref() {
-                        handler(true, window, cx);
-                    }
-
-                    if let Some(handle) = content_focus_handle.as_ref() {
-                        handle.focus(window, cx);
-                    }
-                }
+            .on_action(move |_: &Confirm, window, cx| {
+                confirm_state.update(cx, |state, cx| state.confirm(window, cx));
             })
             .on_action(move |_: &Cancel, window, cx| {
-                if !open {
+                if !cancel_state.read(cx).is_open() {
                     cx.propagate();
                     return;
                 }
-
                 cx.stop_propagation();
-                close(window, cx);
+                cancel_state.update(cx, |state, cx| state.close(window, cx));
             })
-            .children(self.children)
+            .on_action(move |_: &crate::root::Tab, window, cx| {
+                tab_state.update(cx, |state, cx| state.close(window, cx));
+                cx.propagate();
+            })
+            .on_action(move |_: &crate::root::TabPrev, window, cx| {
+                tab_prev_state.update(cx, |state, cx| state.close(window, cx));
+                cx.propagate();
+            })
+            .child(popup)
             .refine_style(&self.style)
             .a11y_disabled(disabled)
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::input::InputState;
-    use gpui::{
-        AppContext as _, Context, Element as _, Entity, Focusable, Render, TestAppContext,
-        VisualTestContext, accesskit, px,
-    };
-    use std::sync::{Arc, Mutex};
+/// One unstyled option. Selection, hover, disabled and activation come from state.
+#[derive(IntoElement)]
+pub struct SelectOption {
+    state: Entity<SelectState>,
+    index: usize,
+    style: StyleRefinement,
+    children: Vec<AnyElement>,
+}
 
-    struct SelectHarness {
-        open: bool,
-        disabled: bool,
-        focus_handle: FocusHandle,
-        content_focus_handle: FocusHandle,
-        search_input: Option<Entity<InputState>>,
-        changes: Arc<Mutex<Vec<bool>>>,
-        parent_confirms: Arc<Mutex<usize>>,
-        confirmations: Arc<Mutex<usize>>,
-        /// Every step of a close, in the order it ran.
-        closing: Arc<Mutex<Vec<&'static str>>>,
-    }
-
-    impl SelectHarness {
-        fn new(disabled: bool, cx: &mut Context<Self>) -> Self {
-            Self {
-                open: false,
-                disabled,
-                focus_handle: cx.focus_handle(),
-                content_focus_handle: cx.focus_handle(),
-                search_input: None,
-                changes: Arc::new(Mutex::new(Vec::new())),
-                closing: Arc::new(Mutex::new(Vec::new())),
-                parent_confirms: Arc::new(Mutex::new(0)),
-                confirmations: Arc::new(Mutex::new(0)),
-            }
+impl SelectOption {
+    /// `index` must refer to an item in this state's fixed collection.
+    pub fn new(state: &Entity<SelectState>, index: usize) -> Self {
+        Self {
+            state: state.clone(),
+            index,
+            style: StyleRefinement::default(),
+            children: Vec::new(),
         }
     }
+}
 
-    impl Focusable for SelectHarness {
-        fn focus_handle(&self, _: &App) -> FocusHandle {
-            self.focus_handle.clone()
-        }
+impl Styled for SelectOption {
+    fn style(&mut self) -> &mut StyleRefinement {
+        &mut self.style
     }
+}
 
-    impl Render for SelectHarness {
-        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-            let state = cx.entity();
-            let changes = self.changes.clone();
-            let opened = self.closing.clone();
-            let dismissed = self.closing.clone();
-            let confirmed = self.closing.clone();
-
-            let parent_confirms = self.parent_confirms.clone();
-            let confirmations = self.confirmations.clone();
-            div()
-                .on_action(move |_: &Confirm, _, _| *parent_confirms.lock().unwrap() += 1)
-                .child(
-                    Select::new("select")
-                        .open(self.open)
-                        .disabled(self.disabled)
-                        .focus_handle(&self.focus_handle)
-                        .content_focus_handle(&self.content_focus_handle)
-                        .on_open_change(move |open, _, cx| {
-                            changes.lock().unwrap().push(open);
-                            opened
-                                .lock()
-                                .unwrap()
-                                .push(if open { "open" } else { "close" });
-                            state.update(cx, |state, cx| {
-                                state.open = open;
-                                cx.notify();
-                            });
-                        })
-                        .on_dismiss(move |_, _| dismissed.lock().unwrap().push("dismiss"))
-                        .on_confirm(move |_, _| {
-                            confirmed.lock().unwrap().push("confirm");
-                            *confirmations.lock().unwrap() += 1;
-                        })
-                        .when_some(self.search_input.clone(), |this, input| {
-                            this.child(crate::Input::new(&input))
-                        })
-                        .when(self.search_input.is_none(), |this| {
-                            this.child(div().track_focus(&self.content_focus_handle).size(px(20.)))
-                        }),
-                )
-        }
+impl ParentElement for SelectOption {
+    fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>) {
+        self.children.extend(elements);
     }
+}
 
-    fn harness(
-        cx: &mut TestAppContext,
-        disabled: bool,
-    ) -> (&mut VisualTestContext, gpui::Entity<SelectHarness>) {
-        cx.update(crate::init);
-        let (state, cx) = cx.add_window_view(move |_, cx| SelectHarness::new(disabled, cx));
-        cx.update(|window, cx| {
-            state.focus_handle(cx).focus(window, cx);
-            window.draw(cx).clear(cx);
-        });
-        (cx, state)
-    }
+impl RenderOnce for SelectOption {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+        let model = self.state.read(cx);
+        let item = model
+            .items
+            .get(self.index)
+            .expect("SelectOption index must identify an item");
+        let disabled = model.disabled || item.disabled;
+        let selected = model.selected == Some(self.index);
+        let highlighted = model.highlighted == Some(self.index);
+        let label = item.label.clone();
+        let index = self.index;
+        let hover_state = self.state.clone();
+        let click_state = self.state;
 
-    #[gpui::test]
-    fn arrows_open_and_transfer_focus_to_content(cx: &mut TestAppContext) {
-        let (cx, state) = harness(cx, false);
-
-        cx.simulate_keystrokes("down");
-        cx.update(|window, cx| {
-            assert!(state.read(cx).open);
-            assert!(state.read(cx).content_focus_handle.is_focused(window));
-        });
-        assert_eq!(
-            &*state
-                .read_with(cx, |state, _| state.changes.clone())
-                .lock()
-                .unwrap(),
-            &[true]
-        );
-    }
-
-    #[gpui::test]
-    fn confirm_opens_a_closed_select(cx: &mut TestAppContext) {
-        let (cx, state) = harness(cx, false);
-
-        cx.simulate_keystrokes("enter");
-        cx.update(|window, cx| {
-            assert!(state.read(cx).open);
-            assert!(state.read(cx).content_focus_handle.is_focused(window));
-        });
-    }
-
-    #[gpui::test]
-    fn space_opens_and_confirms_a_non_searchable_select(cx: &mut TestAppContext) {
-        let (cx, state) = harness(cx, false);
-        cx.simulate_keystrokes("space");
-        cx.update(|window, cx| {
-            assert!(state.read(cx).open);
-            assert!(state.read(cx).content_focus_handle.is_focused(window));
-            window.draw(cx).clear(cx);
-        });
-        cx.simulate_keystrokes("space");
-        assert_eq!(
-            &*state
-                .read_with(cx, |state, _| state.closing.clone())
-                .lock()
-                .unwrap(),
-            &["open", "confirm"]
-        );
-    }
-
-    #[gpui::test]
-    fn space_in_a_select_search_input_remains_text(cx: &mut TestAppContext) {
-        let (cx, state) = harness(cx, false);
-        let input = cx.update(|window, cx| {
-            let input = cx.new(|cx| InputState::new(window, cx));
-            state.update(cx, |state, cx| {
-                state.content_focus_handle = input.focus_handle(cx);
-                state.search_input = Some(input.clone());
-                cx.notify();
-            });
-            window.draw(cx).clear(cx);
-            input
-        });
-        cx.simulate_keystrokes("space");
-        cx.update(|window, cx| {
-            assert!(state.read(cx).open);
-            assert!(input.focus_handle(cx).is_focused(window));
-            window.draw(cx).clear(cx);
-        });
-        cx.simulate_keystrokes("t w o space w o r d s");
-        assert_eq!(input.read_with(cx, |input, _| input.value()), "two words");
-        assert_eq!(
-            &*state
-                .read_with(cx, |state, _| state.closing.clone())
-                .lock()
-                .unwrap(),
-            &["open"]
-        );
-        assert!(state.read_with(cx, |state, _| state.open));
-    }
-
-    #[gpui::test]
-    fn escape_closes_and_restores_trigger_focus(cx: &mut TestAppContext) {
-        let (cx, state) = harness(cx, false);
-
-        cx.simulate_keystrokes("down escape");
-        cx.update(|window, cx| {
-            assert!(!state.read(cx).open);
-            assert!(state.read(cx).focus_handle.is_focused(window));
-        });
-        assert_eq!(
-            &*state
-                .read_with(cx, |state, _| state.changes.clone())
-                .lock()
-                .unwrap(),
-            &[true, false]
-        );
-    }
-
-    /// Closing runs `on_dismiss`, and runs it before the open state is asked
-    /// to close, so a caller that commits a pending value on dismissal can
-    /// still read that value.
-    ///
-    /// Every close shares one path, which is the point: the accessible
-    /// activation used to close by calling `on_open_change` alone, so a
-    /// consumer wiring `on_dismiss` — `crates/shell` forwards it to JS as
-    /// `onDismiss` — saw Escape but not a screen reader pressing the same
-    /// control. GPUI exposes no way to dispatch an accessibility action in a
-    /// test (`Window::handle_a11y_action` is `pub(crate)`), so this covers the
-    /// shared path through the route a test can reach.
-    #[gpui::test]
-    fn every_close_dismisses_before_it_closes(cx: &mut TestAppContext) {
-        let (cx, state) = harness(cx, false);
-
-        cx.simulate_keystrokes("down escape");
-        assert_eq!(
-            &*state
-                .read_with(cx, |state, _| state.closing.clone())
-                .lock()
-                .unwrap(),
-            &["open", "dismiss", "close"]
-        );
-    }
-
-    #[gpui::test]
-    fn disabled_select_is_not_keyboard_interactive(cx: &mut TestAppContext) {
-        let (cx, state) = harness(cx, true);
-
-        cx.simulate_keystrokes("down enter space");
-        assert!(!state.read_with(cx, |state, _| state.open));
-        assert!(
-            state
-                .read_with(cx, |state, _| state.changes.clone())
-                .lock()
-                .unwrap()
-                .is_empty()
-        );
-    }
-
-    #[gpui::test]
-    fn projects_application_owned_accessible_state(cx: &mut TestAppContext) {
-        let window = cx.add_empty_window();
-        window.update(|window, cx| {
-            let mut info = |select: Select| {
-                let mut node = accesskit::Node::new(Role::ComboBox);
-                select
-                    .render(window, cx)
-                    .into_element()
-                    .write_a11y_info(&mut node);
-                node
-            };
-            let enabled = info(
-                Select::new("enabled")
-                    .open(true)
-                    .accessibility_label("Programming language")
-                    .accessibility_value("Rust"),
-            );
-            // Open, so the expanded assertion below says something about
-            // `disabled` rather than about the default open state.
-            let disabled = info(Select::new("disabled").open(true).disabled(true));
-
-            assert_eq!(enabled.label(), Some("Programming language"));
-            assert_eq!(enabled.value(), Some("Rust"));
-            assert_eq!(enabled.is_expanded(), Some(true));
-            assert_eq!(
-                disabled.is_expanded(),
-                Some(true),
-                "a disabled control still reports the state it is in"
-            );
-            assert!(enabled.supports_action(accesskit::Action::Click));
-            assert!(!disabled.supports_action(accesskit::Action::Click));
-        });
-    }
-
-    #[gpui::test]
-    fn confirm_is_consumed_when_opening_and_accepting(cx: &mut TestAppContext) {
-        let (cx, state) = harness(cx, false);
-        cx.simulate_keystrokes("enter");
-        cx.update(|window, cx| window.draw(cx).clear(cx));
-        cx.simulate_keystrokes("enter");
-        state.read_with(cx, |state, _| {
-            assert!(state.open);
-            assert_eq!(*state.confirmations.lock().unwrap(), 1);
-            assert_eq!(*state.parent_confirms.lock().unwrap(), 0);
-        });
+        div()
+            .id(("select-option", index))
+            .test_support()
+            .role(Role::ListBoxOption)
+            .aria_label(label)
+            .aria_selected(selected)
+            .when(highlighted, |this| this.aria_active_descendant())
+            .when(!disabled, |this| {
+                this.on_hover(move |hovered, window, cx| {
+                    if *hovered {
+                        hover_state.update(cx, |state, cx| state.highlight(index, window, cx));
+                    }
+                })
+                .on_click(move |_, window, cx| {
+                    click_state.update(cx, |state, cx| state.commit(index, window, cx));
+                })
+            })
+            .children(self.children)
+            .refine_style(&self.style)
+            .a11y_disabled(disabled)
     }
 }

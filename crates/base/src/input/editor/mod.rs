@@ -1,4 +1,7 @@
-use gpui::{App, Div, Entity, InteractiveElement as _, IntoElement, RenderOnce, Stateful, Window};
+// Modified for GPUI Design: retain Editor rendering only for shared-engine regression tests.
+use gpui::{App, Div, Entity, InteractiveElement as _, Stateful, Window};
+#[cfg(test)]
+use gpui::{IntoElement, RenderOnce};
 
 use super::{EditorMode, InputBaseState, InputModeKind};
 
@@ -224,19 +227,22 @@ impl EditorState {
 }
 
 /// An unstyled source-code editor.
+#[cfg(test)]
 #[derive(IntoElement)]
-pub struct Editor {
+pub(crate) struct Editor {
     state: Entity<EditorState>,
 }
 
+#[cfg(test)]
 impl Editor {
-    pub fn new(state: &Entity<EditorState>) -> Self {
+    pub(crate) fn new(state: &Entity<EditorState>) -> Self {
         Self {
             state: state.clone(),
         }
     }
 }
 
+#[cfg(test)]
 impl RenderOnce for Editor {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         self.state

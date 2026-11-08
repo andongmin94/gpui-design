@@ -1,3 +1,4 @@
+// Modified for GPUI Design: remove the reference to the excluded motion API.
 //! Boundary displacement only: the list keeps its clamped logical position.
 
 use crate::overscroll::Overscroll;
@@ -74,8 +75,8 @@ impl ScrollBounceMotion {
 
     /// Time scale of the return once the finger lifts.
     ///
-    /// Read the way [`crate::Spring::new`] reads its response: the period one
-    /// full oscillation would take without damping, which is the scale the
+    /// The response is the period one full oscillation would take without
+    /// damping, which is the scale the
     /// return is felt at rather than the moment it stops. The return is
     /// critically damped, so it never crosses the edge. A zero response snaps
     /// the edge back on the spot.
@@ -572,9 +573,6 @@ impl Element for ScrollBounce {
                     return;
                 }
                 if delta.x.abs() > delta.y.abs() {
-                    state
-                        .overscroll
-                        .touch_phase(event.touch_phase, cx.background_executor().now());
                     return;
                 }
                 let before = handle.offset();

@@ -1,3 +1,4 @@
+// Modified for GPUI Design: exercise the retained Button accessibility contract.
 //! Disabled semantics on a control's accessibility node.
 //!
 //! GPUI has no `aria_disabled` setter, so a disabled control would reach
@@ -147,13 +148,10 @@ impl<E: Element> Element for A11yDisabled<E> {
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use gpui::{AppContext as _, Context, IntoElement, Render, RenderOnce, TestAppContext, canvas};
+    use gpui::{Context, IntoElement, Render, RenderOnce, TestAppContext, canvas};
 
     use super::*;
-    use crate::{
-        Button, Checkbox, DatePicker, Link, Radio, Select, Slider, Switch, Tab, TimeField,
-        TimeFieldState, Toggle, slider::SliderState,
-    };
+    use crate::Button;
 
     /// The accessibility node a rendered control writes.
     fn node_of(element: impl IntoElement) -> accesskit::Node {
@@ -174,9 +172,6 @@ mod tests {
             let captured = self.captured.clone();
             canvas(
                 move |_, window, cx| {
-                    let slider = cx.new(|_| SliderState::new());
-                    let time = cx.new(|cx| TimeFieldState::new(window, cx));
-                    let focus = cx.focus_handle();
                     let mut nodes = captured.lock().unwrap();
                     nodes.clear();
                     for disabled in [false, true] {
@@ -184,68 +179,6 @@ mod tests {
                             "button",
                             disabled,
                             node_of(Button::new("button").disabled(disabled).render(window, cx)),
-                        ));
-                        nodes.push((
-                            "link",
-                            disabled,
-                            node_of(Link::new("link").disabled(disabled).render(window, cx)),
-                        ));
-                        nodes.push((
-                            "switch",
-                            disabled,
-                            node_of(Switch::new("switch").disabled(disabled).render(window, cx)),
-                        ));
-                        nodes.push((
-                            "radio",
-                            disabled,
-                            node_of(Radio::new("radio").disabled(disabled).render(window, cx)),
-                        ));
-                        nodes.push((
-                            "toggle",
-                            disabled,
-                            node_of(Toggle::new("toggle").disabled(disabled).render(window, cx)),
-                        ));
-                        nodes.push((
-                            "checkbox",
-                            disabled,
-                            node_of(
-                                Checkbox::new("checkbox")
-                                    .disabled(disabled)
-                                    .render(window, cx),
-                            ),
-                        ));
-                        nodes.push((
-                            "select",
-                            disabled,
-                            node_of(Select::new("select").disabled(disabled).render(window, cx)),
-                        ));
-                        nodes.push((
-                            "tab",
-                            disabled,
-                            node_of(Tab::new("tab").disabled(disabled).render(window, cx)),
-                        ));
-                        nodes.push((
-                            "date_picker",
-                            disabled,
-                            node_of(
-                                DatePicker::new("date-picker", &focus)
-                                    .disabled(disabled)
-                                    .render(window, cx),
-                            ),
-                        ));
-                        nodes.push((
-                            "time_field",
-                            disabled,
-                            node_of(
-                                TimeField::new("time-field", &time)
-                                    .disabled(disabled)
-                                    .render(window, cx),
-                            ),
-                        ));
-                        nodes.push((
-                            "slider",
-                            disabled,
-                            node_of(Slider::new(&slider).disabled(disabled).render(window, cx)),
                         ));
                     }
                 },
@@ -264,39 +197,34 @@ mod tests {
         cx.update(|window, cx| window.draw(cx).clear(cx));
 
         let nodes = captured.lock().unwrap();
-        assert_eq!(nodes.len(), 22);
+        assert_eq!(nodes.len(), 2);
         for (name, disabled, node) in nodes.iter() {
             assert_ne!(node.role(), gpui::Role::Unknown, "{name} wrote no node");
             assert_eq!(node.is_disabled(), *disabled, "{name}, disabled {disabled}");
-            if *name == "slider" {
-                // Nor does assistive technology move a disabled slider.
-                assert_eq!(
-                    node.supports_action(accesskit::Action::Increment),
-                    !disabled,
-                    "slider, disabled {disabled}"
-                );
-            }
         }
     }
 
+    #[cfg(feature = "test-support")]
     struct Observed {
         disabled: bool,
     }
 
+    #[cfg(feature = "test-support")]
     impl Render for Observed {
         fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-            Switch::new("switch").disabled(self.disabled)
+            Button::new("button").disabled(self.disabled)
         }
     }
 
+    #[cfg(feature = "test-support")]
     #[gpui::test]
     fn the_test_support_snapshot_sees_the_flag(cx: &mut TestAppContext) {
         for disabled in [false, true] {
             let (_, cx) = cx.add_window_view(move |_, _| Observed { disabled });
             cx.update(|window, cx| {
                 window.draw(cx).clear(cx);
-                let snapshot = crate::test_support::find(window, &[], &"switch".into())
-                    .expect("switch is observed");
+                let snapshot = crate::test_support::find(window, &[], &"button".into())
+                    .expect("button is observed");
                 assert_eq!(snapshot.disabled(), disabled.then_some(true));
             });
         }

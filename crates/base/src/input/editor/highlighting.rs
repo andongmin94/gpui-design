@@ -1,10 +1,11 @@
+// Modified for GPUI Design: resolve text colors against the narrow InputColors baseline.
 use std::{ops::Range, rc::Rc, sync::Arc};
 
 use gpui::{AnyElement, Context, HighlightStyle, Hsla, SharedString, Window};
 use ropey::Rope;
 
 use super::{EditorState, FoldRange, InputEdit};
-use crate::SemanticThemeTokens;
+use crate::InputColors;
 
 /// Resolves semantic highlight names into renderable GPUI styles.
 ///
@@ -76,7 +77,6 @@ pub trait InputHighlighter {
 pub type InputHighlighterFactory = Rc<dyn Fn(&str) -> Option<Box<dyn InputHighlighter>>>;
 pub type SharedHighlightStyleResolver = Arc<dyn HighlightStyleResolver>;
 pub type FoldIconRenderer = Rc<dyn Fn(usize, bool) -> AnyElement>;
-pub type FoldPlaceholderRenderer = Rc<dyn Fn(usize) -> AnyElement>;
 
 /// Where in the syntax tree an offset sits, for editing decisions.
 ///
@@ -123,7 +123,7 @@ pub struct InputEditorStyle {
 }
 
 impl InputEditorStyle {
-    /// Fills in every colour that was left unset, from the active palette.
+    /// Fills unset text-editing colors from the application's input baseline.
     ///
     /// `Hsla::default()` is fully transparent, and every colour on `Default` is
     /// that — so an input nothing projected onto painted its glyphs, its caret
@@ -131,29 +131,21 @@ impl InputEditorStyle {
     /// means for ink, which is what makes it usable as "unset" here.
     ///
     /// This is resolution, not assignment: whatever a consumer did project is
-    /// kept exactly. `crates/component` projects the whole style on every render and
-    /// never reaches this; a consumer that projects once at construction gets
-    /// the palette that is current now rather than the one that happened to be
-    /// installed when the state was built.
-    pub fn resolved(&self, tokens: &SemanticThemeTokens) -> Self {
-        let colors = &tokens.colors;
+    /// kept exactly. A consumer that projects once at construction gets the
+    /// baseline that is current now rather than the one installed when the
+    /// state was built.
+    pub fn resolved(&self, colors: &InputColors) -> Self {
         let unset = |value: Hsla| value.a == 0.;
         let or = |value: Hsla, fallback: Hsla| if unset(value) { fallback } else { value };
 
         let foreground = or(self.foreground, colors.foreground);
-        let mut selection = self.selection;
-        if unset(selection) {
-            selection = colors.accent;
-            // A selection must not hide the glyphs it selects.
-            selection.a = 0.4;
-        }
 
         Self {
             foreground,
             muted_foreground: or(self.muted_foreground, colors.muted_foreground),
-            background: or(self.background, colors.surface),
+            background: or(self.background, colors.background),
             border: or(self.border, colors.border),
-            selection,
+            selection: or(self.selection, colors.selection),
             caret: or(self.caret, foreground),
             ..self.clone()
         }
@@ -184,16 +176,16 @@ mod tests {
     use gpui::hsla;
 
     use super::InputEditorStyle;
-    use crate::SemanticThemeTokens;
+    use crate::InputColors;
 
-    fn dark() -> SemanticThemeTokens {
-        let mut tokens = SemanticThemeTokens::default();
-        tokens.colors.foreground = hsla(0., 0., 0.98, 1.0);
-        tokens.colors.muted_foreground = hsla(0., 0., 0.64, 1.0);
-        tokens.colors.surface = hsla(0., 0., 0.04, 1.0);
-        tokens.colors.border = hsla(0., 0., 0.15, 1.0);
-        tokens.colors.accent = hsla(0.6, 0.5, 0.5, 1.0);
-        tokens
+    fn dark() -> InputColors {
+        let mut colors = InputColors::default();
+        colors.foreground = hsla(0., 0., 0.98, 1.0);
+        colors.muted_foreground = hsla(0., 0., 0.64, 1.0);
+        colors.background = hsla(0., 0., 0.04, 1.0);
+        colors.border = hsla(0., 0., 0.15, 1.0);
+        colors.selection = hsla(0.6, 0.5, 0.5, 0.4);
+        colors
     }
 
     #[test]
@@ -201,11 +193,11 @@ mod tests {
         let tokens = dark();
         let resolved = InputEditorStyle::default().resolved(&tokens);
 
-        assert_eq!(resolved.foreground, tokens.colors.foreground);
-        assert_eq!(resolved.caret, tokens.colors.foreground);
-        assert_eq!(resolved.muted_foreground, tokens.colors.muted_foreground);
-        assert_eq!(resolved.background, tokens.colors.surface);
-        assert_eq!(resolved.border, tokens.colors.border);
+        assert_eq!(resolved.foreground, tokens.foreground);
+        assert_eq!(resolved.caret, tokens.foreground);
+        assert_eq!(resolved.muted_foreground, tokens.muted_foreground);
+        assert_eq!(resolved.background, tokens.background);
+        assert_eq!(resolved.border, tokens.border);
         // The point of the change: every one of these was transparent, so an
         // input nothing projected onto painted its text in nothing at all.
         for colour in [
@@ -229,6 +221,7 @@ mod tests {
         let chosen = hsla(0.3, 0.4, 0.5, 1.0);
         let style = InputEditorStyle {
             foreground: chosen,
+            selection: chosen.opacity(0.25),
             caret: chosen,
             ..Default::default()
         };
@@ -236,8 +229,9 @@ mod tests {
 
         assert_eq!(resolved.foreground, chosen);
         assert_eq!(resolved.caret, chosen);
+        assert_eq!(resolved.selection, chosen.opacity(0.25));
         // And what was not projected still comes from the palette.
-        assert_eq!(resolved.border, dark().colors.border);
+        assert_eq!(resolved.border, dark().border);
     }
 
     #[test]
@@ -248,11 +242,11 @@ mod tests {
         let projected = InputEditorStyle::default();
         let first = projected.resolved(&dark());
 
-        let mut light = SemanticThemeTokens::default();
-        light.colors.foreground = hsla(0., 0., 0.04, 1.0);
+        let mut light = InputColors::default();
+        light.foreground = hsla(0., 0., 0.04, 1.0);
         let second = projected.resolved(&light);
 
         assert_ne!(first.foreground, second.foreground);
-        assert_eq!(second.foreground, light.colors.foreground);
+        assert_eq!(second.foreground, light.foreground);
     }
 }

@@ -1,3 +1,4 @@
+// Modified for GPUI Design: remove coupling to excluded window-wide rich-text selection.
 //! Touch selection for the input engine: long press, grab handles, edit menu.
 //!
 //! A long press selects the word under the finger and keeps following the
@@ -174,9 +175,6 @@ impl<M: InputModeKind> InputBaseState<M> {
                 if !self.focus_handle.is_focused(window) {
                     window.focus(&self.focus_handle, cx);
                 }
-                // The input selects on its own; keep the window text selection
-                // from starting a drag under it.
-                crate::GlobalState::suppress_text_selection(cx);
                 self.undo_manager.break_transaction_coalescing();
                 M::clear_inline_completion(self, cx);
                 self.touch_selection = TouchSelection::default();

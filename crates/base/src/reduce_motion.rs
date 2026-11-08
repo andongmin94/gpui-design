@@ -1,11 +1,11 @@
+// Modified for GPUI Design: update references to the extracted crate.
 //! Honors the operating system's reduced-motion preference.
 //!
 //! Every Base transition, spring, presence and reveal consults
 //! [`App::reduce_motion`], but GPUI never reads the platform's setting into
 //! that flag: it stays `false` until something sets it. [`init`] reads the
 //! setting when Base initializes and writes it into the flag, so an
-//! application inherits the user's choice by calling `gpui_base::init` or
-//! `gpui_component::init`.
+//! application inherits the user's choice by calling `gpui_design::init`.
 //!
 //! The setting is read on the platforms below; everywhere else the flag is
 //! left alone.
@@ -44,7 +44,7 @@ struct SystemReduceMotion {
 
 impl Global for SystemReduceMotion {}
 
-/// Applies the system's reduced-motion preference during `gpui_base::init`.
+/// Applies the system's reduced-motion preference during `gpui_design::init`.
 pub(crate) fn init(cx: &mut App) {
     apply_system_reduce_motion(cx);
 }
@@ -52,7 +52,7 @@ pub(crate) fn init(cx: &mut App) {
 /// Reads the operating system's reduced-motion preference into
 /// [`App::set_reduce_motion`].
 ///
-/// `gpui_base::init` calls this once. Call it again to re-read the preference
+/// `gpui_design::init` calls this once. Call it again to re-read the preference
 /// on a platform Base does not follow live — macOS and Windows post no
 /// notification Base can subscribe to without a window, so a change made
 /// while the application runs reaches it only through this call.

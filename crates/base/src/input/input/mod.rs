@@ -1,3 +1,4 @@
+// Modified for GPUI Design: remove the styled-runtime recommendation.
 use gpui::{App, Entity, IntoElement, RenderOnce, Window};
 
 use super::{InputBaseState, InputMode};
@@ -12,7 +13,7 @@ pub type InputState = InputBaseState<InputMode>;
 /// An unstyled single-line text input.
 ///
 /// Applications that need a fully styled control can wrap this state with
-/// their own presentation or use `gpui-component::Input`.
+/// their own presentation using [`super::InputBase`] and GPUI styles.
 #[derive(IntoElement)]
 pub struct Input {
     presentation: super::InlineTokenPresentation,

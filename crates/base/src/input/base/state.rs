@@ -1,3 +1,4 @@
+// Modified for GPUI Design: remove window-wide rich-text selection and spinbutton-only state.
 //! A text input field that allows the user to enter text.
 //!
 //! Based on the `Input` example from the `gpui` crate.
@@ -5,7 +6,7 @@
 use gpui::TextAlign;
 use gpui::{
     Action, App, AppContext, Bounds, ClipboardItem, Context, Edges, Entity, EntityInputHandler,
-    EventEmitter, FocusHandle, Focusable, Hsla, InteractiveElement as _, IntoElement, KeyBinding,
+    EventEmitter, FocusHandle, Focusable, InteractiveElement as _, IntoElement, KeyBinding,
     MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels, Point,
     Render, ScrollEvent, ScrollHandle, SharedString, StatefulInteractiveElement as _, Styled as _,
     Subscription, UTF16Selection, WeakFocusHandle, Window, actions, div, point,
@@ -22,9 +23,8 @@ use sum_tree::Bias;
 use unicode_segmentation::*;
 
 use super::{
-    DiagnosticSet, DisplayMap, FoldPlaceholderRenderer, InputContextMenuCapabilities,
-    InputEditorStyle, InputHighlighterFactory, MASK_CHAR, MaskPattern, NativeMenu, NumberStep,
-    WrappingIndent,
+    DiagnosticSet, DisplayMap, InputContextMenuCapabilities, InputEditorStyle,
+    InputHighlighterFactory, MASK_CHAR, MaskPattern, NativeMenu, WrappingIndent,
     blink_cursor::BlinkCursor,
     change::Change,
     cursor::{CursorSelection, Selections},
@@ -44,7 +44,7 @@ use crate::input::{
     InputEdit, InputExtras as _, Position, RopeExt as _, element::RIGHT_MARGIN, layout::LastLayout,
 };
 use crate::overscroll::Overscroll;
-use crate::{AutoScroll, StepAction, TestSupportExt as _};
+use crate::{AutoScroll, TestSupportExt as _};
 
 pub(super) const EDITOR_ELEMENT_ID: &str = "input-state";
 
@@ -372,8 +372,10 @@ struct PasteTarget {
 
 /// Caret positioning geometry from the input's latest prepaint.
 ///
-/// Stashed during prepaint so caret-anchored popups can position themselves
-/// from the current frame's geometry in their deferred prepaint.
+/// Unlike `last_layout` (published at paint time), this is stashed during
+/// prepaint so caret-anchored popups can position themselves from the
+/// current frame's geometry in their deferred prepaint, instead of the
+/// previous frame's paint.
 #[derive(Clone, Copy, Debug)]
 #[doc(hidden)]
 pub struct PrepaintCaretGeometry {
@@ -487,11 +489,10 @@ pub struct InputBaseState<M: InputModeKind> {
     /// Fresh caret geometry stashed during prepaint for caret-anchored popups.
     ///
     /// Popups are positioned in their deferred prepaint, which runs after the
-    /// input's prepaint but before its paint.
+    /// input's prepaint but before its paint, so they read this instead of
+    /// the previous frame's `last_layout`.
     pub(crate) prepaint_caret_geometry: Option<PrepaintCaretGeometry>,
     pub(super) last_cursor: Option<usize>,
-    /// Where the platform was last told the caret is, for its IME panel.
-    pub(super) ime_anchor: Option<(Point<Pixels>, Option<Bounds<Pixels>>)>,
     /// The input container bounds
     pub(super) input_bounds: Bounds<Pixels>,
     /// The text bounds
@@ -522,12 +523,9 @@ pub struct InputBaseState<M: InputModeKind> {
     pub(crate) cursor_line_end_affinity: bool,
     pub(super) pattern: Option<regex::Regex>,
     pub(super) validate: Option<Box<dyn Fn(&str, &mut App) -> bool + 'static>>,
-    /// The step strategy for [`super::NumberInput`] to increment/decrement.
-    /// See [`Self::step`] and [`Self::step_by`].
-    pub(crate) number_step: Option<NumberStep>,
-    /// The minimum value for [`super::NumberInput`]. See [`Self::min`].
+    /// The minimum value for a numeric input. See [`Self::min`].
     pub(crate) number_min: Option<f64>,
-    /// The maximum value for [`super::NumberInput`]. See [`Self::max`].
+    /// The maximum value for a numeric input. See [`Self::max`].
     pub(crate) number_max: Option<f64>,
     pub(crate) scroll_handle: ScrollHandle,
     /// Whether the text stretches past its ends, see [`Self::scroll_bounce`].
@@ -554,8 +552,6 @@ pub struct InputBaseState<M: InputModeKind> {
     /// colours once and then never see them as unset again, which is the same
     /// freeze in a different place.
     projected_editor_style: InputEditorStyle,
-    pub(super) fold_placeholder_renderer: Option<FoldPlaceholderRenderer>,
-    pub(super) fold_background: Option<Hsla>,
     accessibility: Option<InputAccessibility>,
     /// What paints in place of Base's editor scrollbar, when a consumer
     /// supplies its own.
@@ -563,10 +559,6 @@ pub struct InputBaseState<M: InputModeKind> {
 
     /// The mask pattern for formatting the input text
     pub(crate) mask_pattern: MaskPattern,
-    /// Whether the `mask_pattern` was explicitly set (via [`Self::mask_pattern`]
-    /// or [`Self::set_mask_pattern`]), to let [`super::NumberInput`] only apply
-    /// its default mask when the user has not made an explicit choice.
-    pub(super) mask_pattern_set: bool,
     pub(super) placeholder: SharedString,
 
     /// Diagnostic currently requested by pointer hover; applications render it.
@@ -1017,7 +1009,6 @@ impl<M: InputModeKind> InputBaseState<M> {
             loading: false,
             pattern: None,
             validate: None,
-            number_step: Some(NumberStep::Fixed(1.)),
             number_min: None,
             number_max: None,
             mode: LayoutMode::default(),
@@ -1029,7 +1020,6 @@ impl<M: InputModeKind> InputBaseState<M> {
             last_input_edits: Vec::new(),
             column_select_start: None,
             last_cursor: None,
-            ime_anchor: None,
             scroll_handle: ScrollHandle::new(),
             scroll_bounce: crate::ScrollBounce::enabled_by_default(),
             overscroll: Overscroll::default(),
@@ -1041,11 +1031,8 @@ impl<M: InputModeKind> InputBaseState<M> {
             deferred_scroll_offset: None,
             placeholder: SharedString::default(),
             mask_pattern: MaskPattern::default(),
-            mask_pattern_set: false,
             editor_style: InputEditorStyle::default(),
             projected_editor_style: InputEditorStyle::default(),
-            fold_placeholder_renderer: None,
-            fold_background: None,
             accessibility: None,
             scrollbar_renderer: None,
             diagnostic_popover: None,
@@ -1141,24 +1128,6 @@ impl<M: InputModeKind> InputBaseState<M> {
     pub fn set_editor_style(&mut self, style: InputEditorStyle) {
         self.editor_style = style.clone();
         self.projected_editor_style = style;
-    }
-
-    /// Draws a placeholder right after the text of each folded line, given its
-    /// buffer row. Clicking it unfolds the line.
-    pub fn set_fold_placeholder_renderer(
-        &mut self,
-        renderer: Option<FoldPlaceholderRenderer>,
-        cx: &mut Context<Self>,
-    ) {
-        self.fold_placeholder_renderer = renderer;
-        cx.notify();
-    }
-
-    /// Fills each folded line across the editor, as VS Code's
-    /// `editor.foldBackground`.
-    pub fn set_fold_background(&mut self, color: Option<Hsla>, cx: &mut Context<Self>) {
-        self.fold_background = color;
-        cx.notify();
     }
 
     /// Project semantics onto the editor, never onto a second focus owner.
@@ -2765,10 +2734,6 @@ impl<M: InputModeKind> InputBaseState<M> {
             self.focus(window, cx);
             self.pause_blink_cursor(cx);
         }
-        // Input has its own text selection; suppress the window-level text
-        // selection (Root) so it does not start a drag from here.
-        crate::global_state::GlobalState::suppress_text_selection(cx);
-
         // Clear inline completion on any mouse interaction
         M::clear_inline_completion(self, cx);
         // A tap on the touch selection asks for its menu back. Any other press
@@ -2964,8 +2929,6 @@ impl<M: InputModeKind> InputBaseState<M> {
                 cx.notify();
             }
         } else {
-            self.overscroll
-                .touch_phase(event.touch_phase, cx.background_executor().now());
             // Axis drift must not drop the end of a vertical drag.
             if matches!(
                 event.touch_phase,
@@ -4180,7 +4143,6 @@ impl<M: InputModeKind> InputBaseState<M> {
     /// Example: "(999)999-999" for phone numbers
     pub fn mask_pattern(mut self, pattern: impl Into<MaskPattern>) -> Self {
         self.mask_pattern = pattern.into();
-        self.mask_pattern_set = true;
         if let Some(placeholder) = self.mask_pattern.placeholder() {
             self.placeholder = placeholder.into();
         }
@@ -4194,22 +4156,10 @@ impl<M: InputModeKind> InputBaseState<M> {
         cx: &mut Context<Self>,
     ) {
         self.mask_pattern = pattern.into();
-        self.mask_pattern_set = true;
         if let Some(placeholder) = self.mask_pattern.placeholder() {
             self.placeholder = placeholder.into();
         }
         cx.notify();
-    }
-
-    /// Apply the default numeric mask unless the caller explicitly selected a mask.
-    pub fn ensure_number_mask(&mut self) {
-        if self.mask_pattern_set {
-            return;
-        }
-        self.mask_pattern = MaskPattern::Number {
-            separator: None,
-            fraction: None,
-        };
     }
 
     pub(super) fn set_input_bounds(&mut self, new_bounds: Bounds<Pixels>, cx: &mut Context<Self>) {
@@ -5130,7 +5080,7 @@ impl<M: InputModeKind> Render for InputBaseState<M> {
         // layout and paint, and both happen after this call in the same frame.
         self.editor_style = self
             .projected_editor_style
-            .resolved(&crate::Theme::global(cx).tokens);
+            .resolved(&crate::Theme::global(cx).input_colors);
         let entity = cx.entity();
         if self._pending_update {
             self.mode.update_highlighter::<M>(
@@ -7730,34 +7680,6 @@ mod tests {
                 y + layout.line_height * 3. <= state.last_bounds.unwrap().size.height + px(0.1),
                 "wrapped match must retain surrounding display rows"
             );
-        });
-    }
-
-    #[gpui::test]
-    fn test_number_step(cx: &mut TestAppContext) {
-        let input = InputView::build(cx, |state| state).input;
-
-        cx.update(|cx| {
-            input.update(cx, |_state, cx| {
-                assert_eq!(
-                    NumberStep::from(5.).value(123., StepAction::Increment, cx),
-                    5.
-                );
-
-                // The step can differ by direction at a boundary: at 1.0 it
-                // is 0.1 going down and 0.5 going up.
-                let step = NumberStep::by_value(|value, action, _cx| {
-                    let below = match action {
-                        StepAction::Increment => value < 1.0,
-                        StepAction::Decrement => value <= 1.0,
-                    };
-                    if below { 0.1 } else { 0.5 }
-                });
-                assert_eq!(step.value(0.5, StepAction::Increment, cx), 0.1);
-                assert_eq!(step.value(1.0, StepAction::Increment, cx), 0.5);
-                assert_eq!(step.value(1.0, StepAction::Decrement, cx), 0.1);
-                assert_eq!(step.value(2.0, StepAction::Decrement, cx), 0.5);
-            });
         });
     }
 
@@ -12581,25 +12503,6 @@ impl InputBaseState<crate::input::InputMode> {
         Self::new_in_mode(window, cx)
     }
 
-    /// Set a custom step function of the [`super::NumberInput`].
-    ///
-    /// The `f` receives the current value and the [`StepAction`], and returns
-    /// the step to apply, so the step can vary with the value.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// // At the boundary 1.0 the step is 0.1 going down and 0.5 going up.
-    /// InputState::new(window, cx).step_by(|value, action, _cx| match action {
-    ///     StepAction::Increment => if value < 1.0 { 0.1 } else { 0.5 },
-    ///     StepAction::Decrement => if value <= 1.0 { 0.1 } else { 0.5 },
-    /// })
-    /// ```
-    pub fn step_by(mut self, f: impl Fn(f64, StepAction, &mut App) -> f64 + 'static) -> Self {
-        self.number_step = Some(NumberStep::by_value(f));
-        self
-    }
-
     /// Set with password masked state.
     pub fn masked(mut self, masked: bool) -> Self {
         self.masked = masked;
@@ -12642,51 +12545,18 @@ impl InputBaseState<crate::input::InputMode> {
         self.validate = Some(Box::new(validate));
     }
 
-    /// Set the step value of the [`super::NumberInput`] for increment/decrement.
-    ///
-    /// If any of `step`, `min`, `max` is set, the [`super::NumberInput`] will
-    /// update the value internally (step by `step`, default 1, clamp to the
-    /// `min`/`max` range and emit [`InputEvent::Change`]) instead of emitting
-    /// [`super::NumberInputEvent::Step`].
-    ///
-    /// See also [`Self::step_by`] to calculate the step value
-    /// based on the current value.
-    pub fn step(mut self, step: impl Into<NumberStep>) -> Self {
-        self.number_step = Some(step.into());
-        self
-    }
-
-    /// Set the minimum value of the [`super::NumberInput`].
-    ///
-    /// The value will be clamped to the minimum value on stepping and on
-    /// blur (only if the clamped value passes the `pattern`/`validate` check).
-    /// See also [`Self::step`].
+    /// Set the minimum numeric value, clamped on blur when the input uses a
+    /// numeric mask and the clamped value passes its validation rules.
     pub fn min(mut self, min: f64) -> Self {
         self.number_min = Some(min);
         self
     }
 
-    /// Set the maximum value of the [`super::NumberInput`].
-    ///
-    /// The value will be clamped to the maximum value on stepping and on
-    /// blur (only if the clamped value passes the `pattern`/`validate` check).
-    /// See also [`Self::step`].
+    /// Set the maximum numeric value, clamped on blur when the input uses a
+    /// numeric mask and the clamped value passes its validation rules.
     pub fn max(mut self, max: f64) -> Self {
         self.number_max = Some(max);
         self
-    }
-
-    /// Update the step value after construction, `None` to fall back to
-    /// emitting [`super::NumberInputEvent::Step`] (if `min`, `max` are unset).
-    ///
-    /// See [`Self::step`] and [`Self::step_by`].
-    pub fn set_step(
-        &mut self,
-        step: impl Into<Option<NumberStep>>,
-        _: &mut Window,
-        _: &mut Context<Self>,
-    ) {
-        self.number_step = step.into();
     }
 
     /// Update the minimum value after construction. See [`Self::min`].

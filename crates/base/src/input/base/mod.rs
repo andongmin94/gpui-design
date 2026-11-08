@@ -1,3 +1,4 @@
+// Modified for GPUI Design: observe the public Input wrapper and update crate references.
 use crate::{StateStyle, StyledExt as _, TestSupportExt as _};
 use gpui::{
     AnyElement, App, Div, ElementId, InteractiveElement, Interactivity, IntoElement, ParentElement,
@@ -12,7 +13,7 @@ use gpui::{
 /// breaking the menu builders.
 ///
 /// ```
-/// use gpui_base::input::InputContextMenuCapabilities;
+/// use gpui_design::input::InputContextMenuCapabilities;
 ///
 /// let capabilities = InputContextMenuCapabilities::new()
 ///     .code_editor(true)
@@ -163,8 +164,8 @@ impl InputBase {
 
     /// Exposes an editor's native semantics through this frame's component ID.
     ///
-    /// `editor` must identify the input, textarea or editor state rendered below
-    /// this frame, without intervening element IDs. Anonymous layout wrappers
+    /// `editor` must identify the state rendered by [`super::Input`] below this
+    /// frame, without additional identified wrappers. Anonymous layout wrappers
     /// are allowed. ID queries retain the frame's path, bounds and visibility.
     /// Role, label, value, checked/indeterminate, selected, expanded, disabled
     /// and focus facts come from the editor's existing native node and observed
@@ -179,6 +180,7 @@ impl InputBase {
         {
             Self {
                 base: self.base.semantic_owner([
+                    std::any::type_name::<super::Input>().into(),
                     ElementId::View(editor),
                     super::state::EDITOR_ELEMENT_ID.into(),
                 ]),

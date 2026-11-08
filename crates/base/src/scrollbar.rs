@@ -1,3 +1,4 @@
+// Modified for GPUI Design: use input ink defaults and caller-owned thumb radius.
 use std::{cell::Cell, ops::Deref, panic::Location, rc::Rc};
 
 use instant::{Duration, Instant};
@@ -10,10 +11,9 @@ use crate::{
 use gpui::{
     Anchor, App, Axis, Background, BorderStyle, Bounds, ContentMask, CursorStyle, Edges, Element,
     ElementId, EntityId, GlobalElementId, Hitbox, HitboxBehavior, Hsla, InspectorElementId,
-    IntoElement, IsZero, LayoutId, ListState, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    PaintQuad, Pixels, Point, Position, ScrollEvent, ScrollHandle, Size, Style, TouchDragEvent,
-    TouchPhase, UniformListScrollHandle, Window, fill, point, prelude::FluentBuilder, px, relative,
-    size,
+    IntoElement, LayoutId, ListState, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
+    Pixels, Point, Position, ScrollEvent, ScrollHandle, Size, Style, TouchDragEvent, TouchPhase,
+    UniformListScrollHandle, Window, fill, point, prelude::FluentBuilder, px, relative, size,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -1031,7 +1031,7 @@ impl Scrollbar {
     /// It used to be literal black at these alphas. That reads as an ordinary
     /// grey thumb on a light surface and as very nearly nothing at all on a
     /// dark one, and no palette an application installed could change it:
-    /// `Theme` carries `scrollbar` beside `tokens` rather than derived from
+    /// `Theme` carries `scrollbar` beside `input_colors` rather than derived from
     /// them, so a theme swap moved every token except the ones the scrollbar
     /// actually paints with.
     ///
@@ -1041,7 +1041,7 @@ impl Scrollbar {
     /// explicit `ScrollbarStyles` still wins: this is the bottom of the
     /// cascade, not a new top of it.
     fn thumb_default_background(cx: &App, alpha: f32) -> Background {
-        cx.theme().tokens.colors.foreground.alpha(alpha).into()
+        cx.theme().input_colors.foreground.alpha(alpha).into()
     }
 
     fn thumb_defaults(
@@ -1605,11 +1605,7 @@ impl Element for Scrollbar {
             |window| {
                 for state in prepaint.states.iter() {
                     let axis = state.axis;
-                    let mut radius = state.radius;
-                    if theme.tokens.radius.md.is_zero() {
-                        radius = px(0.);
-                    }
-                    radius = clamp_thumb_radius(radius, state.thumb_fill_bounds);
+                    let radius = clamp_thumb_radius(state.radius, state.thumb_fill_bounds);
                     let thumb_bounds = state.thumb_bounds;
                     let geometry = state.geometry;
                     let active_geometry = state.active_geometry;
@@ -2420,11 +2416,11 @@ mod tests {
             let scrollbar = Scrollbar::new(&TestHandle::new(Size::default()));
 
             let light = gpui::hsla(0., 0., 0.04, 1.0);
-            crate::Theme::global_mut(cx).tokens.colors.foreground = light;
+            crate::Theme::global_mut(cx).input_colors.foreground = light;
             let (on_light, ..) = scrollbar.style_for_normal(cx);
 
             let dark = gpui::hsla(0., 0., 0.98, 1.0);
-            crate::Theme::global_mut(cx).tokens.colors.foreground = dark;
+            crate::Theme::global_mut(cx).input_colors.foreground = dark;
             let (on_dark, ..) = scrollbar.style_for_normal(cx);
 
             assert_eq!(on_light, Background::from(light.alpha(0.35)));
@@ -2439,7 +2435,7 @@ mod tests {
     fn a_styled_thumb_still_beats_the_theme_derived_default(cx: &mut TestAppContext) {
         cx.update(|cx| {
             let chosen = gpui::hsla(0.6, 0.5, 0.5, 1.0);
-            crate::Theme::global_mut(cx).tokens.colors.foreground = gpui::hsla(0., 0., 0.98, 1.0);
+            crate::Theme::global_mut(cx).input_colors.foreground = gpui::hsla(0., 0., 0.98, 1.0);
 
             let scrollbar = Scrollbar::new(&TestHandle::new(Size::default()))
                 .styles(|styles| styles.thumb(|style| style.bg(chosen)));

@@ -1,11 +1,9 @@
-use gpui::{App, Global};
+// Modified for GPUI Design: retain only input colors, caret, and scrollbar defaults.
+use gpui::{App, Global, Hsla, hsla};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    PlotMotion, ScrollbarMode, ScrollbarMotion, ScrollbarStyles, SemanticThemeTokens,
-    input::CursorBlink,
-};
+use crate::{ScrollbarMode, ScrollbarMotion, ScrollbarStyles, input::CursorBlink};
 
 /// Application-wide defaults for Base behavior modules.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -16,16 +14,42 @@ pub enum ThemeAppearance {
     Dark,
 }
 
+/// Baseline colors for text editing, independent of any application design system.
+///
+/// Explicit colors in [`crate::InputEditorStyle`] take precedence. These defaults
+/// make unconfigured input text and its caret visible on a light surface; they
+/// do not style a control frame, choose typography, or set layout dimensions.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[non_exhaustive]
+pub struct InputColors {
+    pub foreground: Hsla,
+    pub muted_foreground: Hsla,
+    pub background: Hsla,
+    pub border: Hsla,
+    pub selection: Hsla,
+}
+
+impl Default for InputColors {
+    fn default() -> Self {
+        Self {
+            foreground: hsla(0., 0., 0.039, 1.),
+            muted_foreground: hsla(0., 0., 0.451, 1.),
+            background: hsla(0., 0., 1., 1.),
+            border: hsla(0., 0., 0.898, 1.),
+            selection: hsla(0., 0., 0.961, 0.4),
+        }
+    }
+}
+
 /// Construct with [`Theme::default`] and assign fields; new fields may be
 /// added without a breaking change.
 #[derive(Clone, Default)]
 #[non_exhaustive]
 pub struct Theme {
     pub appearance: ThemeAppearance,
-    pub tokens: SemanticThemeTokens,
+    /// Baseline colors used when an input has no explicit projected color.
+    pub input_colors: InputColors,
     pub scrollbar: ScrollbarTheme,
-    pub resizable: ResizableTheme,
-    pub plot: PlotTheme,
     /// Application-wide caret blink behavior.
     pub cursor_blink: CursorBlink,
 }
@@ -99,50 +123,6 @@ impl ScrollbarTheme {
     pub fn styles(&self) -> &ScrollbarStyles {
         &self.styles
     }
-}
-
-/// Global defaults used by [`crate::plot`].
-///
-/// `motion` defaults to motionless. Styled layers project their own timing;
-/// Base never installs a fade or glide of its own.
-#[derive(Clone, Default)]
-pub struct PlotTheme {
-    motion: PlotMotion,
-}
-
-impl PlotTheme {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn with_motion(mut self, motion: PlotMotion) -> Self {
-        self.motion = motion;
-        self
-    }
-
-    pub fn motion(&self) -> &PlotMotion {
-        &self.motion
-    }
-}
-
-/// Global visual defaults used by resizable panel handles.
-///
-/// `None` means *unset*, not invisible: a handle with nothing projected onto it
-/// resolves from the active [`SemanticThemeTokens`] -- `border` at rest, `ring`
-/// while dragging -- which are the tokens those two states already mean
-/// everywhere else.
-///
-/// These were plain colors, so the Base default was `Hsla::default()`: fully
-/// transparent. That reads as a deliberate choice next to a styled façade,
-/// which projects its own values and never sees it, and as a missing divider
-/// to anything that does not -- and a consumer with no façade has no way to
-/// project anything. Making them optional keeps the projection exactly as it
-/// was while giving the unprojected case an answer.
-#[derive(Clone, Copy, Default)]
-#[non_exhaustive]
-pub struct ResizableTheme {
-    pub handle: Option<gpui::Hsla>,
-    pub active_handle: Option<gpui::Hsla>,
 }
 
 #[cfg(test)]

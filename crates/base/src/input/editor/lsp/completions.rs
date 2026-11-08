@@ -1,3 +1,4 @@
+// Modified for GPUI Design: update references to the extracted crate.
 use crate::input::EditorMode;
 use anyhow::Result;
 use gpui::{App, Context, EntityInputHandler, Pixels, Task, Window, px};
@@ -117,7 +118,7 @@ fn chars_eq_ignore_case(left: char, right: char) -> bool {
 /// configured separately, on [`super::Lsp::completion_highlighter`].
 ///
 /// ```
-/// use gpui_base::input::CompletionMenuOptions;
+/// use gpui_design::input::CompletionMenuOptions;
 /// let options = CompletionMenuOptions {
 ///     max_width: gpui::px(480.),
 /// };
