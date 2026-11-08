@@ -25,7 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-latest]
+        os: [ubuntu-24.04, windows-latest, macos-latest]
     steps:
       - name: Check out source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -52,10 +52,16 @@ jobs:
             libxkbcommon-x11-dev libx11-xcb-dev libvulkan1
 
       - name: Lint library, tests, and example
+        if: runner.os == 'Linux'
         run: cargo clippy -p gpui-design --all-targets --features test-support --locked -- -D warnings
 
       - name: Test behavior and headless interactions
+        if: runner.os == 'Linux'
         run: cargo test -p gpui-design --features test-support --locked
+
+      - name: Test composed controls on native platforms
+        if: runner.os != 'Linux'
+        run: cargo test -p gpui-design --features test-support --locked --test composition
 
       - name: Build native example with default features
         run: cargo build -p gpui-design --example two_styles --locked

@@ -27,6 +27,10 @@ tests before changing a behavior. The README describes the current scope.
   contexts for keyboard, pointer, focus, and accessibility metadata contracts.
 - Keep tests focused on observable behavior. Do not introduce a separate test
   framework or tests that merely repeat implementation details.
+- Cover each distinct interaction once at the appropriate layer. Do not duplicate
+  entire flows for appearance variants without a concrete layout-specific risk.
+- Keep formatting, lint, and the full suite on one CI platform; use representative
+  composition tests and native builds for the other supported platforms.
 - Run checks for the affected scope. Repeat a passing check only after a relevant
   change, a new failure, a concrete unresolved concern, or a required gate.
 - Run the integrated verification once for the completed change set. Use the

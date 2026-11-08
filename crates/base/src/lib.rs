@@ -29,12 +29,14 @@ mod overscroll;
 mod popover;
 mod popup;
 mod positioner;
+mod progress;
 mod radio_group;
 mod reduce_motion;
 mod root;
 mod scroll_bounce;
 mod scrollbar;
 mod select;
+mod slider;
 mod state_style;
 mod styled;
 mod switch;
@@ -70,6 +72,7 @@ pub use observe::{ObservedElement, ObservedTextElement, TestSupportExt, TestText
 pub use popover::{Popover, PopoverState};
 pub use popup::{POPUP_PRIORITY, Popup};
 pub use positioner::{Align, Positioner, ResolvedPosition};
+pub use progress::Progress;
 pub use radio_group::{RadioGroup, RadioGroupEvent, RadioGroupState, RadioItem, RadioOption};
 pub use reduce_motion::apply_system_reduce_motion;
 pub use root::Root;
@@ -79,6 +82,7 @@ pub use scrollbar::{
     ScrollbarStyles, ScrollbarThumbStyle, ScrollbarTrackStyle,
 };
 pub use select::{Select, SelectEvent, SelectItem, SelectOption, SelectState};
+pub use slider::{Slider, SliderEvent, SliderState};
 pub use state_style::StateStyle;
 #[cfg(any(feature = "inspector", debug_assertions))]
 pub use styled::styled_ext_reflection_methods;
@@ -108,6 +112,7 @@ pub fn init(cx: &mut App) {
     popover::init(cx);
     radio_group::init(cx);
     select::init(cx);
+    slider::init(cx);
     tabs::init(cx);
     input::init(cx);
     root::init(cx);

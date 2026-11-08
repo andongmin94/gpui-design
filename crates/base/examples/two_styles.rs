@@ -4,16 +4,16 @@
 use gpui::{
     AppContext as _, Axis, Context, Entity, FocusHandle, Focusable as _, Hsla,
     InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Rems, Render, Role,
-    SharedString, Styled as _, Subscription, Window, div, prelude::FluentBuilder as _, px, rems,
-    rgb,
+    SharedString, Styled as _, Subscription, Window, div, prelude::FluentBuilder as _, px,
+    relative, rems, rgb,
 };
 use gpui_design::{
     Accordion, AccordionHeader, AccordionItem, AccordionPanel, AccordionState, Button, Checkbox,
     CheckboxState, Dialog, DialogBackdrop, DialogClose, DialogDescription, DialogPopup,
     DialogState, DialogTitle, DropdownMenu, DropdownMenuEvent, DropdownMenuItem,
-    DropdownMenuOption, DropdownMenuState, Input, InputBase, Popover, PopoverState, RadioGroup,
-    RadioGroupState, RadioItem, RadioOption, Select, SelectItem, SelectOption, SelectState, Switch,
-    Tab, TabItem, TabList, TabPanel, TabsState,
+    DropdownMenuOption, DropdownMenuState, Input, InputBase, Popover, PopoverState, Progress,
+    RadioGroup, RadioGroupState, RadioItem, RadioOption, Select, SelectItem, SelectOption,
+    SelectState, Slider, SliderState, Switch, Tab, TabItem, TabList, TabPanel, TabsState,
     input::{InputAccessibility, InputEditorStyle, InputState},
 };
 
@@ -94,6 +94,7 @@ pub(crate) struct Demo {
     pub(crate) help: Entity<PopoverState>,
     pub(crate) actions: Entity<DropdownMenuState>,
     pub(crate) accordion: Entity<AccordionState>,
+    pub(crate) preview: Entity<SliderState>,
     pub(crate) show_cursor: bool,
     pub(crate) keep_toolbar: bool,
     pub(crate) trigger_focus: FocusHandle,
@@ -179,6 +180,7 @@ impl Demo {
             )
             .default_open("keyboard")
         });
+        let preview = cx.new(|cx| SliderState::new(0.0..=100.0, 5.0, cx).default_value(40.0));
         // The form summary and its presentation read these retained states.
         let subscriptions = vec![
             cx.observe(&input, |_, _, cx| cx.notify()),
@@ -188,6 +190,7 @@ impl Demo {
             cx.observe(&help, |_, _, cx| cx.notify()),
             cx.observe(&actions, |_, _, cx| cx.notify()),
             cx.observe(&accordion, |_, _, cx| cx.notify()),
+            cx.observe(&preview, |_, _, cx| cx.notify()),
             cx.observe(&dialog, |_, _, cx| cx.notify()),
             cx.subscribe_in(&actions, window, |this, _, event, window, cx| {
                 let DropdownMenuEvent::Action(value) = event;
@@ -210,6 +213,7 @@ impl Demo {
             help,
             actions,
             accordion,
+            preview,
             show_cursor: true,
             keep_toolbar: false,
             trigger_focus: cx.focus_handle().tab_stop(true),
@@ -612,6 +616,72 @@ impl Render for Demo {
                     ),
             );
 
+        let preview = self.preview.read(cx);
+        let progress_preview = div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .px_2()
+            .child(format!("Progress preview · {:.0}%", preview.value()))
+            .child(
+                Slider::new("preview-percentage", &self.preview)
+                    .accessibility_label("Preview percentage")
+                    .relative()
+                    .h(palette.control_height)
+                    .rounded(palette.radius)
+                    .focus_visible(|style| style.bg(palette.highlight))
+                    .child(
+                        div()
+                            .absolute()
+                            .left_0()
+                            .right_0()
+                            .top(relative(0.5))
+                            .mt(px(-2.))
+                            .h(px(4.))
+                            .rounded_full()
+                            .bg(palette.border),
+                    )
+                    .child(
+                        div()
+                            .absolute()
+                            .left_0()
+                            .top(relative(0.5))
+                            .mt(px(-2.))
+                            .h(px(4.))
+                            .w(relative(preview.percentage()))
+                            .rounded_full()
+                            .bg(palette.accent),
+                    )
+                    .child(
+                        div()
+                            .absolute()
+                            .left(relative(preview.percentage()))
+                            .top(relative(0.5))
+                            .ml(px(-7.))
+                            .mt(px(-7.))
+                            .size(px(14.))
+                            .rounded_full()
+                            .bg(palette.accent),
+                    ),
+            )
+            .child(
+                Progress::new("preview-progress")
+                    .accessibility_label("Preview progress")
+                    .value(preview.value())
+                    .h_2()
+                    .rounded_full()
+                    .overflow_hidden()
+                    .bg(palette.border)
+                    .child(
+                        div()
+                            .debug_selector(|| "preview-progress-fill".into())
+                            .h_full()
+                            .w(relative(preview.percentage()))
+                            .rounded_full()
+                            .bg(palette.accent),
+                    ),
+            );
+
         div()
             .size_full()
             .flex()
@@ -663,6 +733,7 @@ impl Render for Demo {
                             .child("Edit session"),
                     ))
                     .child(actions)
+                    .child(progress_preview)
                     .child(
                         div()
                             .text_color(palette.muted)

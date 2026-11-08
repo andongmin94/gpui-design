@@ -220,7 +220,8 @@ pattern conformance or completed screen-reader validation.
 
 The existing GPUI test framework checks selected and disabled metadata, orientation,
 focus traversal, inactive panels, popup dismissal, command dispatch, and the
-complete composed example in both appearances. Composition tests cover a command
+representative composed flows across both appearances. Composition tests cover a command
 opening Dialog, header navigation without expansion, and collapse of a panel with
-an open Popover. These checks run in Windows and Ubuntu CI. They do not replace
+an open Popover. The full suite runs once on Linux; composition checks and native
+example builds also run on Windows and macOS. They do not replace
 native IME, screen reader, DPI, and visual checks on a desktop.

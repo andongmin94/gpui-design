@@ -1,4 +1,5 @@
 //! Exercises the same consumer code as the native two_styles example.
+//! Each distinct flow runs once, across representative compact and settings appearances.
 //! GPUI's input simulation does not run a platform IME or screen reader.
 
 #[path = "../examples/two_styles.rs"]
@@ -65,8 +66,9 @@ fn open_dialog(cx: &mut VisualTestContext, demo: &Entity<Demo>) {
     });
 }
 
-fn exercise_keyboard_flow(cx: &mut TestAppContext, appearance: Appearance) {
-    let (cx, demo) = harness(cx, appearance);
+#[gpui::test]
+fn compact_controls_complete_the_keyboard_flow(cx: &mut TestAppContext) {
+    let (cx, demo) = harness(cx, Appearance::Compact);
     let changes = Rc::new(RefCell::new(Vec::new()));
     let stroke_changes = Rc::new(RefCell::new(Vec::new()));
     cx.update(|_, cx| {
@@ -295,16 +297,6 @@ fn exercise_keyboard_flow(cx: &mut TestAppContext, appearance: Appearance) {
 }
 
 #[gpui::test]
-fn compact_controls_complete_the_keyboard_flow(cx: &mut TestAppContext) {
-    exercise_keyboard_flow(cx, Appearance::Compact);
-}
-
-#[gpui::test]
-fn settings_controls_complete_the_same_keyboard_flow(cx: &mut TestAppContext) {
-    exercise_keyboard_flow(cx, Appearance::Settings);
-}
-
-#[gpui::test]
 fn select_dismissal_preserves_tab_pointer_and_dialog_focus(cx: &mut TestAppContext) {
     let (cx, demo) = harness(cx, Appearance::Compact);
     open_dialog(cx, &demo);
@@ -465,8 +457,9 @@ fn select_dismissal_preserves_tab_pointer_and_dialog_focus(cx: &mut TestAppConte
     });
 }
 
-fn exercise_navigation_and_help(cx: &mut TestAppContext, appearance: Appearance) {
-    let (cx, demo) = harness(cx, appearance);
+#[gpui::test]
+fn settings_tabs_and_popover_preserve_nested_focus(cx: &mut TestAppContext) {
+    let (cx, demo) = harness(cx, Appearance::Settings);
     let changes = Rc::new(RefCell::new(Vec::new()));
     cx.update(|_, cx| {
         let tabs = demo.read(cx).tabs.clone();
@@ -635,17 +628,8 @@ fn exercise_navigation_and_help(cx: &mut TestAppContext, appearance: Appearance)
 }
 
 #[gpui::test]
-fn compact_tabs_and_popover_preserve_nested_focus(cx: &mut TestAppContext) {
-    exercise_navigation_and_help(cx, Appearance::Compact);
-}
-
-#[gpui::test]
-fn settings_tabs_and_popover_preserve_nested_focus(cx: &mut TestAppContext) {
-    exercise_navigation_and_help(cx, Appearance::Settings);
-}
-
-fn exercise_commands_and_sections(cx: &mut TestAppContext, appearance: Appearance) {
-    let (cx, demo) = harness(cx, appearance);
+fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) {
+    let (cx, demo) = harness(cx, Appearance::Compact);
     let commands = Rc::new(RefCell::new(Vec::new()));
     cx.update(|_, cx| {
         let menu = demo.read(cx).actions.clone();
@@ -821,16 +805,40 @@ fn exercise_commands_and_sections(cx: &mut TestAppContext, appearance: Appearanc
         assert!(demo.actions.read(cx).focus_handle().is_focused(window));
     });
     assert_eq!(commands.borrow().len(), 4);
-}
 
-#[gpui::test]
-fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) {
-    exercise_commands_and_sections(cx, Appearance::Compact);
-}
-
-#[gpui::test]
-fn settings_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) {
-    exercise_commands_and_sections(cx, Appearance::Settings);
+    // The same retained Slider value drives the application's progress preview.
+    cx.simulate_keystrokes("tab right");
+    draw(cx);
+    cx.update(|window, cx| {
+        let preview = demo.read(cx).preview.read(cx);
+        assert!(preview.focus_handle().is_focused(window));
+        assert_eq!(preview.value(), 45.0);
+        let progress = test_support::find(window, &[], &"preview-progress".into()).unwrap();
+        assert_eq!(progress.role(), Some(Role::ProgressIndicator));
+        assert_eq!(progress.label(), Some("Preview progress"));
+    });
+    cx.simulate_keystrokes("end");
+    draw(cx);
+    let progress_width = cx.update(|window, cx| {
+        assert_eq!(demo.read(cx).preview.read(cx).value(), 100.0);
+        test_support::find(window, &[], &"preview-progress".into())
+            .unwrap()
+            .bounds()
+            .size
+            .width
+    });
+    assert_eq!(
+        cx.debug_bounds("preview-progress-fill").unwrap().size.width,
+        progress_width,
+    );
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    cx.update(|window, cx| {
+        assert!(
+            demo.read(cx).trigger_focus.is_focused(window),
+            "Progress has no Tab stop"
+        );
+    });
 }
 
 #[gpui::test]

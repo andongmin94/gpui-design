@@ -8,7 +8,7 @@ Headless separates control behavior from application-owned presentation; the
 examples render native GPUI windows.
 
 This is an early foundation for an independent component ecosystem. It currently
-includes eleven controls and an executable example that gives the same behavior
+includes thirteen controls and an executable example that gives the same behavior
 two visual treatments. The source is maintained in this repository, with GPUI
 kept as an exactly pinned rendering dependency.
 
@@ -22,6 +22,8 @@ kept as an exactly pinned rendering dependency.
 | **RadioGroup** | Single selection, one Tab stop, arrow navigation, disabled options, and focus | Group layout and option rendering |
 | **Input** | Text editing state, selection, clipboard, focus, and the native text-input interface | Field container, text style, caret, and surrounding controls |
 | **Select** | Single selection from fixed options, keyboard navigation, disabled options, commit, and focus | Trigger, popup content, and option rendering |
+| **Slider** | One numeric value, bounded steps, keyboard and pointer adjustment, disabled state, and focus | Track, fill, thumb, sizing, and state styling |
+| **Progress** | Controlled percentage or indeterminate progress, accessible name and numeric range | Track, fill, label, and any animation |
 | **Tabs** | Active panel, one tab-list stop, automatic activation, orientation-aware keys, and disabled tabs | Tab-list layout, tab styling, and panel contents |
 | **Accordion** | One collapsible section, header navigation, disabled items, and focused-panel closure | Header, indicator, panel contents, and layout |
 | **Popover** | Non-modal open/close state, anchored placement, focus, outside dismissal, and Escape | Trigger, popup contents, and surface styling |
@@ -45,6 +47,8 @@ live in application code, outside the behavior layer. A Session actions menu ope
 the settings dialog or toggles application values. The dialog combines Preferences
 and Help tabs, and retains values when it is closed and reopened. Help uses an
 Accordion whose keyboard section opens a guide in a non-modal Popover.
+A slider on the summary card drives a progress preview, using the same retained
+value for its label, thumb position, and progress fill.
 
 See the [form control guide](docs/form-controls.md) for state ownership, keyboard
 contracts, and application-owned styling. Checkbox and Switch report the next
@@ -65,7 +69,8 @@ Install [Rust with rustup](https://rustup.rs/). The repository selects **Rust
 1.99.1**, including rustfmt and Clippy, through `rust-toolchain.toml`.
 
 On **Windows**, use the MSVC toolchain with the Visual Studio C++ build tools and
-a Windows SDK. On **Ubuntu 24.04**, install the native build dependencies:
+a Windows SDK. On **macOS**, install Xcode Command Line Tools with
+`xcode-select --install`. On **Ubuntu 24.04**, install the native build dependencies:
 
 ```sh
 sudo apt-get update
@@ -118,10 +123,19 @@ cargo build -p gpui-design --example two_styles --locked
 ```
 
 The [Verify workflow](https://github.com/andongmin94/gpui-design/actions/workflows/verify.yml)
-is configured for Windows and Ubuntu. It runs formatting, Clippy, behavior and
-headless interaction tests, and a native example build. Its run results are the
-source of automated verification status. macOS is not part of this initial CI
-matrix and has not been validated for this extraction.
+uses one matrix for Linux, Windows, and macOS. Platform-independent checks run
+once; each platform still compiles its native dependencies and example.
+
+| Check | Linux | Windows | macOS |
+| --- | --- | --- | --- |
+| Formatting and Clippy | Yes | — | — |
+| Full behavior and integration suite | Yes | — | — |
+| Public-API composition tests | Included above | Yes | Yes |
+| Native example build | Yes | Yes | Yes |
+
+Composition tests use representative flows across the two appearances instead of
+duplicating every scenario for each palette. Add tests for distinct behavior and
+observed regressions. Workflow run results are the source of automated status.
 
 Headless tests exercise control behavior and exposed accessibility metadata.
 Native Korean/CJK IME composition and candidate windows, screen-reader interaction,
@@ -147,6 +161,9 @@ Tabs adds retained active panels and keyboard navigation. Popover reuses the
 positioning primitive with a retained non-modal focus and dismissal lifecycle.
 Accordion adds single-open state and header navigation; DropdownMenu composes
 Popover with command dispatch and a keyboard/pointer cursor.
+Slider adapts the upstream pointer interaction to a single linear value with
+retained focus and keyboard adjustment. Progress retains the controlled numeric
+semantics while the application supplies its track and fill.
 
 Software source is licensed under [Apache-2.0](LICENSE-APACHE). The original
 Longbridge copyright and license notices are retained. Dependencies keep their
