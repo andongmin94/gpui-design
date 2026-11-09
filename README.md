@@ -8,7 +8,7 @@ Headless separates control behavior from application-owned presentation; the
 examples render native GPUI windows.
 
 This is an early foundation for an independent component ecosystem. It currently
-includes 30 public library families and nine copyable presentation recipes. An
+includes 30 public library families and eleven copyable presentation recipes. An
 executable example gives the same behavior two visual treatments. The source is
 maintained in this repository, with GPUI kept as an exactly pinned rendering
 dependency.
@@ -70,12 +70,14 @@ These types live in the example, outside the `gpui_design` crate exports.
 | **Alert** | Inline title and description, with separate destructive styling and explicit urgency | Informational schedule notice and a missing-name warning after closing invalid settings |
 | **Pagination** | Controlled previous/next buttons, current-page text, and empty/first/last-page boundaries | Moving through the preset catalogue |
 | **DataTable** | Client-side text filtering, one-column text sorting, pagination, and stable-ID row actions over Table | Searching the existing recording presets and applying one to the retained settings |
+| **Spinner** | Named indeterminate Progress with a rotating arc that respects GPUI's reduced-motion setting | The unknown-progress preview |
+| **Skeleton** | Static decorative placeholder with application-controlled size and shape | The preview's unavailable percentage display |
 
 The breadth target is the range of screens and interactions supported by
 shadcn/ui. The [component coverage map](docs/component-coverage.md) compares all
 66 entries in its current main catalogue with the actual public scope here.
 It distinguishes behavior, source-owned presentation recipes, and larger
-compositions. The 30 library families and nine recipes each have a defined scope;
+compositions. The 30 library families and eleven recipes each have a defined scope;
 the map records their current limits and the work still needed for comparable
 coverage.
 
@@ -103,8 +105,10 @@ Help, Schedule, and Presets tabs, and retains values when it is closed and reope
 Accordion whose keyboard section opens a guide in a non-modal Popover.
 A slider on the summary card drives a progress preview, using the same retained
 value for its label, thumb position, and progress fill.
-Toggle switches the progress preview to an unknown amount, and ToggleGroup applies
-independent bold/italic emphasis to the summary text.
+Toggle switches the progress preview to a named Spinner and a static Skeleton
+placeholder while preserving the Slider value. Spinner uses GPUI's animation
+wrapper and remains still when `App::reduce_motion()` is enabled. ToggleGroup
+applies independent bold/italic emphasis to the summary text.
 These controls live inside a Collapsible that starts closed and preserves their
 retained values. The menu's Reset preview action opens an AlertDialog with Cancel
 initially focused; only confirmation restores known progress at 40%.
@@ -232,7 +236,7 @@ The GPUI snapshot family is pinned to **`=0.3.11`**. Update those pins and
 | `crates/base/src/` | The `gpui-design` library and its behavior-level tests |
 | `crates/base/tests/` | Integration tests using the public API |
 | `crates/base/examples/two_styles.rs` | Native example and application-owned styles |
-| `crates/base/examples/recipes/` | Nine copyable presentation/composition recipes, including DataTable and Pagination |
+| `crates/base/examples/recipes/` | Eleven copyable presentation/composition recipes, including data tables and loading indicators |
 | `docs/form-controls.md` | Form control usage and interaction contracts |
 | `docs/navigation-overlays.md` | Tabs, Accordion, command menus, and composed focus behavior |
 | `docs/layout-and-data.md` | Table structure, ScrollArea composition, and Resizable panes |

@@ -29,7 +29,7 @@ use gpui_design::{
 mod recipes;
 use recipes::{
     Alert, Badge, ButtonGroup, Card, DataTable, DataTableColumn, DataTableRow, DataTableState,
-    EmptyState, InputGroup, Item,
+    EmptyState, InputGroup, Item, Skeleton, Spinner,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -1385,27 +1385,44 @@ impl Render for Demo {
                     ),
             )
             .child(
-                Progress::new("preview-progress")
-                    .accessibility_label("Preview progress")
-                    .value(preview.value())
-                    .indeterminate(self.preview_indeterminate)
-                    .h_2()
-                    .rounded_full()
-                    .overflow_hidden()
-                    .bg(palette.border)
-                    .child(
-                        div()
-                            .debug_selector(|| "preview-progress-fill".into())
-                            .h_full()
-                            .w(relative(if self.preview_indeterminate {
-                                1. / 3.
-                            } else {
-                                preview.percentage()
-                            }))
-                            .rounded_full()
-                            .when(self.preview_indeterminate, |fill| fill.opacity(0.5))
-                            .bg(palette.accent),
-                    ),
+                div()
+                    .h_5()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .when(self.preview_indeterminate, |row| {
+                        row.child(Spinner::new(
+                            "preview-progress",
+                            "Preview progress",
+                            palette,
+                        ))
+                        .child(
+                            Skeleton::new("preview-progress-placeholder", palette)
+                                .w_auto()
+                                .flex_1()
+                                .h_2(),
+                        )
+                    })
+                    .when(!self.preview_indeterminate, |row| {
+                        row.child(
+                            Progress::new("preview-progress")
+                                .accessibility_label("Preview progress")
+                                .value(preview.value())
+                                .w_full()
+                                .h_2()
+                                .rounded_full()
+                                .overflow_hidden()
+                                .bg(palette.border)
+                                .child(
+                                    div()
+                                        .debug_selector(|| "preview-progress-fill".into())
+                                        .h_full()
+                                        .w(relative(preview.percentage()))
+                                        .rounded_full()
+                                        .bg(palette.accent),
+                                ),
+                        )
+                    }),
             )
             .child(unknown_progress);
         let formatting = self.formatting.read(cx);

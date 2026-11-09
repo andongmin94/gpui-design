@@ -1,6 +1,6 @@
 # Presentation recipes
 
-These nine recipes are reusable application source, used by the native
+These eleven recipes are reusable application source, used by the native
 [two-style example](../crates/base/examples/two_styles.rs). They compose GPUI
 layout with the existing controls and keep colors, spacing, and sizing in the
 consumer's `Palette`.
@@ -290,6 +290,63 @@ multi-column sorting, multiple row selection, column hiding/reordering, mutable
 row sources, remote data, and virtualization are outside the current scope.
 Adapt the copied source when an application needs different data operations.
 
+## Spinner
+
+[`spinner.rs`](../crates/base/examples/recipes/spinner.rs) adds a rotating arc to
+the existing indeterminate Progress. Supply the operation's accessible name:
+
+```rust,ignore
+Spinner::new("preview-progress", "Preview progress", palette)
+    .size(rems(1.25))
+    .text_color(palette.accent)
+```
+
+The default size is one rem and the default color is the consumer's accent.
+`Styled` controls the root; the arc follows its actual bounds and text color.
+Progress supplies the sole native ProgressIndicator role, label, and numeric
+range, with no current numeric value. The visual arc adds no separate role,
+accessible name, or Tab stop. This is an indeterminate progress indicator; it
+does not provide an automatic live announcement.
+
+GPUI's `AnimationExt` owns the one-second repeating animation. It renders a
+static arc without requesting animation frames when `App::reduce_motion()` is
+enabled. Applications can set that existing preference with
+`App::set_reduce_motion(bool)`; automatic synchronization with an operating
+system preference is outside this recipe. There is no recipe-specific animation
+controller, retained loading state, or timer.
+
+Mount Spinner while the application considers an operation pending and remove
+it when that operation finishes. In the example, the existing Unknown progress
+toggle replaces the determinate bar with Spinner and Skeleton in the same
+bounded row. Both progress presentations keep the `preview-progress` ID and
+accessible name. The Slider retains its known value while the unknown state is
+shown, and Reset preview returns to known progress at 40%. This remains a
+controlled preview; the recipe does not start a recording or a background task.
+
+## Skeleton
+
+[`skeleton.rs`](../crates/base/examples/recipes/skeleton.rs) is a static decorative
+placeholder. The application supplies its dimensions and decides when to replace
+it with ready content:
+
+```rust,ignore
+Skeleton::new("preview-placeholder", palette)
+    .w(px(180.))
+    .h(px(16.))
+    .rounded(px(4.))
+```
+
+The default is a full-width line as high as the consumer's font size, using its
+border color, corner radius, and 0.35 opacity. Ordinary `Styled` refinements can
+make text lines, blocks, or circular placeholders. The surface owns no timer or
+animation, so it remains still under every motion preference.
+
+Skeleton adds no native role, accessible name, children, or focus stop. Name the
+loading operation separately, as the example does with Spinner. It owns no
+loading state or content measurement; a collection of placeholders is ordinary
+application layout. The example shows one where the percentage fill is not yet
+available and removes it when known progress is restored.
+
 ## Verification scope
 
 The existing composition suite runs the same recipe modules as the native
@@ -304,3 +361,9 @@ additional composed flow covers the preset table's sorting, filter/empty recover
 page boundaries, stable-ID action, and retained choice. There is no separate data
 test framework or duplicated platform-specific flow. These results do not
 establish native screen-reader, IME, visual, or performance validation.
+
+The existing preview flow also covers named Spinner rendering, a decorative
+non-focusable Skeleton, GPUI reduced-motion rendering, reset cancellation,
+restoring the percentage fill, and removing the indicators when their disclosure
+closes. The loading recipes add no test function or CI job; animation scheduling
+remains GPUI's responsibility rather than a second test controller here.

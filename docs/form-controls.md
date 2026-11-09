@@ -404,6 +404,12 @@ also owns labels and any animation for unknown progress. Progress adds no focus
 handle or Tab stop. The example connects a Slider to Progress to demonstrate a
 controlled fill updating from the application's retained numeric state.
 
+The copyable [Spinner recipe](presentation-recipes.md#spinner) composes this same
+indeterminate Progress with GPUI animation. The example's Unknown progress toggle
+replaces the numeric bar with Spinner and a decorative Skeleton; switching back
+uses the retained Slider value. Reset preview explicitly restores known progress
+at 40%.
+
 ## Toggle and ToggleGroup
 
 `Toggle::new(id).pressed(bool)` is a controlled toggle button. It composes the

@@ -6,9 +6,9 @@ Its main catalogue contains **66 entries**, each listed once below. The separate
 AI Elements catalogue is outside this comparison; conversation components already
 in the main catalogue remain included.
 
-GPUI Design currently documents **30 public library families and nine copyable
-presentation/composition recipes**, covering **39 catalogue entries** within the scopes below.
-This is not 39/66 feature parity: a family can exist with a deliberately limited
+GPUI Design currently documents **30 public library families and eleven copyable
+presentation/composition recipes**, covering **41 catalogue entries** within the scopes below.
+This is not 41/66 feature parity: a family can exist with a deliberately limited
 contract, and several shadcn entries describe combinations of other parts.
 These counts do not measure performance, accessibility conformance, or completion
 of native desktop validation.
@@ -97,8 +97,8 @@ consumer's palette, and are composed into the native two-style example.
 | Kbd | Pending | Keyboard shortcut text is application content without a reusable presentation recipe. |
 | Pagination | Recipe | Controlled previous/next Buttons, current-page text, named navigation, and zero/first/last-page boundaries. No numbered page links, ellipsis, routing, or data loading. |
 | Sheet | Pending | Dialog provides modal behavior; edge placement and sheet presentation are not yet offered. |
-| Skeleton | Pending | No reusable loading-placeholder shapes or reduced-motion presentation recipe. |
-| Spinner | Pending | No public activity-indicator presentation with naming guidance. |
+| Skeleton | Recipe | Static decorative placeholder with application-controlled width, height, rounding, and color. No focus stop, native role/name, shimmer, or loading state. |
+| Spinner | Recipe | Named indeterminate Progress with a rotating arc, size/color styling, and GPUI App reduced-motion support. The application controls mounting; no independent task, timer, or automatic live announcement. |
 | Table | Available | Shared fixed/flexible columns, a header row, body rows, footer, caption, and native table/row/cell semantics. No spans, sorting, filtering, selection controller, or virtualization. |
 | Typography | Pending | Examples choose text styles locally; no reusable heading/body/code presentation set is provided. |
 

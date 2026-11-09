@@ -835,6 +835,7 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
         let progress = test_support::find(window, &[], &"preview-progress".into()).unwrap();
         assert_eq!(progress.role(), Some(Role::ProgressIndicator));
         assert_eq!(progress.label(), Some("Preview progress"));
+        assert!(test_support::find(window, &[], &"preview-progress-placeholder".into()).is_none());
     });
     cx.simulate_keystrokes("end");
     draw(cx);
@@ -861,6 +862,17 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
     activate_key(cx, "space");
     cx.update(|window, cx| {
         assert!(demo.read(cx).preview_indeterminate);
+        assert_eq!(demo.read(cx).preview.read(cx).value(), 100.0);
+        let progress = test_support::find(window, &[], &"preview-progress".into()).unwrap();
+        assert_eq!(progress.role(), Some(Role::ProgressIndicator));
+        assert_eq!(progress.label(), Some("Preview progress"));
+        assert_eq!(progress.focused(), None);
+        let placeholder =
+            test_support::find(window, &[], &"preview-progress-placeholder".into()).unwrap();
+        assert!(placeholder.visible());
+        assert_eq!(placeholder.role(), None);
+        assert_eq!(placeholder.label(), None);
+        assert_eq!(placeholder.focused(), None);
         assert_eq!(
             test_support::find(window, &[], &"unknown-progress".into())
                 .unwrap()
@@ -868,6 +880,18 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
             Some(true),
         );
     });
+    assert!(cx.debug_bounds("preview-progress-fill").is_none());
+
+    // The native reduced-motion path keeps a visible, named loading indicator.
+    cx.update(|_, cx| cx.set_reduce_motion(true));
+    draw(cx);
+    cx.update(|window, _| {
+        let progress = test_support::find(window, &[], &"preview-progress".into()).unwrap();
+        assert!(progress.visible());
+        assert_eq!(progress.label(), Some("Preview progress"));
+    });
+    cx.update(|_, cx| cx.set_reduce_motion(false));
+    draw(cx);
     cx.simulate_keystrokes("tab right");
     draw(cx);
     cx.update(|window, cx| {
@@ -928,6 +952,7 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
         assert_eq!(demo.preview.read(cx).value(), 100.0);
         assert!(demo.preview_indeterminate);
         assert!(demo.actions.read(cx).focus_handle().is_focused(window));
+        assert!(test_support::find(window, &[], &"preview-progress-placeholder".into()).is_some());
     });
     cx.simulate_keystrokes("down r");
     draw(cx);
@@ -941,7 +966,10 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
         assert_eq!(demo.preview.read(cx).value(), 40.0);
         assert!(!demo.preview_indeterminate);
         assert!(demo.actions.read(cx).focus_handle().is_focused(window));
+        assert!(test_support::find(window, &[], &"preview-progress-placeholder".into()).is_none());
     });
+    let restored_fill = cx.debug_bounds("preview-progress-fill").unwrap().size.width;
+    assert!((restored_fill - progress_width * 0.4).abs() < px(1.));
 
     // Closing the disclosure removes its Tab stops without losing application data.
     cx.simulate_keystrokes("tab");
@@ -953,6 +981,7 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
         let demo = demo.read(cx);
         assert!(!demo.preview_options.read(cx).is_open());
         assert!(test_support::find(window, &[], &"preview-progress".into()).is_none());
+        assert!(test_support::find(window, &[], &"preview-progress-placeholder".into()).is_none());
         assert!(
             demo.context_actions
                 .read(cx)
