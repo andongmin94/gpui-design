@@ -16,16 +16,16 @@ use crate::{
     input::{InputEvent, MoveDown, MoveUp},
 };
 
-/// One action in a fixed, ordered command collection. Values must be unique.
+/// One value, label, and searchable aliases in a fixed collection. Values must be unique.
 #[derive(Clone, Debug)]
-pub struct CommandItem {
+pub struct SearchItem {
     value: SharedString,
     label: SharedString,
     search_text: String,
     disabled: bool,
 }
 
-impl CommandItem {
+impl SearchItem {
     pub fn new(value: impl Into<SharedString>, label: impl Into<SharedString>) -> Self {
         let value = value.into();
         let label = label.into();
@@ -81,7 +81,7 @@ pub enum CommandEvent {
 /// Keep this entity in the application and observe it to render its results.
 /// The command has no open/close lifecycle; compose it inside Dialog when needed.
 pub struct CommandState {
-    items: Vec<CommandItem>,
+    items: Vec<SearchItem>,
     input: Entity<InputState>,
     focus: FocusHandle,
     // Only the last text processed by the derived filter, never a second value.
@@ -95,7 +95,7 @@ pub struct CommandState {
 
 impl CommandState {
     pub fn new(
-        items: impl IntoIterator<Item = CommandItem>,
+        items: impl IntoIterator<Item = SearchItem>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -103,7 +103,7 @@ impl CommandState {
         for (index, item) in items.iter().enumerate() {
             assert!(
                 items[..index].iter().all(|other| other.value != item.value),
-                "CommandItem values must be unique"
+                "SearchItem values must be unique"
             );
         }
         let input = cx.new(|cx| InputState::new(window, cx).placeholder("Search commands..."));
@@ -122,10 +122,7 @@ impl CommandState {
                 }
             ) && state.focus.is_focused(window)
             {
-                state.sync_query(cx);
-                if let Some(index) = state.highlighted {
-                    state.activate(index, window, cx);
-                }
+                state.activate_highlighted(window, cx);
             }
         });
         Self {
@@ -151,7 +148,7 @@ impl CommandState {
         &self.focus
     }
 
-    pub fn items(&self) -> &[CommandItem] {
+    pub fn items(&self) -> &[SearchItem] {
         &self.items
     }
 
@@ -180,7 +177,14 @@ impl CommandState {
         cx.notify();
     }
 
-    fn sync_query(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn activate_highlighted(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.sync_query(cx);
+        if let Some(index) = self.highlighted {
+            self.activate(index, window, cx);
+        }
+    }
+
+    pub(crate) fn sync_query(&mut self, cx: &mut Context<Self>) {
         let query = self.input.read(cx).value();
         if query == self.filtered_query {
             return;
@@ -207,7 +211,7 @@ impl CommandState {
         self.scroll_to_highlight();
     }
 
-    fn is_composing(&self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+    pub(crate) fn is_composing(&self, window: &mut Window, cx: &mut Context<Self>) -> bool {
         self.input.update(cx, |input, cx| {
             input.marked_text_range(window, cx).is_some()
         })
@@ -222,7 +226,12 @@ impl CommandState {
         }
     }
 
-    fn move_cursor(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn move_cursor(
+        &mut self,
+        forward: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if !self.focus.is_focused(window)
             || self.input.read(cx).presentation().is_disabled()
             || self.is_composing(window, cx)
@@ -253,7 +262,7 @@ impl CommandState {
         }
     }
 
-    fn highlight(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn highlight(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if self.highlighted == Some(index)
             || self.visible.binary_search(&index).is_err()
             || self.items[index].disabled
@@ -351,7 +360,7 @@ impl RenderOnce for Command {
 pub struct CommandInput {
     base: InputBase,
     state: Entity<CommandState>,
-    label: SharedString,
+    label: Option<SharedString>,
     placeholder: SharedString,
 }
 
@@ -360,13 +369,13 @@ impl CommandInput {
         Self {
             base: InputBase::new(id).role(None::<Role>),
             state: state.clone(),
-            label: "Search commands".into(),
+            label: None,
             placeholder: "Search commands...".into(),
         }
     }
 
     pub fn accessibility_label(mut self, label: impl Into<SharedString>) -> Self {
-        self.label = label.into();
+        self.label = Some(label.into());
         self
     }
 
@@ -402,9 +411,18 @@ impl RenderOnce for CommandInput {
             if input.presentation().placeholder() != &self.placeholder {
                 input.set_placeholder(self.placeholder.clone(), window, cx);
             }
+            let accessibility = input
+                .accessibility()
+                .cloned()
+                .unwrap_or_else(|| InputAccessibility::new(Some(Role::TextInput)));
+            let label = self
+                .label
+                .or_else(|| accessibility.label().cloned())
+                .unwrap_or_else(|| "Search commands".into());
             input.set_accessibility(
-                InputAccessibility::new(Some(Role::TextInput))
-                    .with_label(Some(self.label))
+                accessibility
+                    .with_role(Some(Role::TextInput))
+                    .with_label(Some(label))
                     .with_placeholder(Some(self.placeholder)),
             );
         });
@@ -441,6 +459,18 @@ impl CommandList {
     pub fn accessibility_label(mut self, label: impl Into<SharedString>) -> Self {
         self.label = Some(label.into());
         self
+    }
+
+    pub(crate) fn from_base(
+        base: crate::ObservedElement<gpui::Stateful<gpui::Div>>,
+        state: &Entity<CommandState>,
+        label: Option<SharedString>,
+    ) -> Self {
+        Self {
+            base,
+            state: state.clone(),
+            label,
+        }
     }
 }
 
@@ -492,6 +522,7 @@ pub struct CommandOption {
     base: crate::ObservedElement<gpui::Stateful<gpui::Div>>,
     state: Entity<CommandState>,
     index: usize,
+    selected: Option<bool>,
 }
 
 impl CommandOption {
@@ -503,6 +534,21 @@ impl CommandOption {
                 .flex_shrink_0(),
             state: state.clone(),
             index,
+            selected: None,
+        }
+    }
+
+    pub(crate) fn from_base(
+        base: crate::ObservedElement<gpui::Stateful<gpui::Div>>,
+        state: &Entity<CommandState>,
+        index: usize,
+        selected: bool,
+    ) -> Self {
+        Self {
+            base,
+            state: state.clone(),
+            index,
+            selected: Some(selected),
         }
     }
 }
@@ -538,7 +584,9 @@ impl RenderOnce for CommandOption {
             return gpui::Empty.into_any_element();
         }
         let disabled = item.disabled || state.input.read(cx).presentation().is_disabled();
-        let selected = state.highlighted == Some(self.index);
+        let selected = self
+            .selected
+            .unwrap_or(state.highlighted == Some(self.index));
         let label = item.label.clone();
         let index = self.index;
         let focus = state.focus.clone();
@@ -623,19 +671,19 @@ mod tests {
 
     type Actions = Rc<RefCell<Vec<SharedString>>>;
 
-    fn items() -> Vec<CommandItem> {
+    fn items() -> Vec<SearchItem> {
         vec![
-            CommandItem::new("edit", "Edit session").keywords(["preferences", "settings"]),
-            CommandItem::new("share", "Share").disabled(true),
-            CommandItem::new("cursor", "Toggle cursor").keywords(["pointer"]),
-            CommandItem::new("toolbar", "Toggle toolbar pin"),
-            CommandItem::new("notes", "메모").keywords(["memo"]),
+            SearchItem::new("edit", "Edit session").keywords(["preferences", "settings"]),
+            SearchItem::new("share", "Share").disabled(true),
+            SearchItem::new("cursor", "Toggle cursor").keywords(["pointer"]),
+            SearchItem::new("toolbar", "Toggle toolbar pin"),
+            SearchItem::new("notes", "메모").keywords(["memo"]),
         ]
     }
 
     fn harness(
         cx: &mut TestAppContext,
-        items: Vec<CommandItem>,
+        items: Vec<SearchItem>,
     ) -> (&mut VisualTestContext, Entity<Harness>, Actions) {
         cx.update(crate::init);
         let (root, cx) = cx.add_window_view(move |window, cx| {
@@ -832,7 +880,7 @@ mod tests {
     #[gpui::test]
     fn marked_text_never_navigates_or_executes_a_command(cx: &mut TestAppContext) {
         let mut items = items();
-        items.push(CommandItem::new("note-settings", "메모 설정"));
+        items.push(SearchItem::new("note-settings", "메모 설정"));
         let (cx, view, actions) = harness(cx, items);
         cx.update(|window, cx| {
             let input = view.read(cx).command.read(cx).input().clone();

@@ -15,7 +15,8 @@ use gpui::{
     Keystroke, Modifiers, Role, TestAppContext, VisualTestContext,
 };
 use gpui_design::{
-    CommandEvent, DropdownMenuEvent, RadioGroupEvent, Root, SelectEvent, TabsEvent, test_support,
+    ComboboxEvent, CommandEvent, DropdownMenuEvent, RadioGroupEvent, Root, SelectEvent, TabsEvent,
+    test_support,
 };
 use two_styles::{Appearance, Demo};
 
@@ -34,7 +35,7 @@ fn harness(
         .expect("example content");
     cx.update(|window, cx| {
         window.activate_window();
-        let trigger = demo.read(cx).trigger_focus.clone();
+        let trigger = demo.read(cx).edit_hint.read(cx).focus_handle().clone();
         trigger.focus(window, cx);
         window.draw(cx).clear(cx);
     });
@@ -279,7 +280,13 @@ fn compact_controls_complete_the_keyboard_flow(cx: &mut TestAppContext) {
     draw(cx);
     cx.update(|window, cx| {
         assert!(!demo.read(cx).dialog.read(cx).is_open());
-        assert!(demo.read(cx).trigger_focus.is_focused(window));
+        assert!(
+            demo.read(cx)
+                .edit_hint
+                .read(cx)
+                .focus_handle()
+                .is_focused(window)
+        );
     });
     assert_eq!(changes.borrow().len(), 1);
 
@@ -369,7 +376,7 @@ fn select_dismissal_preserves_tab_pointer_and_dialog_focus(cx: &mut TestAppConte
         let demo = demo.read(cx);
         assert!(!demo.dialog.read(cx).is_open());
         assert!(!demo.select.read(cx).is_open());
-        assert!(demo.trigger_focus.is_focused(window));
+        assert!(demo.edit_hint.read(cx).focus_handle().is_focused(window));
     });
     open_dialog(cx, &demo);
     cx.simulate_keystrokes("tab down");
@@ -384,7 +391,7 @@ fn select_dismissal_preserves_tab_pointer_and_dialog_focus(cx: &mut TestAppConte
         let demo = demo.read(cx);
         assert!(!demo.dialog.read(cx).is_open());
         assert!(!demo.select.read(cx).is_open());
-        assert!(demo.trigger_focus.is_focused(window));
+        assert!(demo.edit_hint.read(cx).focus_handle().is_focused(window));
     });
 
     open_dialog(cx, &demo);
@@ -438,7 +445,7 @@ fn select_dismissal_preserves_tab_pointer_and_dialog_focus(cx: &mut TestAppConte
             !demo.select.read(cx).is_open(),
             "closing the parent must close its popup state"
         );
-        assert!(demo.trigger_focus.is_focused(window));
+        assert!(demo.edit_hint.read(cx).focus_handle().is_focused(window));
     });
 
     open_dialog(cx, &demo);
@@ -616,7 +623,7 @@ fn settings_tabs_and_popover_preserve_nested_focus(cx: &mut TestAppContext) {
         let demo = demo.read(cx);
         assert!(!demo.help.read(cx).is_open());
         assert!(!demo.dialog.read(cx).is_open());
-        assert!(demo.trigger_focus.is_focused(window));
+        assert!(demo.edit_hint.read(cx).focus_handle().is_focused(window));
     });
     open_dialog(cx, &demo);
     cx.update(|_, cx| {
@@ -881,7 +888,11 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
     draw(cx);
     cx.update(|window, cx| {
         assert!(
-            demo.read(cx).trigger_focus.is_focused(window),
+            demo.read(cx)
+                .edit_hint
+                .read(cx)
+                .focus_handle()
+                .is_focused(window),
             "ToggleGroup has one Tab stop"
         );
     });
@@ -941,7 +952,7 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
         let demo = demo.read(cx);
         assert!(!demo.preview_options.read(cx).is_open());
         assert!(test_support::find(window, &[], &"preview-progress".into()).is_none());
-        assert!(demo.trigger_focus.is_focused(window));
+        assert!(demo.edit_hint.read(cx).focus_handle().is_focused(window));
         assert_eq!(demo.preview.read(cx).value(), 40.0);
         assert_eq!(
             demo.formatting.read(cx).selected_values(),
@@ -1042,6 +1053,17 @@ fn command_search_opens_a_retained_multiline_form(cx: &mut TestAppContext) {
     draw(cx);
     cx.simulate_keystrokes("tab");
     draw(cx);
+    cx.update(|window, cx| {
+        assert!(
+            demo.read(cx)
+                .preset
+                .read(cx)
+                .focus_handle()
+                .is_focused(window)
+        );
+    });
+    cx.simulate_keystrokes("tab");
+    draw(cx);
     cx.update(|window, _| {
         assert!(
             test_support::snapshots(window)
@@ -1049,7 +1071,7 @@ fn command_search_opens_a_retained_multiline_form(cx: &mut TestAppContext) {
                 .any(|item| { item.label() == Some("Done") && item.focused() == Some(true) })
         );
     });
-    cx.simulate_keystrokes("shift-tab");
+    cx.simulate_keystrokes("shift-tab shift-tab");
     draw(cx);
     cx.update(|window, cx| {
         assert!(
@@ -1068,7 +1090,7 @@ fn command_search_opens_a_retained_multiline_form(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("tab");
     draw(cx);
     cx.update(|window, cx| assert!(demo.read(cx).notes.focus_handle(cx).is_focused(window)));
-    cx.simulate_keystrokes("tab");
+    cx.simulate_keystrokes("tab tab");
     draw(cx);
     activate_key(cx, "enter");
     cx.update(|window, cx| {
@@ -1096,6 +1118,197 @@ fn command_search_opens_a_retained_multiline_form(cx: &mut TestAppContext) {
         );
     });
     assert_eq!(actions.borrow().len(), 1);
+}
+
+#[gpui::test]
+fn field_feedback_and_search_selection_work_inside_the_dialog(cx: &mut TestAppContext) {
+    let (cx, demo) = harness(cx, Appearance::Settings);
+    let changes = Rc::new(RefCell::new(Vec::new()));
+    cx.update(|window, cx| {
+        assert!(demo.read(cx).edit_hint.read(cx).is_open());
+        let trigger = test_support::find(window, &[], &"edit-session".into()).unwrap();
+        assert_eq!(
+            trigger.description(),
+            Some("Change the session name, recording preset, and notes.")
+        );
+        let preset = demo.read(cx).preset.clone();
+        let changes = changes.clone();
+        cx.subscribe(&preset, move |_, event: &ComboboxEvent, _| {
+            let ComboboxEvent::Change(value) = event;
+            changes.borrow_mut().push(value.clone());
+        })
+        .detach();
+    });
+    cx.simulate_keystrokes("escape");
+    draw(cx);
+    cx.update(|window, cx| {
+        assert!(!demo.read(cx).edit_hint.read(cx).is_open());
+        assert!(
+            demo.read(cx)
+                .edit_hint
+                .read(cx)
+                .focus_handle()
+                .is_focused(window)
+        );
+    });
+    open_dialog(cx, &demo);
+    let select_all = if cfg!(target_os = "macos") {
+        "cmd-a"
+    } else {
+        "ctrl-a"
+    };
+    cx.simulate_keystrokes(select_all);
+    cx.simulate_keystrokes("backspace");
+    draw(cx);
+    cx.update(|window, cx| {
+        let input = demo.read(cx).input.read(cx);
+        let semantics = input.accessibility().unwrap();
+        assert!(semantics.is_required());
+        assert!(semantics.is_invalid());
+        let name = test_support::find(window, &[], &"session-name".into()).unwrap();
+        assert_eq!(
+            name.description(),
+            Some("A session name is required. Choose a name to recognize this session.")
+        );
+        assert!(
+            test_support::snapshots(window)
+                .iter()
+                .any(|item| { item.label() == Some("Done") && item.disabled() == Some(true) })
+        );
+        let error_id = (gpui::ElementId::from("session-name-field"), "error").into();
+        assert!(
+            test_support::find(window, &[], &error_id)
+                .unwrap()
+                .visible()
+        );
+    });
+    cx.simulate_input("Workshop");
+    draw(cx);
+    cx.update(|window, cx| {
+        assert!(
+            !demo
+                .read(cx)
+                .input
+                .read(cx)
+                .accessibility()
+                .unwrap()
+                .is_invalid()
+        );
+        let error_id = (gpui::ElementId::from("session-name-field"), "error").into();
+        assert!(test_support::find(window, &[], &error_id).is_none());
+    });
+    cx.simulate_keystrokes("shift-tab");
+    draw(cx);
+    let label = cx.update(|window, _| {
+        let id = (gpui::ElementId::from("session-name-field"), "label").into();
+        test_support::find(window, &[], &id)
+            .unwrap()
+            .bounds()
+            .center()
+    });
+    cx.simulate_click(label, Modifiers::default());
+    draw(cx);
+    cx.update(|window, cx| assert!(demo.read(cx).input.focus_handle(cx).is_focused(window)));
+
+    cx.simulate_keystrokes("tab tab tab tab tab tab tab");
+    draw(cx);
+    draw(cx); // The focused input's reveal request updates the form's scroll offset.
+    cx.update(|window, cx| {
+        let preset = demo.read(cx).preset.read(cx);
+        assert!(preset.focus_handle().is_focused(window));
+        let input = test_support::find(window, &[], &"recording-preset".into()).unwrap();
+        assert!(input.visible());
+        assert_eq!(input.role(), Some(Role::ComboBox));
+        assert_eq!(input.label(), Some("Recording preset"));
+        assert_eq!(input.value(), Some("Balanced"));
+        assert_eq!(
+            input.description(),
+            Some("Search a preset and press Enter to select it.")
+        );
+        assert_eq!(input.expanded(), Some(false));
+    });
+    cx.simulate_keystrokes(select_all);
+    cx.simulate_input("발표");
+    draw(cx);
+    cx.update(|_, cx| {
+        let preset = demo.read(cx).preset.read(cx);
+        assert!(preset.is_open());
+        assert_eq!(preset.visible_indices(cx), &[2]);
+        assert_eq!(
+            preset.selected_value(cx).map(|value| value.as_ref()),
+            Some("balanced")
+        );
+    });
+    cx.simulate_keystrokes("escape");
+    draw(cx);
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        let preset = demo.preset.read(cx);
+        assert!(!preset.is_open());
+        assert!(
+            demo.dialog.read(cx).is_open(),
+            "first Escape only cancels suggestions"
+        );
+        assert!(preset.focus_handle().is_focused(window));
+        assert_eq!(preset.input().read(cx).value(), "Balanced");
+    });
+    assert!(changes.borrow().is_empty());
+    cx.simulate_keystrokes(select_all);
+    cx.simulate_input("발표");
+    draw(cx);
+    activate_key(cx, "enter");
+    cx.update(|window, cx| {
+        let preset = demo.read(cx).preset.read(cx);
+        assert!(!preset.is_open());
+        assert!(preset.focus_handle().is_focused(window));
+        assert_eq!(
+            preset.selected_value(cx).map(|value| value.as_ref()),
+            Some("presentation")
+        );
+        assert_eq!(preset.input().read(cx).value(), "Presentation");
+    });
+    assert_eq!(
+        changes.borrow().as_slice(),
+        &[gpui::SharedString::from("presentation")]
+    );
+    cx.simulate_keystrokes(select_all);
+    cx.simulate_input("no matching preset");
+    draw(cx);
+    activate_key(cx, "enter");
+    cx.update(|_, cx| assert!(demo.read(cx).preset.read(cx).is_open()));
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    cx.update(|window, cx| {
+        assert!(!demo.read(cx).preset.read(cx).is_open());
+        assert!(
+            test_support::snapshots(window)
+                .iter()
+                .any(|item| { item.label() == Some("Done") && item.focused() == Some(true) })
+        );
+    });
+    activate_key(cx, "enter");
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        assert!(!demo.dialog.read(cx).is_open());
+        assert!(demo.edit_hint.read(cx).focus_handle().is_focused(window));
+        assert_eq!(
+            demo.preset.read(cx).input().read(cx).value(),
+            "Presentation"
+        );
+    });
+    open_dialog(cx, &demo);
+    cx.update(|_, cx| {
+        assert_eq!(demo.read(cx).input.read(cx).value(), "Workshop");
+        assert_eq!(
+            demo.read(cx)
+                .preset
+                .read(cx)
+                .selected_value(cx)
+                .map(|value| value.as_ref()),
+            Some("presentation")
+        );
+    });
+    assert_eq!(changes.borrow().len(), 1);
 }
 
 #[gpui::test]

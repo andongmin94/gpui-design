@@ -6,8 +6,8 @@ Its main catalogue contains **66 entries**, each listed once below. The separate
 AI Elements catalogue is outside this comparison; conversation components already
 in the main catalogue remain included.
 
-GPUI Design currently documents **20 public component families**. This is not
-20/66 feature parity: a family can exist with a deliberately limited contract,
+GPUI Design currently documents **23 public component families**. This is not
+23/66 feature parity: a family can exist with a deliberately limited contract,
 and several shadcn entries describe presentation or combinations of other parts.
 These counts do not measure performance, accessibility conformance, or completion
 of native desktop validation.
@@ -42,17 +42,17 @@ in the [form guide](form-controls.md) and
 | Button | Available | Native pointer/keyboard activation, disabled state, focus, and accessible naming; content and styles belong to the application. |
 | Checkbox | Available | Controlled checked/unchecked/mixed state; the application supplies its indicator and label presentation. |
 | Collapsible | Available | One retained disclosure, Button trigger, active-only content, and focus handling when content closes. |
-| Combobox | Pending | Editable search, committed selection, and suggestion-list ownership need a public contract beyond fixed-choice Select. |
+| Combobox | Available | Editable search over fixed options, one committed selection, keyboard/pointer commit, and draft cancellation on dismissal. Free-form values, async sources, multiple selection, and groups are not included. |
 | Command | Available | Fixed command items, text filtering, keyboard/pointer actions, and composition with Dialog. Async sources, fuzzy ranking, and groups are not included. |
 | Context Menu | Pending | Context-menu triggers and placement are not supplied by the current trigger-button menu. |
 | Dialog | Available | Modal open/close, initial focus, containment, dismissal, and return focus; the application supplies its surface and contents. |
 | Direction | Pending | A consistent RTL layout and navigation policy has not been established. Text rendering alone does not establish this support. |
 | Dropdown Menu | Available | Fixed plain commands, enabled-item navigation, single-character search, and dismissal. Submenus and checked/radio menu items are not included. |
-| Field | Pending | Reusable label, description, validation-message, and control association are not yet exposed as one composition contract. |
+| Field | Available | Label focus, help/error descriptions, and required/invalid metadata for existing Input/Textarea-based controls, including a Combobox query. Validation remains application-owned; arbitrary control types are not yet covered. |
 | Hover Card | Pending | Hover/focus opening and dismissal need a distinct lifecycle beyond manually opening a Popover. |
 | Input | Available | Single-line editing, selection, clipboard, focus, and the native input interface through the retained editing engine. |
 | Input OTP | Pending | Segmented entry and paste distribution are not provided by ordinary Input. |
-| Label | Pending | Controls accept accessible names; a separate label-to-control naming and focus association component is not provided. |
+| Label | Pending | Field provides associated labels for text inputs. A standalone label component for the wider control set is not yet supplied. |
 | Menubar | Pending | Coordinated focus and menu switching across multiple top-level menus are not implemented. |
 | Native Select | Platform mapping | The reference is an HTML select. Define the required native GPUI experience before adding another family; do not duplicate Select under an alias. |
 | Navigation Menu | Pending | Navigation items and coordinated popup interaction are not supplied by Tabs or standalone DropdownMenu. |
@@ -70,7 +70,7 @@ in the [form guide](form-controls.md) and
 | Toast | Pending | Notification lifetime, dismissal, and presentation are not provided by the current overlays. |
 | Toggle | Available | Controlled pressed state composed from Button's activation and focus behavior. |
 | Toggle Group | Available | Fixed multiple-selection items and roving focus; moving focus does not change the pressed values. |
-| Tooltip | Pending | A documented pointer- and keyboard-triggered tooltip lifecycle is not yet supplied. |
+| Tooltip | Available | Plain text descriptions for a Button, delayed pointer hover, immediate keyboard focus, Escape dismissal, and native GPUI tooltip positioning. Rich content and touch long-press behavior are not included. |
 
 ## Presentation and composition recipes
 
@@ -126,12 +126,12 @@ popup, focus, and scrolling machinery.
 
 ## Next priorities
 
-1. Fill everyday interaction and form gaps with Combobox, Tooltip, and Field.
-   Reuse input, popup, and focus behavior while defining who owns query text,
-   committed values, and control descriptions.
-2. Add practical table, date, and layout capabilities: basic Table before data
-   operations, Calendar before date pickers, and composed Scroll Area before
-   specialized scrolling views. Resizable can then support application panes.
+1. Add basic Table structure before data operations, and Calendar navigation
+   and selection before date pickers. Build Data Table and Date Picker from
+   those working public foundations.
+2. Complete a composed Scroll Area before specialized scrolling views, and add
+   Resizable for application panes. Reuse existing viewport, scrolling, and
+   pointer infrastructure rather than creating another layout runtime.
 3. Publish source-owned presentation recipes alongside those working flows,
    starting with common surfaces, field framing, grouped actions, and empty
    states. Keep palette and sizing decisions outside the behavior layer.
@@ -153,7 +153,8 @@ those consumer-facing recipes as well as headless behavior.
 
 The current [Combobox](https://ui.shadcn.com/docs/components/base/combobox)
 documentation covers an editable autocomplete and additional selection variants;
-a searchable command popup is not complete coverage of that family.
+the implemented Combobox here covers fixed single selection. The other variants
+remain gaps in this family rather than extra completed components.
 [Command](https://ui.shadcn.com/docs/components/base/command) includes a dialog
 composition rather than requiring a second independent command engine.
 

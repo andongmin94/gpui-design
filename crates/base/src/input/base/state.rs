@@ -610,8 +610,12 @@ pub struct InputBaseState<M: InputModeKind> {
 pub struct InputAccessibility {
     role: Option<gpui::Role>,
     label: Option<SharedString>,
+    description: Option<SharedString>,
     placeholder: Option<SharedString>,
     accessibility_id: Option<SharedString>,
+    expanded: Option<bool>,
+    required: bool,
+    invalid: bool,
     value_exposed: bool,
 }
 
@@ -620,14 +624,29 @@ impl InputAccessibility {
         Self {
             role,
             label: None,
+            description: None,
             placeholder: None,
             accessibility_id: None,
+            expanded: None,
+            required: false,
+            invalid: false,
             value_exposed: true,
         }
     }
 
+    pub fn with_role(mut self, role: Option<gpui::Role>) -> Self {
+        self.role = role;
+        self
+    }
+
     pub fn with_label(mut self, label: Option<SharedString>) -> Self {
         self.label = label;
+        self
+    }
+
+    /// Supplementary help or validation text, announced after the input's name.
+    pub fn with_description(mut self, description: Option<SharedString>) -> Self {
+        self.description = description;
         self
     }
 
@@ -638,6 +657,24 @@ impl InputAccessibility {
 
     pub fn with_accessibility_id(mut self, id: Option<SharedString>) -> Self {
         self.accessibility_id = id;
+        self
+    }
+
+    /// Whether an associated suggestion popup is currently expanded.
+    pub fn with_expanded(mut self, expanded: Option<bool>) -> Self {
+        self.expanded = expanded;
+        self
+    }
+
+    /// Reports an application requirement; the application owns validation.
+    pub fn with_required(mut self, required: bool) -> Self {
+        self.required = required;
+        self
+    }
+
+    /// Reports the application's current validation result without changing text.
+    pub fn with_invalid(mut self, invalid: bool) -> Self {
+        self.invalid = invalid;
         self
     }
 
@@ -655,12 +692,28 @@ impl InputAccessibility {
         self.label.as_ref()
     }
 
+    pub fn description(&self) -> Option<&SharedString> {
+        self.description.as_ref()
+    }
+
     pub fn placeholder(&self) -> Option<&SharedString> {
         self.placeholder.as_ref()
     }
 
     pub fn accessibility_id(&self) -> Option<&SharedString> {
         self.accessibility_id.as_ref()
+    }
+
+    pub fn expanded(&self) -> Option<bool> {
+        self.expanded
+    }
+
+    pub fn is_required(&self) -> bool {
+        self.required
+    }
+
+    pub fn is_invalid(&self) -> bool {
+        self.invalid
     }
 
     pub fn value_exposed(&self) -> bool {
@@ -1133,6 +1186,11 @@ impl<M: InputModeKind> InputBaseState<M> {
     /// Project semantics onto the editor, never onto a second focus owner.
     pub fn set_accessibility(&mut self, accessibility: InputAccessibility) {
         self.accessibility = Some(accessibility);
+    }
+
+    /// Existing native semantics, for compositions that change only their own fields.
+    pub fn accessibility(&self) -> Option<&InputAccessibility> {
+        self.accessibility.as_ref()
     }
 
     fn handle_accessibility_focus(&self, window: &mut Window, cx: &mut Context<Self>) {
@@ -5111,11 +5169,17 @@ impl<M: InputModeKind> Render for InputBaseState<M> {
                     .when_some(accessibility.label.clone(), |this, label| {
                         this.aria_label(label)
                     })
+                    .when_some(accessibility.description.clone(), |this, description| {
+                        this.aria_description(description)
+                    })
                     .when_some(accessibility.placeholder.clone(), |this, placeholder| {
                         this.aria_placeholder(placeholder)
                     })
                     .when_some(accessibility.accessibility_id.clone(), |this, id| {
                         this.accessibility_id(id)
+                    })
+                    .when_some(accessibility.expanded, |this, expanded| {
+                        this.aria_expanded(expanded)
                     })
                     .when(
                         accessibility.value_exposed
@@ -5278,9 +5342,20 @@ impl<M: InputModeKind> Render for InputBaseState<M> {
         // `Self` is concrete enough to name its own entity type.
         // Keep the dispatch binding when disabling a focused field so Tab can
         // leave, while excluding disabled fields from normal Tab entry.
-        M::register_actions(element, &entity, window)
-            .test_support()
-            .track_focus(&self.focus_handle.clone().tab_stop(!self.disabled))
+        crate::a11y_disabled::A11yDisabled::new(
+            M::register_actions(element, &entity, window),
+            self.disabled,
+        )
+        .with_validation(
+            self.accessibility
+                .as_ref()
+                .is_some_and(|value| value.required),
+            self.accessibility
+                .as_ref()
+                .is_some_and(|value| value.invalid),
+        )
+        .test_support()
+        .track_focus(&self.focus_handle.clone().tab_stop(!self.disabled))
     }
 }
 

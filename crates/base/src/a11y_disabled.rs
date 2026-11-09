@@ -1,10 +1,11 @@
 // Modified for GPUI Design: exercise the retained Button accessibility contract.
-//! Disabled semantics on a control's accessibility node.
+//! Disabled and form-validation semantics on a control's accessibility node.
 //!
 //! GPUI has no `aria_disabled` setter, so a disabled control would reach
 //! assistive technology as one that accepts input. [`A11yDisabledExt`] wraps the
 //! control's root element without adding a layout node, a focus stop or an
-//! accessibility node, and only marks the node it writes disabled.
+//! accessibility node. Inputs also use this same adapter for required and
+//! invalid state, which GPUI does not expose through its fluent builders.
 use gpui::{
     App, Bounds, Element, ElementId, GlobalElementId, InspectorElementId, InteractiveElement,
     Interactivity, IntoElement, LayoutId, Pixels, Window, accesskit,
@@ -14,11 +15,24 @@ use gpui::{
 pub(crate) struct A11yDisabled<E> {
     inner: E,
     disabled: bool,
+    required: bool,
+    invalid: bool,
 }
 
 impl<E> A11yDisabled<E> {
     pub(crate) fn new(inner: E, disabled: bool) -> Self {
-        Self { inner, disabled }
+        Self {
+            inner,
+            disabled,
+            required: false,
+            invalid: false,
+        }
+    }
+
+    pub(crate) fn with_validation(mut self, required: bool, invalid: bool) -> Self {
+        self.required = required;
+        self.invalid = invalid;
+        self
     }
 }
 
@@ -132,6 +146,12 @@ impl<E: Element> Element for A11yDisabled<E> {
         self.inner.write_a11y_info(node);
         if self.disabled {
             node.set_disabled();
+        }
+        if self.required {
+            node.set_required();
+        }
+        if self.invalid {
+            node.set_invalid(accesskit::Invalid::True);
         }
     }
 

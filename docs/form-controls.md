@@ -3,7 +3,7 @@
 The [native settings example](../crates/base/examples/two_styles.rs) is a complete
 consumer of the public API. Run it in either appearance using the commands in the
 [README](../README.md#run-the-example). It combines Button, Input, Select,
-Textarea, Checkbox, Switch, RadioGroup, Slider, Progress, Toggle, and ToggleGroup
+Textarea, Field, Combobox, Checkbox, Switch, RadioGroup, Slider, Progress, Toggle, and ToggleGroup
 with the navigation and overlay controls,
 without putting appearance in the library. The [navigation and overlay guide](navigation-overlays.md)
 describes its Preferences/Help tabs and keyboard-help popover.
@@ -17,6 +17,8 @@ control a stable element ID and an accessible label.
 | Control | State owner | Updating the application |
 | --- | --- | --- |
 | Textarea | Retained `Entity<TextareaState>` | Observe for surrounding presentation; the existing Input events report edits |
+| Field | Application label, help, requirement, and validation error | Render current metadata around an existing Input, Textarea, or Combobox query; no new input state |
+| Combobox | Retained `Entity<ComboboxState>` | Observe for rendering; `ComboboxEvent::Change` reports a different committed user choice |
 | Checkbox | Application field of type `CheckboxState` or `bool` | `on_change` reports the next state; store it and call `cx.notify()` |
 | Toggle | Application `bool` | `on_change` requests the next pressed value; render it back with `pressed` |
 | ToggleGroup | Retained `Entity<ToggleGroupState>` | Observe for rendering; `ToggleGroupEvent::Change` reports selected values in item order |
@@ -59,6 +61,93 @@ selection. Programmatic `set_value` remains available for application updates.
 Keep the state outside a collapsible section, tab panel, or Dialog's render path
 so closing that surface preserves the text. The example retains Session notes
 when the settings dialog is closed and reopened.
+
+## Field
+
+`Field::new(id, &input_state, label)` associates a visible label, optional help,
+and validation feedback with one retained input. The same constructor accepts
+InputState and TextareaState; a Combobox exposes its query through `input()`.
+Keep that input's renderer among the Field's children. The label is clickable,
+focuses the live enabled input, and does not add another Tab stop.
+
+```rust
+Field::new("session-name-field", &self.input, "Session name")
+    .description("Choose a name to recognize this session.")
+    .required(true)
+    .error(name_invalid.then(|| "A session name is required.".into()))
+    .styles(|styles| {
+        styles
+            .description(|style| style.text_color(muted))
+            .error(|style| style.text_color(error_color))
+    })
+    .flex()
+    .flex_col()
+    .gap_1()
+    .child(input_frame)
+```
+
+The application owns validation and submission. In the native example, an empty
+name supplies the error and disables Done; typing a name clears both. Field
+renders label, control children, help, and error in order, with styles supplied
+through `FieldStyles`. It supplies no color palette, validation schema, or form
+controller. Its current control association covers the retained text-input
+family, not Checkbox, Switch, or arbitrary controls.
+
+The actual native input receives the label, an error-before-help description,
+and required/invalid flags. Existing role, placeholder, accessibility identifier,
+value-exposure policy, and popup expanded state are preserved. Passing
+`error(None)` clears invalid state. The supporting `InputAccessibility` builders
+are `with_description`, `with_required`, and `with_invalid`; the input remains
+the only editing and focus owner.
+
+## Combobox
+
+Construct `ComboboxState::new(items, window, cx)` with fixed ordered
+`SearchItem::new(value, label)` entries. Values must be unique; `.keywords(...)`
+adds aliases and `.disabled(true)` marks an unavailable choice. This descriptor
+is shared with Command, as are input editing, filtering, highlight, and list
+scrolling. Combobox adds one committed selection and its popup lifecycle.
+
+Use `set_selected_value(Some(value), window, cx)` to initialize or update the
+selection, or `None` to clear it. The method rejects unknown/disabled values and
+returns whether the request was accepted. Programmatic changes emit no Change
+event. User Enter or pointer commits emit `ComboboxEvent::Change(value)` only
+when the selected value actually changes.
+
+Render `Combobox::new(id, &state).input(|input| ...).content(surface)`. The input
+builder configures its frame, name, placeholder, and `InputStyles`. Put a named
+`ComboboxList::new(id, &state)` in the surface and render direct
+`ComboboxOption::new(&state, index)` children in `visible_indices(cx)` order.
+Use `items(cx)` for labels, `highlighted_index(cx)` for the current search cursor,
+and `selected_index()` for the committed choice. Keep empty text outside the
+list. Supply a bounded list height and all visual styles in the application.
+
+| Interaction | Result |
+| --- | --- |
+| Pointer or arrow opens a closed input | Shows all options with the committed choice highlighted; the query clears |
+| Typing | Filters suggestions while keeping the previous committed value |
+| Up / Down | Moves through enabled results without changing selection |
+| Enter / result click | Commits the highlighted/clicked enabled choice and restores its label |
+| Escape | Discards the draft and restores the label; an enclosing Dialog stays open |
+| Tab / Shift-Tab, blur, outside press | Discards the draft while preserving normal focus movement |
+
+Only the input is a Tab stop. `set_disabled(bool, window, cx)` closes the popup
+and disables ordinary entry. `set_query(text, window, cx)` starts a focused draft.
+While the native input has marked text, Enter cannot commit an option; Escape
+unmarks that composition first and leaves the suggestions open. These are
+automated native-handler contracts, not desktop IME validation.
+
+The input exposes ComboBox role, name, value, expanded state, and any Field
+metadata. Listbox options expose the committed selection independently of the
+pending highlight. The pinned GPUI API cannot express an input-to-sibling-list
+active-descendant relationship. This implementation covers fixed single
+selection; asynchronous sources, grouping, multiple selection, and free-form
+committed values remain outside its scope.
+
+The example's recording preset uses this control inside the settings Dialog.
+The form responds to Input's existing reveal requests so keyboard focus can
+reach fields below its scrolling viewport. Closing and reopening the Dialog
+preserves the committed preset.
 
 ## Checkbox and Switch
 

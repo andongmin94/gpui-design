@@ -256,7 +256,7 @@ pattern conformance or completed screen-reader validation.
 ## Command
 
 Create `CommandState::new(items, window, cx)` from fixed, ordered
-`CommandItem::new(value, label)` entries with unique values. Optional `.keywords`
+`SearchItem::new(value, label)` entries with unique values. Optional `.keywords`
 add search aliases; `.disabled(true)` makes an action unavailable. Observe the
 state for result rendering and subscribe to `CommandEvent::Action(value)` to
 handle execution in the application.
@@ -301,6 +301,37 @@ inside the existing Dialog and set the DialogState's initial focus to
 may open another Dialog, preserving the menu trigger as the return target.
 Opening the palette clears its query in application code.
 
+SearchItem and the search implementation are also used by the editable
+[Combobox](form-controls.md#combobox). Combobox supplies its own committed value
+and popup lifecycle while Command remains an action list.
+
+## Tooltip
+
+Retain `TooltipState::new(&trigger_focus, window, cx)` alongside the existing
+Button focus handle. Render `Tooltip::new(id, &state, description)` and configure
+the Button through `.trigger(|button| ...)`. This preserves the application's
+activation handler and focus identity. Ordinary Styled methods on Tooltip
+configure the noninteractive text surface; the trigger builder owns button
+appearance. No additional init call or keybinding is needed.
+
+Keyboard focus shows the text immediately; pointer hover waits 500 ms. Leaving
+cancels pending hover. Blur, activation, window deactivation, and Escape dismiss
+it without moving focus. Escape suppresses reopening until another focus or
+pointer entry. Cancelling a pending, undisplayed hint leaves Escape available to
+an enclosing surface. Enter and Space still activate the Button once. Unmounting
+the trigger cancels pending hover work and resets retained visibility.
+
+The trigger always exposes the description on its native node. Displayed text
+has Tooltip role and no Tab stop. GPUI's native tooltip layer owns placement,
+window-edge clamping, and drawing; this component adds the focus/hover lifecycle.
+Its mounted Escape subscription belongs to that window and does not issue a
+global clear operation that could dismiss another tooltip.
+
+The current API supports plain text attached to a Button. Rich interactive
+content, touch long-press behavior, and a configurable provider are not part of
+this contract. The example wraps its existing Edit session button, so the same
+button opens the settings Dialog and remains its return-focus target.
+
 ## Separator
 
 `Separator::new(id)` supplies a semantic horizontal separator.
@@ -344,8 +375,10 @@ focus traversal, inactive panels, popup dismissal, command dispatch, and the
 representative composed flows across both appearances. Composition tests cover a command
 opening Dialog, header navigation without expansion, collapse of a panel with
 an open Popover, disclosure mounting, and explicit preview reset confirmation.
-One additional consumer flow covers command search into the multiline settings
+The consumer flows cover command search into the multiline settings
 form, normal and disabled-field Tab traversal, and retained notes.
+They also cover the tooltip trigger, Field label/feedback, and searchable preset
+selection inside Dialog, including query cancellation and retained selection.
 The full suite runs once on Linux; composition checks and native
 example builds also run on Windows and macOS. They do not replace
 native IME, screen reader, DPI, and visual checks on a desktop.

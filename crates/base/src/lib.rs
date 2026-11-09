@@ -15,12 +15,14 @@ mod auto_scroll;
 mod button;
 mod checkbox;
 mod collapsible;
+mod combobox;
 mod command;
 mod component_traits;
 mod dialog;
 mod dropdown_menu;
 mod element_ext;
 mod event;
+mod field;
 mod focus_trap;
 mod geometry;
 mod global_state;
@@ -49,6 +51,7 @@ mod text_boundary;
 mod theme;
 mod toggle;
 mod toggle_group;
+mod tooltip;
 mod touch_selection;
 
 pub use accordion::{
@@ -61,8 +64,11 @@ pub use checkbox::{Checkbox, CheckboxState, CheckboxStyles};
 pub use collapsible::{
     Collapsible, CollapsibleContent, CollapsibleEvent, CollapsibleState, CollapsibleTrigger,
 };
+pub use combobox::{
+    Combobox, ComboboxEvent, ComboboxInput, ComboboxList, ComboboxOption, ComboboxState,
+};
 pub use command::{
-    Command, CommandEvent, CommandInput, CommandItem, CommandList, CommandOption, CommandState,
+    Command, CommandEvent, CommandInput, CommandList, CommandOption, CommandState, SearchItem,
 };
 pub use component_traits::Selectable;
 pub use dialog::{
@@ -74,6 +80,7 @@ pub use dropdown_menu::{
 };
 pub use element_ext::ElementExt;
 pub use event::{InteractiveElementExt, OngoingScrollExt};
+pub use field::{Field, FieldStyles};
 pub use focus_trap::FocusTrapElement;
 pub(crate) use focus_trap::active_focus_trap;
 pub use geometry::*;
@@ -109,6 +116,7 @@ pub use tabs::{Tab, TabItem, TabList, TabPanel, TabsEvent, TabsState};
 pub use theme::{InputColors, ScrollbarTheme, Theme, ThemeAppearance};
 pub use toggle::Toggle;
 pub use toggle_group::{ToggleGroup, ToggleGroupEvent, ToggleGroupState, ToggleItem, ToggleOption};
+pub use tooltip::{Tooltip, TooltipState};
 pub use touch_selection::{SelectionEdge, TouchHandle, TouchSelectionSnapshot};
 
 use gpui::App;

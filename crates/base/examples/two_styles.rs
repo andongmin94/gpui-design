@@ -4,19 +4,20 @@
 use gpui::{
     AppContext as _, Axis, Context, Entity, FocusHandle, Focusable as _, FontWeight, Hsla,
     InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Rems, Render, Role,
-    SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Window, div,
-    prelude::FluentBuilder as _, px, relative, rems, rgb,
+    ScrollHandle, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Window,
+    div, prelude::FluentBuilder as _, px, relative, rems, rgb,
 };
 use gpui_design::{
     Accordion, AccordionHeader, AccordionItem, AccordionPanel, AccordionState, AlertDialog, Button,
     Checkbox, CheckboxState, Collapsible, CollapsibleContent, CollapsibleState, CollapsibleTrigger,
-    Command, CommandEvent, CommandInput, CommandItem, CommandList, CommandOption, CommandState,
-    Dialog, DialogBackdrop, DialogClose, DialogDescription, DialogPopup, DialogState, DialogTitle,
-    DropdownMenu, DropdownMenuEvent, DropdownMenuItem, DropdownMenuOption, DropdownMenuState,
-    Input, InputBase, Popover, PopoverState, Progress, RadioGroup, RadioGroupState, RadioItem,
-    RadioOption, Select, SelectItem, SelectOption, SelectState, Separator, Slider, SliderState,
-    Switch, Tab, TabItem, TabList, TabPanel, TabsState, Textarea, TextareaState, Toggle,
-    ToggleGroup, ToggleGroupState, ToggleItem, ToggleOption,
+    Combobox, ComboboxList, ComboboxOption, ComboboxState, Command, CommandEvent, CommandInput,
+    CommandList, CommandOption, CommandState, Dialog, DialogBackdrop, DialogClose,
+    DialogDescription, DialogPopup, DialogState, DialogTitle, DropdownMenu, DropdownMenuEvent,
+    DropdownMenuItem, DropdownMenuOption, DropdownMenuState, Field, Input, InputBase, Popover,
+    PopoverState, Progress, RadioGroup, RadioGroupState, RadioItem, RadioOption, SearchItem,
+    Select, SelectItem, SelectOption, SelectState, Separator, Slider, SliderState, Switch, Tab,
+    TabItem, TabList, TabPanel, TabsState, Textarea, TextareaState, Toggle, ToggleGroup,
+    ToggleGroupState, ToggleItem, ToggleOption, Tooltip, TooltipState,
     input::{InputAccessibility, InputEditorStyle, InputState},
 };
 
@@ -38,6 +39,7 @@ struct Palette {
     accent: Hsla,
     accent_foreground: Hsla,
     highlight: Hsla,
+    error: Hsla,
     padding: Rems,
     gap: Rems,
     control_height: Rems,
@@ -59,6 +61,7 @@ impl Appearance {
                 accent: rgb(0x93c5fd).into(),
                 accent_foreground: rgb(0x10223d).into(),
                 highlight: rgb(0x2b4160).into(),
+                error: rgb(0xfca5a5).into(),
                 padding: rems(1.),
                 gap: rems(0.75),
                 control_height: rems(1.875),
@@ -76,6 +79,7 @@ impl Appearance {
                 accent: rgb(0x286447).into(),
                 accent_foreground: rgb(0xffffff).into(),
                 highlight: rgb(0xe1eee3).into(),
+                error: rgb(0xb42318).into(),
                 padding: rems(1.75),
                 gap: rems(1.25),
                 control_height: rems(2.625),
@@ -91,6 +95,9 @@ pub(crate) struct Demo {
     appearance: Appearance,
     pub(crate) input: Entity<InputState>,
     pub(crate) notes: Entity<TextareaState>,
+    pub(crate) preset: Entity<ComboboxState>,
+    pub(crate) edit_hint: Entity<TooltipState>,
+    fields_scroll: ScrollHandle,
     pub(crate) commands: Entity<CommandState>,
     pub(crate) command_dialog: Entity<DialogState>,
     pub(crate) dialog: Entity<DialogState>,
@@ -108,7 +115,6 @@ pub(crate) struct Demo {
     pub(crate) preview_indeterminate: bool,
     pub(crate) show_cursor: bool,
     pub(crate) keep_toolbar: bool,
-    pub(crate) trigger_focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -122,7 +128,6 @@ impl Demo {
             state.set_editor_style(Self::input_style(palette));
             state.set_accessibility(
                 InputAccessibility::new(Some(Role::TextInput))
-                    .with_label(Some("Session name".into()))
                     .with_placeholder(Some("Enter a session name".into())),
             );
             state
@@ -136,7 +141,6 @@ impl Demo {
             state.set_editor_style(Self::input_style(palette));
             state.set_accessibility(
                 InputAccessibility::new(Some(Role::MultilineTextInput))
-                    .with_label(Some("Session notes".into()))
                     .with_placeholder(Some("Add session notes".into())),
             );
             state
@@ -144,11 +148,11 @@ impl Demo {
         let commands = cx.new(|cx| {
             CommandState::new(
                 [
-                    CommandItem::new("edit", "Edit session").keywords(["settings", "설정"]),
-                    CommandItem::new("share", "Share (unavailable)").disabled(true),
-                    CommandItem::new("cursor", "Toggle cursor").keywords(["pointer"]),
-                    CommandItem::new("toolbar", "Toggle toolbar pin").keywords(["pin"]),
-                    CommandItem::new("reset", "Reset preview").keywords(["progress"]),
+                    SearchItem::new("edit", "Edit session").keywords(["settings", "설정"]),
+                    SearchItem::new("share", "Share (unavailable)").disabled(true),
+                    SearchItem::new("cursor", "Toggle cursor").keywords(["pointer"]),
+                    SearchItem::new("toolbar", "Toggle toolbar pin").keywords(["pin"]),
+                    SearchItem::new("reset", "Reset preview").keywords(["progress"]),
                 ],
                 window,
                 cx,
@@ -159,6 +163,25 @@ impl Demo {
         });
         let command_focus = commands.read(cx).focus_handle().clone();
         let command_dialog = cx.new(|cx| DialogState::new(cx).with_initial_focus(&command_focus));
+        let preset = cx.new(|cx| {
+            let mut state = ComboboxState::new(
+                [
+                    SearchItem::new("balanced", "Balanced").keywords(["default", "균형"]),
+                    SearchItem::new("broadcast", "Broadcast (unavailable)").disabled(true),
+                    SearchItem::new("presentation", "Presentation").keywords(["slides", "발표"]),
+                    SearchItem::new("quality", "High quality").keywords(["detail", "고화질"]),
+                ],
+                window,
+                cx,
+            );
+            state.set_selected_value(Some("balanced"), window, cx);
+            state
+        });
+        preset.read(cx).input().clone().update(cx, |state, _| {
+            state.set_editor_style(Self::input_style(palette));
+        });
+        let trigger_focus = cx.focus_handle().tab_stop(true);
+        let edit_hint = cx.new(|cx| TooltipState::new(&trigger_focus, window, cx));
         let select = cx.new(|cx| {
             SelectState::new(
                 [
@@ -238,6 +261,8 @@ impl Demo {
         let subscriptions = vec![
             cx.observe(&input, |_, _, cx| cx.notify()),
             cx.observe(&notes, |_, _, cx| cx.notify()),
+            cx.observe(&preset, |_, _, cx| cx.notify()),
+            cx.observe(&edit_hint, |_, _, cx| cx.notify()),
             cx.observe(&commands, |_, _, cx| cx.notify()),
             cx.observe(&command_dialog, |_, _, cx| cx.notify()),
             cx.observe(&select, |_, _, cx| cx.notify()),
@@ -266,6 +291,9 @@ impl Demo {
             appearance,
             input,
             notes,
+            preset,
+            edit_hint,
+            fields_scroll: ScrollHandle::new(),
             commands,
             command_dialog,
             dialog,
@@ -283,7 +311,6 @@ impl Demo {
             preview_indeterminate: false,
             show_cursor: true,
             keep_toolbar: false,
-            trigger_focus: cx.focus_handle().tab_stop(true),
             _subscriptions: subscriptions,
         }
     }
@@ -334,6 +361,7 @@ impl Render for Demo {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = self.appearance.palette();
         let dialog = self.dialog.clone();
+        let name_invalid = self.input.read(cx).value().trim().is_empty();
         let select = self.select.read(cx);
         let selected_label = select
             .selected_item()
@@ -368,7 +396,22 @@ impl Render for Demo {
             .rounded(palette.radius)
             .bg(palette.field)
             .styles(|styles| styles.focused(|style| style.border_color(palette.accent)))
+            .when(name_invalid, |field| field.border_color(palette.error))
             .child(Input::new(&self.input));
+        let name_field = Field::new("session-name-field", &self.input, "Session name")
+            .description("Choose a name to recognize this session.")
+            .required(true)
+            .error(name_invalid.then(|| "A session name is required.".into()))
+            .styles(|styles| {
+                styles
+                    .description(|style| style.text_sm().text_color(palette.muted))
+                    .error(|style| style.text_sm().text_color(palette.error))
+            })
+            .flex()
+            .flex_col()
+            .flex_shrink_0()
+            .gap_1()
+            .child(field);
         let notes = InputBase::new("session-notes")
             .role(None::<Role>)
             .semantic_owner::<Textarea>(self.notes.entity_id())
@@ -383,6 +426,85 @@ impl Render for Demo {
             .bg(palette.field)
             .styles(|styles| styles.focused(|style| style.border_color(palette.accent)))
             .child(Textarea::new(&self.notes));
+        let notes_field = Field::new("session-notes-field", &self.notes, "Session notes")
+            .description("Optional notes stay with this session.")
+            .styles(|styles| styles.description(|style| style.text_sm().text_color(palette.muted)))
+            .flex()
+            .flex_col()
+            .flex_shrink_0()
+            .gap_1()
+            .child(notes);
+        let preset_state = self.preset.read(cx);
+        let preset_input = preset_state.input().clone();
+        let preset_options = preset_state.visible_indices(cx).iter().map(|&index| {
+            let item = &preset_state.items(cx)[index];
+            ComboboxOption::new(&self.preset, index)
+                .h(palette.control_height)
+                .px_3()
+                .flex()
+                .items_center()
+                .justify_between()
+                .rounded(palette.radius)
+                .when(
+                    preset_state.highlighted_index(cx) == Some(index),
+                    |option| option.bg(palette.highlight),
+                )
+                .when(item.is_disabled(), |option| option.opacity(0.45))
+                .child(item.label().clone())
+                .when(preset_state.selected_index() == Some(index), |option| {
+                    option.child("✓")
+                })
+        });
+        let preset = Combobox::new("recording-preset", &self.preset)
+            .input(|input| {
+                input
+                    .accessibility_label("Recording preset")
+                    .placeholder("Search recording presets")
+                    .h(palette.control_height)
+                    .px_3()
+                    .w_full()
+                    .border_1()
+                    .border_color(palette.border)
+                    .rounded(palette.radius)
+                    .bg(palette.field)
+                    .styles(|styles| styles.focused(|style| style.border_color(palette.accent)))
+            })
+            .content(
+                div()
+                    .w(palette.dialog_width - palette.padding * 2.)
+                    .p_1()
+                    .border_1()
+                    .border_color(palette.border)
+                    .rounded(palette.radius)
+                    .bg(palette.surface)
+                    .text_color(palette.foreground)
+                    .child(
+                        ComboboxList::new("recording-preset-options", &self.preset)
+                            .accessibility_label("Recording presets")
+                            .max_h(px(180.))
+                            .children(preset_options),
+                    )
+                    .when(preset_state.visible_indices(cx).is_empty(), |list| {
+                        list.child(
+                            div()
+                                .p_3()
+                                .text_color(palette.muted)
+                                .child("No presets found"),
+                        )
+                    }),
+            );
+        let preset_label = preset_state
+            .selected_item(cx)
+            .map(|item| item.label().clone())
+            .unwrap_or_else(|| "None".into());
+        let preset_field = Field::new("recording-preset-field", &preset_input, "Recording preset")
+            .description("Search a preset and press Enter to select it.")
+            .styles(|styles| styles.description(|style| style.text_sm().text_color(palette.muted)))
+            .flex()
+            .flex_col()
+            .flex_shrink_0()
+            .gap_1()
+            .child(preset);
         let tool = Select::new("drawing-tool", &self.select)
             .accessibility_label("Drawing tool")
             .border_1()
@@ -614,6 +736,7 @@ impl Render for Demo {
         let panels = div()
             .flex()
             .flex_col()
+            .flex_shrink_0()
             .gap(palette.gap)
             .child(tab_list)
             .child(
@@ -637,14 +760,8 @@ impl Render for Demo {
                             .w_full()
                             .bg(palette.border),
                     )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_1()
-                            .child("Session notes")
-                            .child(notes),
-                    ),
+                    .child(notes_field)
+                    .child(preset_field),
             )
             .child(
                 TabPanel::new(&self.tabs, 2)
@@ -653,6 +770,7 @@ impl Render for Demo {
                     .gap(palette.gap)
                     .child(help_sections),
             );
+        let fields_scroll = self.fields_scroll.clone();
         let popup = DialogPopup::new()
             .w(palette.dialog_width)
             .max_h(window.viewport_size().height - px(32.))
@@ -673,24 +791,38 @@ impl Render for Demo {
             )
             .child(
                 div()
+                    .on_children_prepainted(move |_, window, _| {
+                        // Input already requests reveal when focus moves. Apply
+                        // that request to this application's scrollable form.
+                        let Some(request) = window.take_autoscroll() else {
+                            return;
+                        };
+                        let viewport = fields_scroll.bounds();
+                        let delta = if request.top() < viewport.top() {
+                            viewport.top() - request.top()
+                        } else if request.bottom() > viewport.bottom() {
+                            viewport.bottom() - request.bottom()
+                        } else {
+                            return;
+                        };
+                        let mut offset = fields_scroll.offset();
+                        offset.y = (offset.y + delta).clamp(-fields_scroll.max_offset().y, px(0.));
+                        fields_scroll.set_offset(offset);
+                        window.request_animation_frame();
+                    })
                     .id("settings-fields")
                     .min_h_0()
                     .overflow_y_scroll()
+                    .track_scroll(&self.fields_scroll)
                     .flex()
                     .flex_col()
                     .gap(palette.gap)
+                    .child(name_field)
                     .child(
                         div()
                             .flex()
                             .flex_col()
-                            .gap_1()
-                            .child("Session name")
-                            .child(field),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
+                            .flex_shrink_0()
                             .gap_1()
                             .child("Drawing tool")
                             .child(tool),
@@ -702,7 +834,13 @@ impl Render for Demo {
                     .flex()
                     .justify_end()
                     .child(DialogClose::new(&self.dialog).trigger(|button| {
-                        Self::button(palette, button.accessibility_label("Done").child("Done"))
+                        Self::button(
+                            palette,
+                            button
+                                .accessibility_label("Done")
+                                .disabled(name_invalid)
+                                .child("Done"),
+                        )
                     })),
             );
 
@@ -1082,16 +1220,37 @@ impl Render for Demo {
                             "automatic"
                         }
                     )))
-                    .child(Self::button(
-                        palette,
-                        Button::new("edit-session")
-                            .track_focus(&self.trigger_focus)
-                            .accessibility_label("Edit session")
-                            .on_click(move |_, window, cx| {
-                                dialog.update(cx, |state, cx| state.open(window, cx));
-                            })
-                            .child("Edit session"),
-                    ))
+                    .child(
+                        div()
+                            .text_color(palette.muted)
+                            .child(format!("Preset: {preset_label}")),
+                    )
+                    .child(
+                        Tooltip::new(
+                            "edit-session",
+                            &self.edit_hint,
+                            "Change the session name, recording preset, and notes.",
+                        )
+                        .max_w(rems(20.))
+                        .px_3()
+                        .py_2()
+                        .border_1()
+                        .border_color(palette.border)
+                        .rounded(palette.radius)
+                        .bg(palette.surface)
+                        .text_color(palette.foreground)
+                        .trigger(|button| {
+                            Self::button(
+                                palette,
+                                button
+                                    .accessibility_label("Edit session")
+                                    .on_click(move |_, window, cx| {
+                                        dialog.update(cx, |state, cx| state.open(window, cx));
+                                    })
+                                    .child("Edit session"),
+                            )
+                        }),
+                    )
                     .child(actions)
                     .child(preview_options)
                     .child(
