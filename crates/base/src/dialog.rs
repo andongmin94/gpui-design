@@ -243,6 +243,7 @@ impl RenderOnce for Dialog {
                             div()
                                 .absolute()
                                 .inset_0()
+                                .on_scroll(|_, _, cx| cx.stop_propagation())
                                 .on_any_mouse_down(move |event, window, cx| {
                                     cx.stop_propagation();
                                     if event.button == MouseButton::Left && overlay_closable {
@@ -307,6 +308,7 @@ macro_rules! dialog_part {
             fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
                 div()
                     .id($id)
+                    .test_support()
                     .when($occlude, |this| this.occlude())
                     .children(self.children)
                     .refine_style(&self.style)
@@ -377,5 +379,148 @@ impl DialogClose {
 impl RenderOnce for DialogClose {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         div().children(self.trigger)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{cell::Cell, rc::Rc};
+
+    use gpui::{
+        AppContext as _, Modifiers, Render, ScrollDelta, ScrollEvent, ScrollHandle, TestAppContext,
+    };
+
+    use super::*;
+    use crate::{Root, ScrollArea};
+
+    struct ScrollIsolationHarness {
+        dialog: Entity<DialogState>,
+        background: ScrollHandle,
+        body: ScrollHandle,
+        background_presses: Rc<Cell<usize>>,
+    }
+
+    impl Render for ScrollIsolationHarness {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            let background_presses = self.background_presses.clone();
+            div()
+                .size_full()
+                .child(
+                    ScrollArea::new("background", &self.background)
+                        .size_full()
+                        .child(div().w_full().h(px(2000.)).flex_shrink_0().on_mouse_down(
+                            MouseButton::Left,
+                            move |_, _, _| {
+                                background_presses.set(background_presses.get() + 1);
+                            },
+                        )),
+                )
+                .child(
+                    Dialog::new(&self.dialog)
+                        .accessibility_label("Scroll isolation")
+                        .backdrop(DialogBackdrop::new().size_full())
+                        .popup(
+                            DialogPopup::new().w(px(200.)).h(px(120.)).child(
+                                ScrollArea::new("dialog-body", &self.body)
+                                    .size_full()
+                                    .child(div().w_full().h(px(400.)).flex_shrink_0()),
+                            ),
+                        ),
+                )
+        }
+    }
+
+    #[gpui::test]
+    fn modal_wheel_isolation_preserves_body_scrolling_and_backdrop_dismissal(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(crate::init);
+        let dialog = cx.new(DialogState::new);
+        let background = ScrollHandle::new();
+        let body = ScrollHandle::new();
+        let background_presses = Rc::new(Cell::new(0));
+        let (_, cx) = cx.add_window_view({
+            let dialog = dialog.clone();
+            let background = background.clone();
+            let body = body.clone();
+            let background_presses = background_presses.clone();
+            move |window, cx| {
+                let content = cx.new(|_| ScrollIsolationHarness {
+                    dialog,
+                    background,
+                    body,
+                    background_presses,
+                });
+                Root::new(content, window, cx)
+            }
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+
+        let backdrop_position = point(
+            background.bounds().left() + px(8.),
+            background.bounds().top() + px(8.),
+        );
+        let wheel_down = point(px(0.), px(-40.));
+
+        // Establish that this point and wheel event scroll the real background
+        // while the dialog is closed, rather than testing an inert viewport.
+        cx.simulate_event(ScrollEvent {
+            position: backdrop_position,
+            delta: ScrollDelta::Pixels(wheel_down),
+            ..Default::default()
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        let background_offset = background.offset();
+        assert_eq!(background_offset, wheel_down);
+
+        cx.update(|window, cx| {
+            dialog.update(cx, |state, cx| state.open(window, cx));
+            window.draw(cx).clear(cx);
+        });
+        assert!(!body.bounds().contains(&backdrop_position));
+
+        cx.simulate_event(ScrollEvent {
+            position: body.bounds().center(),
+            delta: ScrollDelta::Pixels(wheel_down),
+            ..Default::default()
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        assert_eq!(body.offset(), wheel_down);
+        assert_eq!(background.offset(), background_offset);
+
+        // An exhausted body must not pass the wheel to the background.
+        let body_end = point(px(0.), -body.max_offset().y);
+        body.set_offset(body_end);
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        cx.simulate_event(ScrollEvent {
+            position: body.bounds().center(),
+            delta: ScrollDelta::Pixels(wheel_down),
+            ..Default::default()
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        assert_eq!(body.offset(), body_end);
+        assert_eq!(background.offset(), background_offset);
+
+        cx.simulate_event(ScrollEvent {
+            position: backdrop_position,
+            delta: ScrollDelta::Pixels(wheel_down),
+            ..Default::default()
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        let background_after_backdrop_wheel = background.offset();
+        assert_eq!(body.offset(), body_end);
+
+        // Blocking wheel events must leave backdrop dismissal working and
+        // must not turn the same press into a background activation.
+        cx.simulate_click(backdrop_position, Modifiers::default());
+        cx.update(|window, cx| {
+            window.draw(cx).clear(cx);
+            assert!(!dialog.read(cx).is_open());
+        });
+        assert_eq!(background_presses.get(), 0);
+        assert_eq!(
+            background_after_backdrop_wheel, background_offset,
+            "a wheel over the modal backdrop must not move the background"
+        );
     }
 }

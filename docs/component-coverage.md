@@ -6,9 +6,9 @@ Its main catalogue contains **66 entries**, each listed once below. The separate
 AI Elements catalogue is outside this comparison; conversation components already
 in the main catalogue remain included.
 
-GPUI Design currently documents **31 public library families and fourteen copyable
-presentation/composition recipes**, covering **45 catalogue entries** within the scopes below.
-This is not 45/66 feature parity: a family can exist with a deliberately limited
+GPUI Design currently documents **31 public library families and fifteen copyable
+presentation/composition recipes**, covering **46 catalogue entries** within the scopes below.
+This is not 46/66 feature parity: a family can exist with a deliberately limited
 contract, and several shadcn entries describe combinations of other parts.
 These counts do not measure performance, accessibility conformance, or completion
 of native desktop validation.
@@ -96,7 +96,7 @@ in the consumer, and are composed into the native two-style example.
 | Item | Recipe | Named row with a title, description, and supplied trailing action. No whole-row activation, selection, media/header/footer slots, or list controller. |
 | Kbd | Recipe | Static named keycaps with readable-label overrides for symbols and `+`-joined combinations. No focus stop, shortcut registration, event dispatch, or automatic platform-glyph conversion. |
 | Pagination | Recipe | Controlled previous/next Buttons, current-page text, named navigation, and zero/first/last-page boundaries. No numbered page links, ellipsis, routing, or data loading. |
-| Sheet | Pending | Dialog provides modal behavior; edge placement and sheet presentation are not yet offered. |
+| Sheet | Recipe | Right-edge, full-height modal presentation using the existing Dialog lifecycle, a viewport-limited preferred width, fixed header/footer, and one vertical ScrollArea body. The application retains DialogState and ScrollHandle and supplies header/footer content that fits the viewport. No other edge placement, drag interaction, animation, or separate modal/scroll-key controller. |
 | Skeleton | Recipe | Static decorative placeholder with application-controlled width, height, rounding, and color. No focus stop, native role/name, shimmer, or loading state. |
 | Spinner | Recipe | Named indeterminate Progress with a rotating arc, size/color styling, and GPUI App reduced-motion support. The application controls mounting; no independent task, timer, or automatic live announcement. |
 | Table | Available | Shared fixed/flexible columns, a header row, body rows, footer, caption, and native table/row/cell semantics. No spans, sorting, filtering, selection controller, or virtualization. |

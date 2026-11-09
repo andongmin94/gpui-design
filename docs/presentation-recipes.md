@@ -1,6 +1,6 @@
 # Presentation recipes
 
-These fourteen recipes are reusable application source, used by the native
+These fifteen recipes are reusable application source, used by the native
 [two-style example](../crates/base/examples/two_styles.rs). They compose GPUI
 layout with the existing controls and keep colors, spacing, and sizing in the
 consumer's `Palette` or application-supplied `Styled` values.
@@ -448,6 +448,62 @@ editing the session name changes the displayed text. The supplied child has the
 native Image name describing the format. The preview creates no recording and
 does not add controls to HoverCard's noninteractive content.
 
+## Sheet
+
+[`sheet.rs`](../crates/base/examples/recipes/sheet.rs) presents existing Dialog
+content in a full-height panel at the right edge of the window:
+
+```rust,ignore
+Sheet::new("session-settings", &dialog, &fields_scroll, "Session settings", palette)
+    .description("Choose the session's drawing and toolbar settings.")
+    .child(form_fields)
+    .footer(
+        DialogClose::new(&dialog)
+            .trigger(|button| button.child("Done")),
+    )
+```
+
+Keep the Sheet mounted under `gpui_design::Root` while closed. The application
+owns and retains both the supplied `Entity<DialogState>` and `ScrollHandle`.
+Configure initial focus on that existing DialogState and use its `open` and
+`close` methods. Dialog continues to own modal focus containment, Escape and
+backdrop dismissal, and return focus. The Sheet adds no open state or selection
+model. Its title and optional description provide both the visible header and
+the underlying Dialog's accessible name and description.
+
+The preferred width is `palette.dialog_width`, limited to the viewport width.
+The default popup fills the viewport height, has square corners, and uses one
+border on its left edge. The header and optional footer stay outside a single
+vertical ScrollArea body. Each `.child(...)` goes into that body, whose padding,
+spacing, and scrollbar colors come from the consumer palette. The body takes
+the remaining height and uses the application's retained scroll handle. On
+reopening, native reveal of the initial focus target can adjust its offset.
+The consumer must keep the header and footer's combined content within the
+viewport height. Long form content belongs in the scrolling body.
+
+`Styled` customizes the popup surface. Use `.w(...)` to change its preferred width
+and retain the default maximum width, height, and flex layout to preserve the
+Sheet's sizing contract. This recipe covers right-edge presentation; other edges,
+drag gestures, and transition animation are outside its current scope. It does
+not implement Drawer interaction.
+
+The application supplies footer controls, including any `DialogClose` and its
+disabled state. Keyboard interaction stays with the supplied controls and
+Dialog's existing Tab containment. ScrollArea reveals focused descendants on
+its enabled axis and provides native pointer scrolling; it adds no independent
+scroll focus target or scroll-key bindings.
+
+Both appearances now use Sheet for the existing Session settings form. The
+example reuses its DialogState, initial name-input focus, body scroll handle,
+Preferences/Help/Schedule/Presets tabs, and Done validation rule. Closing and
+reopening keeps the same input, selection, and table state. The existing Edit
+triggers and menu/command actions open that state; the recipe adds no separate
+selection. Avatar and AspectRatio still render the retained preset in its
+HoverCard preview. Search commands and Reset preview keep their centered Dialog
+and AlertDialog presentations.
+The example caps its deferred Select, Combobox, Calendar, and Help popup widths
+against the window as well; those surfaces do not inherit the Sheet's width cap.
+
 ## Verification scope
 
 The existing composition suite runs the same recipe modules as the native
@@ -485,3 +541,14 @@ that the retained choice drives the preview's artwork, frame ratio, and session
 name while preserving the existing trigger and dismissal behavior. These checks
 do not establish remote image transport, native screen-reader speech, desktop
 visual rendering, or performance measurements.
+
+Sheet coverage exercises edge placement, normal and narrow viewport widths,
+fixed header/footer geometry, body scrolling, descendant focus reveal, and
+closing and reopening with retained form state. The checks also exercise the
+shared Dialog's backdrop wheel handling to keep underlying content from scrolling,
+and opens Select in a narrow window to check the child popup's horizontal bounds.
+Nested-modal checks cover focus containment and wheel isolation in the top dialog,
+closing it while the Sheet remains open, and
+returning through the Sheet to its original trigger. These are layout and
+interaction checks in the existing GPUI test contexts; their scope does not
+establish native screen-reader, platform IME, or desktop visual validation.

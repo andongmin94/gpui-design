@@ -8,7 +8,7 @@ Headless separates control behavior from application-owned presentation; the
 examples render native GPUI windows.
 
 This is an early foundation for an independent component ecosystem. It currently
-includes 31 public library families and fourteen copyable presentation recipes. An
+includes 31 public library families and fifteen copyable presentation recipes. An
 executable example gives the same behavior two visual treatments. The source is
 maintained in this repository, with GPUI kept as an exactly pinned rendering
 dependency.
@@ -77,12 +77,13 @@ These types live in the example, outside the `gpui_design` crate exports.
 | **Skeleton** | Static decorative placeholder with application-controlled size and shape | The preview's unavailable percentage display |
 | **Avatar** | Named circular image with explicit fallback text, using GPUI's image loader and cache | Preset artwork or initials in the existing HoverCard preview |
 | **AspectRatio** | Clipped media frame with a finite positive width/height ratio and application-owned content | A recording-frame illustration driven by the retained preset and session name |
+| **Sheet** | Right-edge modal presentation over Dialog, with a viewport-limited width, fixed header/footer, and one scrolling body | Session settings in both appearances, using the existing form and retained state |
 
 The breadth target is the range of screens and interactions supported by
 shadcn/ui. The [component coverage map](docs/component-coverage.md) compares all
 66 entries in its current main catalogue with the actual public scope here.
 It distinguishes behavior, source-owned presentation recipes, and larger
-compositions. The 31 library families and fourteen recipes cover 45 catalogue entries
+compositions. The 31 library families and fifteen recipes cover 46 catalogue entries
 within defined scopes. The map records each entry's limits and the work still
 needed; this count does not establish full shadcn/ui feature parity.
 
@@ -100,7 +101,7 @@ fixed single selection, without free-form values, async sources, or groups.
 The [two-style example](crates/base/examples/two_styles.rs) applies a compact dark
 presentation and a light settings presentation to the same controls. Its styles
 live in application code, outside the behavior layer. A Session actions menu and
-the summary's ContextMenu open the settings dialog or toggle application values.
+the summary's ContextMenu open the settings Sheet or toggle application values.
 The two hosts use separate MenuState entities with shared command definitions and
 the same application callback. Right-click the summary or focus it and press
 Shift-F10. Hovering or focusing the preset button previews the preset, date, and
@@ -111,9 +112,12 @@ session name at 4:3 for Presentation and 16:9 otherwise. Both presentations read
 the existing retained preset, so applying a preset updates the next preview.
 The artwork is embedded from `examples/assets`; this illustrative recording
 frame uses no network request and generates no recording.
-The dialog combines Preferences,
-Help, Schedule, and Presets tabs, and retains values when it is closed and reopened. Help uses an
-Accordion whose keyboard section opens a guide in a non-modal Popover.
+Both appearances use a right-edge Sheet for Session settings. It retains the
+existing DialogState, initial input focus, form values, and scroll handle. Its
+width follows the application palette and fits within the viewport; the title
+and Done footer stay outside the scrolling body. Preferences, Help, Schedule,
+and Presets tabs retain their values when the Sheet closes and reopens. Help uses
+an Accordion whose keyboard section opens a guide in a non-modal Popover.
 Breadcrumb presents `Session settings > Help > Keyboard guide` in that guide.
 Its ancestor Buttons either close the guide and select Preferences through the
 existing tab focus, or return to the Help trigger; the current item is static
@@ -128,8 +132,9 @@ applies independent bold/italic emphasis to the summary text.
 These controls live inside a Collapsible that starts closed and preserves their
 retained values. The menu's Reset preview action opens an AlertDialog with Cancel
 initially focused; only confirmation restores known progress at 40%.
-Search commands opens a Command inside Dialog. Its query matches action labels,
-values, and keywords, then dispatches the same application actions as the menu.
+Search commands opens a Command inside a centered Dialog. Its query matches
+action labels, values, and keywords, then dispatches the same application actions
+as the menu.
 Its empty state can clear the query without dispatching a command or closing the
 dialog. Card and Badge compose the summary; ButtonGroup shares the calendar
 controls' framing while preserving each Button's normal Tab stop and action.
@@ -141,7 +146,7 @@ Item presents the current preset beside its existing HoverCard/edit control.
 The Presets tab uses DataTable and Pagination to browse the same four choices as
 the Combobox. Search, column sorting, and page changes retain the current choice;
 Use preset applies a stable row ID to the existing Combobox state. The unavailable
-preset remains disabled. Query, sort, and page state survive closing the dialog.
+preset remains disabled. Query, sort, and page state survive closing the Sheet.
 Session settings includes a retained multiline notes field and semantic separators;
 its body scrolls when the available window height cannot hold all fields.
 An editable recording-preset Combobox filters choices while retaining the last
@@ -152,7 +157,8 @@ Schedule uses a DatePicker composed from Calendar and Popover, and a Table
 reflecting the retained session name, date, and recording preset. A vertical
 Resizable divides shared session notes and the plan table. The table scrolls
 horizontally and vertically as its pane changes size, while the surrounding form
-uses a vertical ScrollArea. Date, notes, and pane ratio survive closing the dialog.
+uses the Sheet's vertical ScrollArea. Date, notes, and pane ratio survive closing
+the Sheet.
 An informational Alert explains that the example retains preferences without
 scheduling an actual recording. Its date bounds are 2026–2027.
 
@@ -254,7 +260,7 @@ The GPUI snapshot family is pinned to **`=0.3.11`**. Update those pins and
 | `crates/base/src/` | The `gpui-design` library and its behavior-level tests |
 | `crates/base/tests/` | Integration tests using the public API |
 | `crates/base/examples/two_styles.rs` | Native example and application-owned styles |
-| `crates/base/examples/recipes/` | Fourteen copyable presentation/composition recipes, including media frames, avatars, data tables, loading indicators, and keycaps |
+| `crates/base/examples/recipes/` | Fifteen copyable presentation/composition recipes, including sheets, media frames, avatars, data tables, loading indicators, and keycaps |
 | `crates/base/examples/assets/` | Embedded example artwork used by the preset preview and its image-decoding regression |
 | `docs/form-controls.md` | Form control usage and interaction contracts |
 | `docs/navigation-overlays.md` | Breadcrumb, Tabs, Accordion, command menus, and composed focus behavior |

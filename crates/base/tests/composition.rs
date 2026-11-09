@@ -71,6 +71,264 @@ fn open_dialog(cx: &mut VisualTestContext, demo: &Entity<Demo>) {
 }
 
 #[gpui::test]
+fn sheet_geometry_scrolling_and_nested_modal_preserve_focus(cx: &mut TestAppContext) {
+    let parts = |window: &gpui::Window| {
+        let bounds = |part: &'static str| {
+            let id = (gpui::ElementId::from("session-settings"), part).into();
+            test_support::find(window, &[], &id).unwrap().bounds()
+        };
+        let done = test_support::snapshots(window)
+            .into_iter()
+            .find(|item| item.label() == Some("Done"))
+            .unwrap();
+        (
+            bounds("header"),
+            bounds("body"),
+            bounds("footer"),
+            done.bounds(),
+        )
+    };
+    // Both palettes have different widths and padding; exercise those layout risks.
+    for (appearance, preferred_rems) in [(Appearance::Compact, 22.), (Appearance::Settings, 28.)] {
+        let (cx, demo) = harness(cx, appearance);
+        cx.simulate_resize(gpui::size(px(760.), px(780.)));
+        draw(cx);
+        open_dialog(cx, &demo);
+
+        cx.update(|window, _| {
+            let host = test_support::snapshots(window)
+                .into_iter()
+                .find(|item| item.role() == Some(Role::Dialog))
+                .unwrap();
+            assert_eq!(host.label(), Some("Session settings"));
+            assert_eq!(
+                host.description(),
+                Some("Choose the session's drawing and toolbar settings.")
+            );
+            let body_id = (gpui::ElementId::from("session-settings"), "body").into();
+            let body = test_support::find(window, &[], &body_id).unwrap();
+            assert_eq!(body.role(), Some(Role::ScrollView));
+            assert_eq!(body.focused(), None);
+        });
+
+        for (width, height) in [(760., 780.), (320., 480.), (760., 360.)] {
+            cx.simulate_resize(gpui::size(px(width), px(height)));
+            draw(cx);
+            draw(cx);
+            let (header, body, footer, done) = cx.update(|window, _| {
+                let popup = test_support::find(window, &[], &"dialog-popup".into())
+                    .unwrap()
+                    .bounds();
+                let expected_width = (window.rem_size() * preferred_rems).min(px(width));
+                assert!((popup.right() - px(width)).abs() < px(1.));
+                assert!(popup.top().abs() < px(1.));
+                assert!((popup.size.height - px(height)).abs() < px(1.));
+                assert!((popup.size.width - expected_width).abs() < px(1.));
+                let parts = parts(window);
+                assert!(parts.1.top() >= parts.0.bottom());
+                assert!(parts.1.bottom() <= parts.2.top());
+                assert!(parts.1.size.height > px(0.));
+                assert!(parts.3.top() >= parts.2.top());
+                assert!(parts.3.bottom() <= px(height));
+                parts
+            });
+            let wheel_position = point(body.left() + px(2.), body.center().y);
+            for delta in [-10_000., -10_000., 10_000., 10_000.] {
+                cx.simulate_event(ScrollEvent {
+                    position: wheel_position,
+                    delta: ScrollDelta::Pixels(point(px(-1_000.), px(delta))),
+                    ..Default::default()
+                });
+                draw(cx);
+                cx.update(|window, cx| {
+                    let scroll = &demo.read(cx).fields_scroll;
+                    let expected = if delta < 0. {
+                        -scroll.max_offset().y
+                    } else {
+                        px(0.)
+                    };
+                    assert!((scroll.offset().y - expected).abs() < px(1.));
+                    assert_eq!(scroll.offset().x, px(0.));
+                    let after = parts(window);
+                    assert_eq!((after.0, after.2, after.3), (header, footer, done));
+                });
+            }
+            if width == 320. {
+                cx.simulate_keystrokes("tab down");
+                draw(cx);
+                cx.update(|window, _| {
+                    let list = test_support::snapshots(window)
+                        .into_iter()
+                        .find(|item| item.role() == Some(Role::ListBox))
+                        .unwrap();
+                    assert!(
+                        list.bounds().left() >= px(0.) && list.bounds().right() <= px(width),
+                        "select popup {:?} must fit the narrow viewport",
+                        list.bounds()
+                    );
+                });
+                cx.simulate_keystrokes("escape shift-tab");
+                draw(cx);
+                cx.update(|window, cx| {
+                    assert!(!demo.read(cx).select.read(cx).is_open());
+                    assert!(demo.read(cx).dialog.read(cx).is_open());
+                    assert!(demo.read(cx).input.focus_handle(cx).is_focused(window));
+                });
+            }
+        }
+
+        if matches!(appearance, Appearance::Compact) {
+            cx.simulate_keystrokes("escape");
+            draw(cx);
+            cx.update(|window, cx| {
+                assert!(!demo.read(cx).dialog.read(cx).is_open());
+                assert!(
+                    demo.read(cx)
+                        .edit_hint
+                        .read(cx)
+                        .focus_handle()
+                        .is_focused(window)
+                );
+            });
+            continue;
+        }
+
+        // One interaction flow is enough after both layouts have been checked.
+        cx.simulate_keystrokes(if cfg!(target_os = "macos") {
+            "cmd-a"
+        } else {
+            "ctrl-a"
+        });
+        cx.simulate_input("Retained sheet session");
+        draw(cx);
+        let body = cx.update(|window, _| parts(window).1);
+        cx.simulate_event(ScrollEvent {
+            position: point(body.left() + px(2.), body.center().y),
+            delta: ScrollDelta::Pixels(point(px(0.), px(-10_000.))),
+            ..Default::default()
+        });
+        draw(cx);
+        cx.update(|window, cx| {
+            assert!(demo.read(cx).fields_scroll.max_offset().y > px(0.));
+            let input = test_support::find(window, &[], &"session-name".into()).unwrap();
+            assert!(input.bounds().bottom() <= body.top());
+        });
+        cx.simulate_keystrokes("shift-tab");
+        draw(cx);
+        cx.update(|window, _| {
+            assert!(
+                test_support::snapshots(window)
+                    .iter()
+                    .any(|item| { item.label() == Some("Done") && item.focused() == Some(true) })
+            );
+        });
+        cx.simulate_keystrokes("tab");
+        draw(cx);
+        draw(cx); // Focus reveal is applied to the retained viewport on the next frame.
+        cx.update(|window, cx| {
+            assert!(demo.read(cx).input.focus_handle(cx).is_focused(window));
+            let input = test_support::find(window, &[], &"session-name".into()).unwrap();
+            assert!(input.visible());
+            // Input requests reveal of its native editing viewport, which is
+            // centered inside the taller application-owned control frame.
+            let editing = demo.read(cx).input.read(cx).input_bounds();
+            assert!(editing.size.height > px(0.));
+            assert!(editing.top() >= body.top());
+            assert!(editing.bottom() <= body.bottom());
+            let scroll = &demo.read(cx).fields_scroll;
+            assert!(scroll.offset().y > -scroll.max_offset().y);
+        });
+
+        // Open the existing confirmation from inside the Sheet, retaining its return target.
+        cx.update(|window, cx| {
+            let reset = demo.read(cx).reset_dialog.clone();
+            reset.update(cx, |state, cx| state.open(window, cx));
+        });
+        draw(cx);
+        cx.update(|window, cx| {
+            let demo = demo.read(cx);
+            assert!(demo.dialog.read(cx).is_open());
+            assert!(demo.reset_dialog.read(cx).is_open());
+            assert!(demo.reset_cancel_focus.is_focused(window));
+        });
+        for (key, cancel_focused) in [
+            ("shift-tab", false),
+            ("tab", true),
+            ("tab", false),
+            ("tab", true),
+        ] {
+            cx.simulate_keystrokes(key);
+            draw(cx);
+            cx.update(|window, cx| {
+                let demo = demo.read(cx);
+                assert!(
+                    demo.reset_dialog
+                        .read(cx)
+                        .focus_handle()
+                        .contains_focused(window, cx)
+                );
+                assert_eq!(demo.reset_cancel_focus.is_focused(window), cancel_focused);
+                assert_eq!(
+                    test_support::find(window, &[], &"confirm-preview-reset".into())
+                        .unwrap()
+                        .focused(),
+                    Some(!cancel_focused),
+                );
+            });
+        }
+        cx.update(|window, cx| assert!(demo.read(cx).reset_cancel_focus.is_focused(window)));
+        let sheet_offset = cx.update(|_, cx| demo.read(cx).fields_scroll.offset());
+        // The top modal also blocks wheel input over the Sheet behind it.
+        cx.simulate_event(ScrollEvent {
+            position: point(body.right() - px(2.), body.center().y),
+            delta: ScrollDelta::Pixels(point(px(0.), px(-100.))),
+            ..Default::default()
+        });
+        draw(cx);
+        cx.update(|_, cx| assert_eq!(demo.read(cx).fields_scroll.offset(), sheet_offset));
+        // This point is outside both surfaces: the child backdrop must block the Sheet's.
+        cx.simulate_click(point(px(2.), px(2.)), Modifiers::default());
+        draw(cx);
+        cx.update(|window, cx| {
+            let demo = demo.read(cx);
+            assert!(demo.dialog.read(cx).is_open());
+            assert!(demo.reset_dialog.read(cx).is_open());
+            assert!(demo.reset_cancel_focus.is_focused(window));
+        });
+        cx.simulate_keystrokes("escape");
+        draw(cx);
+        cx.update(|window, cx| {
+            let demo = demo.read(cx);
+            assert!(!demo.reset_dialog.read(cx).is_open());
+            assert!(demo.dialog.read(cx).is_open());
+            assert!(demo.input.focus_handle(cx).is_focused(window));
+        });
+        cx.simulate_keystrokes("escape");
+        draw(cx);
+        cx.update(|window, cx| {
+            let demo = demo.read(cx);
+            assert!(!demo.dialog.read(cx).is_open());
+            assert!(demo.edit_hint.read(cx).focus_handle().is_focused(window));
+        });
+        open_dialog(cx, &demo);
+        cx.update(|window, cx| {
+            assert_eq!(
+                demo.read(cx).input.read(cx).value(),
+                "Retained sheet session"
+            );
+            assert!(demo.read(cx).input.focus_handle(cx).is_focused(window));
+        });
+        cx.simulate_click(point(px(2.), px(2.)), Modifiers::default());
+        draw(cx);
+        cx.update(|window, cx| {
+            let demo = demo.read(cx);
+            assert!(!demo.dialog.read(cx).is_open());
+            assert!(demo.edit_hint.read(cx).focus_handle().is_focused(window));
+        });
+    }
+}
+
+#[gpui::test]
 fn compact_controls_complete_the_keyboard_flow(cx: &mut TestAppContext) {
     let (cx, demo) = harness(cx, Appearance::Compact);
     let changes = Rc::new(RefCell::new(Vec::new()));
@@ -1755,10 +2013,14 @@ fn date_picker_and_split_panes_preserve_nested_form_state(cx: &mut TestAppContex
         assert_eq!(demo.notes.read(cx).value(), "Prepare the workshop demo.");
     });
     let fields = cx.update(|window, _| {
-        test_support::find(window, &[], &"settings-fields".into())
-            .unwrap()
-            .bounds()
-            .center()
+        test_support::find(
+            window,
+            &[],
+            &(gpui::ElementId::from("session-settings"), "body").into(),
+        )
+        .unwrap()
+        .bounds()
+        .center()
     });
     cx.simulate_event(ScrollEvent {
         position: fields,

@@ -31,7 +31,7 @@ use gpui_design::{
 mod recipes;
 use recipes::{
     Alert, AspectRatio, Avatar, Badge, ButtonGroup, Card, DataTable, DataTableColumn, DataTableRow,
-    DataTableState, EmptyState, InputGroup, Item, Kbd, KbdGroup, Skeleton, Spinner,
+    DataTableState, EmptyState, InputGroup, Item, Kbd, KbdGroup, Sheet, Skeleton, Spinner,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -113,7 +113,7 @@ pub(crate) struct Demo {
     pub(crate) edit_hint: Entity<TooltipState>,
     pub(crate) preset_preview: Entity<HoverCardState>,
     preset_artwork: Arc<Image>,
-    fields_scroll: ScrollHandle,
+    pub(crate) fields_scroll: ScrollHandle,
     pub(crate) calendar: Entity<CalendarState>,
     pub(crate) date_picker: Entity<DatePickerState>,
     pub(crate) schedule_split: Entity<ResizableState>,
@@ -486,7 +486,12 @@ impl Demo {
             }))
     }
 
-    fn calendar_content(&self, palette: Palette, cx: &Context<Self>) -> impl IntoElement + use<> {
+    fn calendar_content(
+        &self,
+        palette: Palette,
+        window: &Window,
+        cx: &Context<Self>,
+    ) -> impl IntoElement + use<> {
         let state = self.calendar.read(cx);
         let month = state.month();
         let selected = state.selected_date();
@@ -577,6 +582,7 @@ impl Demo {
             );
         div()
             .w(palette.dialog_width - palette.padding * 2.)
+            .max_w((window.viewport_size().width - px(16.)).max(px(0.)))
             .p_3()
             .flex()
             .flex_col()
@@ -619,7 +625,7 @@ impl Demo {
                         .child(date_label.clone()),
                 )
             })
-            .content(self.calendar_content(palette, cx));
+            .content(self.calendar_content(palette, window, cx));
         let notes = Field::new("schedule-notes-field", &self.notes, "Session notes")
             .description("The same notes are available in Preferences.")
             .styles(|styles| styles.description(|style| style.text_sm().text_color(palette.muted)))
@@ -743,6 +749,9 @@ impl Demo {
 impl Render for Demo {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = self.appearance.palette();
+        // Deferred child popups keep Popup's 8px window margin even when the
+        // Sheet fills a narrow viewport; they do not inherit its width limit.
+        let popup_max_width = (window.viewport_size().width - px(16.)).max(px(0.));
         let dialog = self.dialog.clone();
         let name_invalid = self.input.read(cx).value().trim().is_empty();
         let select = self.select.read(cx);
@@ -870,6 +879,7 @@ impl Render for Demo {
             .content(
                 div()
                     .w(palette.dialog_width - palette.padding * 2.)
+                    .max_w(popup_max_width)
                     .p_1()
                     .border_1()
                     .border_color(palette.border)
@@ -1043,6 +1053,7 @@ impl Render for Demo {
             .content(
                 div()
                     .w(palette.dialog_width - palette.padding * 2.)
+                    .max_w(popup_max_width)
                     .p_1()
                     .border_1()
                     .border_color(palette.border)
@@ -1228,6 +1239,7 @@ impl Render for Demo {
             .content(
                 div()
                     .w(palette.dialog_width - palette.padding * 2.)
+                    .max_w(popup_max_width)
                     .p_3()
                     .flex()
                     .flex_col()
@@ -1429,58 +1441,37 @@ impl Render for Demo {
                     .gap(palette.gap)
                     .child(preset_table),
             );
-        let popup = DialogPopup::new()
-            .w(palette.dialog_width)
-            .max_h(window.viewport_size().height - px(32.))
-            .p(palette.padding)
-            .flex()
-            .flex_col()
-            .gap(palette.gap)
-            .bg(palette.surface)
-            .text_color(palette.foreground)
-            .border_1()
-            .border_color(palette.border)
-            .rounded(palette.radius)
-            .child(DialogTitle::new().text_lg().child("Session settings"))
-            .child(
-                DialogDescription::new()
-                    .text_color(palette.muted)
-                    .child("Choose the session's drawing and toolbar settings."),
+        let settings =
+            Sheet::new(
+                "session-settings",
+                &self.dialog,
+                &self.fields_scroll,
+                "Session settings",
+                palette,
             )
-            .child(
-                ScrollArea::new("settings-fields", &self.fields_scroll)
-                    .accessibility_label("Session settings fields")
-                    .scrollbar_styles(|styles| {
-                        styles.thumb(|thumb| thumb.bg(palette.muted).radius(px(3.)))
-                    })
-                    .min_h_0()
-                    .content_styles(|style| style.flex().flex_col().gap(palette.gap))
-                    .child(name_field)
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .flex_shrink_0()
-                            .gap_1()
-                            .child("Drawing tool")
-                            .child(tool),
-                    )
-                    .child(panels),
-            )
+            .description("Choose the session's drawing and toolbar settings.")
+            .child(name_field)
             .child(
                 div()
                     .flex()
-                    .justify_end()
-                    .child(DialogClose::new(&self.dialog).trigger(|button| {
-                        Self::button(
-                            palette,
-                            button
-                                .accessibility_label("Done")
-                                .disabled(name_invalid)
-                                .child("Done"),
-                        )
-                    })),
-            );
+                    .flex_col()
+                    .flex_shrink_0()
+                    .gap_1()
+                    .child("Drawing tool")
+                    .child(tool),
+            )
+            .child(panels)
+            .footer(div().flex().justify_end().child(
+                DialogClose::new(&self.dialog).trigger(|button| {
+                    Self::button(
+                        palette,
+                        button
+                            .accessibility_label("Done")
+                            .disabled(name_invalid)
+                            .child("Done"),
+                    )
+                }),
+            ));
 
         let actions = DropdownMenu::new("session-actions", &self.actions)
             .accessibility_label("Session actions")
@@ -1990,19 +1981,7 @@ impl Render for Demo {
                         ),
                 ),
             )
-            .child(
-                Dialog::new(&self.dialog)
-                    .accessibility_label("Session settings")
-                    .accessibility_description("Choose the session's drawing and toolbar settings.")
-                    .backdrop(
-                        DialogBackdrop::new()
-                            .absolute()
-                            .inset_0()
-                            .bg(gpui::black())
-                            .opacity(0.45),
-                    )
-                    .popup(popup),
-            )
+            .child(settings)
             .child(
                 AlertDialog::new(&self.reset_dialog)
                     .accessibility_label("Reset preview?")
