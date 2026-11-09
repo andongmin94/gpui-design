@@ -744,6 +744,624 @@ impl Demo {
                     ),
             )
     }
+
+    // Build independent surfaces separately to limit stack use in debug builds.
+    fn render_preset_preview(&self, palette: Palette, cx: &Context<Self>) -> gpui::AnyElement {
+        let preset_state = self.preset.read(cx);
+        let preset_label = preset_state
+            .selected_item(cx)
+            .map(|item| item.label().clone())
+            .unwrap_or_else(|| "None".into());
+        let preset_description = Self::preset_description(
+            preset_state
+                .selected_value(cx)
+                .map_or("", |value| value.as_ref()),
+        );
+        let preset_value = preset_state.selected_value(cx).map(|value| value.as_ref());
+        let (preset_initials, frame_ratio, frame_label) = match preset_value {
+            Some("presentation") => ("PR", 4. / 3., "4:3"),
+            Some("quality") => ("HQ", 16. / 9., "16:9"),
+            Some("broadcast") => ("BC", 16. / 9., "16:9"),
+            Some("balanced") => ("BL", 16. / 9., "16:9"),
+            _ => ("?", 16. / 9., "16:9"),
+        };
+        let preset_avatar = Avatar::new(
+            "preset-avatar",
+            format!("{preset_label} preset artwork"),
+            preset_initials,
+            palette,
+        )
+        .when(preset_value == Some("balanced"), |avatar| {
+            avatar.image(self.preset_artwork.clone())
+        });
+        let frame_session_name = self.input.read(cx).value();
+        let frame_description = format!("{frame_label} frame preview");
+        let frame_preview = AspectRatio::new("preset-frame", frame_ratio)
+            .rounded(palette.radius)
+            .bg(palette.field)
+            .child(
+                div()
+                    .id("preset-frame-content")
+                    .role(Role::Image)
+                    .aria_label(format!("{frame_label} recording frame preview"))
+                    .size_full()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .justify_center()
+                    .gap_2()
+                    .p_3()
+                    .overflow_hidden()
+                    .child(
+                        div()
+                            .max_w_full()
+                            .truncate()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(
+                                gpui::text!(
+                                    id = "preset-frame-session-name",
+                                    frame_session_name.clone()
+                                )
+                                .test_text(frame_session_name),
+                            ),
+                    )
+                    .child(
+                        gpui::text!(id = "preset-frame-format", frame_description.clone())
+                            .test_text(frame_description),
+                    ),
+            );
+        let preset_dialog = self.dialog.clone();
+        HoverCard::new("preset-preview", &self.preset_preview)
+            .accessibility_label("Recording preset preview")
+            .offset(px(6.))
+            .trigger(|button| {
+                button
+                    .h(palette.control_height)
+                    .px_3()
+                    .rounded(palette.radius)
+                    .border_1()
+                    .border_color(palette.border)
+                    .text_color(palette.muted)
+                    .focus_visible(|style| style.border_color(palette.accent))
+                    .accessibility_label(format!("Recording preset: {preset_label}. Edit settings"))
+                    .on_click(move |_, window, cx| {
+                        preset_dialog.update(cx, |state, cx| state.open(window, cx));
+                    })
+                    .child("Edit")
+            })
+            .content(
+                div()
+                    .id("preset-preview-content")
+                    .w(rems(18.))
+                    .p_3()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .border_1()
+                    .border_color(palette.border)
+                    .rounded(palette.radius)
+                    .bg(palette.surface)
+                    .text_color(palette.foreground)
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(preset_avatar)
+                            .child(
+                                div()
+                                    .font_weight(FontWeight::BOLD)
+                                    .child(preset_label.clone()),
+                            ),
+                    )
+                    .child(frame_preview)
+                    .child(div().text_sm().child(preset_description))
+                    .child(div().text_sm().text_color(palette.muted).child(format!(
+                        "Recording date: {}",
+                        self.calendar
+                            .read(cx)
+                            .selected_date()
+                            .map(|date| date.format("%Y-%m-%d").to_string())
+                            .unwrap_or_else(|| "Not scheduled".to_string())
+                    )))
+                    .child(div().text_sm().text_color(palette.muted).child(
+                        if self.notes.read(cx).value().is_empty() {
+                            "No session notes yet."
+                        } else {
+                            "Session notes are saved in settings."
+                        },
+                    )),
+            )
+            .into_any_element()
+    }
+
+    fn render_keyboard_help(&self, palette: Palette, popup_max_width: Pixels) -> gpui::AnyElement {
+        let settings_help = self.help.clone();
+        let settings_tabs = self.tabs.clone();
+        let help_parent = self.help.clone();
+        let help_path = Breadcrumb::new("keyboard-guide-path")
+            .accessibility_label("Help location")
+            .child(
+                BreadcrumbList::new("keyboard-guide-path-list")
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap_1()
+                    .child(
+                        BreadcrumbItem::new("settings-path-item").child(Self::button(
+                            palette,
+                            Button::new("help-to-settings")
+                                .accessibility_label("Session settings")
+                                .on_click(move |_, window, cx| {
+                                    settings_help.update(cx, |state, cx| state.close(window, cx));
+                                    let focus = settings_tabs.read(cx).tab_focus_handle(0).clone();
+                                    focus.focus(window, cx);
+                                })
+                                .child("Session settings"),
+                        )),
+                    )
+                    .child("›")
+                    .child(
+                        BreadcrumbItem::new("help-path-item").child(Self::button(
+                            palette,
+                            Button::new("help-to-parent")
+                                .accessibility_label("Help")
+                                .on_click(move |_, window, cx| {
+                                    help_parent.update(cx, |state, cx| state.close(window, cx));
+                                })
+                                .child("Help"),
+                        )),
+                    )
+                    .child("›")
+                    .child(
+                        BreadcrumbItem::new("keyboard-guide-current")
+                            .current(true)
+                            .child(gpui::text!(
+                                id = "keyboard-guide-current-text",
+                                "Keyboard guide"
+                            )),
+                    ),
+            );
+        let help_state = self.help.clone();
+        Popover::new("keyboard-help", &self.help)
+            .accessibility_label("Keyboard help")
+            .offset(px(6.))
+            .trigger(|button| {
+                Self::button(
+                    palette,
+                    button
+                        .accessibility_label("Show keyboard help")
+                        .child("Show keyboard help"),
+                )
+            })
+            .content(
+                div()
+                    .w(palette.dialog_width - palette.padding * 2.)
+                    .max_w(popup_max_width)
+                    .p_3()
+                    .flex()
+                    .flex_col()
+                    .gap_3()
+                    .bg(palette.surface)
+                    .text_color(palette.foreground)
+                    .border_1()
+                    .border_color(palette.border)
+                    .rounded(palette.radius)
+                    .child(help_path)
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .items_center()
+                            .gap_1()
+                            .child(Kbd::new("help-next-key", "Tab", palette))
+                            .child(gpui::text!(id = "help-focus-alternative", "or"))
+                            .child(
+                                KbdGroup::new("help-previous-shortcut", palette)
+                                    .key(Kbd::new("help-previous-shift", "Shift", palette))
+                                    .key(Kbd::new("help-previous-tab", "Tab", palette)),
+                            )
+                            .child(gpui::text!(
+                                id = "help-focus-description",
+                                "Move between controls"
+                            )),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .items_center()
+                            .gap_1()
+                            .child(
+                                Kbd::new("help-left-key", "←", palette)
+                                    .accessibility_label("Arrow left"),
+                            )
+                            .child(
+                                Kbd::new("help-right-key", "→", palette)
+                                    .accessibility_label("Arrow right"),
+                            )
+                            .child(
+                                Kbd::new("help-up-key", "↑", palette)
+                                    .accessibility_label("Arrow up"),
+                            )
+                            .child(
+                                Kbd::new("help-down-key", "↓", palette)
+                                    .accessibility_label("Arrow down"),
+                            )
+                            .child(gpui::text!(
+                                id = "help-arrows-description",
+                                "Choose tabs and options"
+                            )),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .items_center()
+                            .gap_1()
+                            .child(Kbd::new("help-enter-key", "Enter", palette))
+                            .child(gpui::text!(id = "help-activation-alternative", "or"))
+                            .child(Kbd::new("help-space-key", "Space", palette))
+                            .child(gpui::text!(
+                                id = "help-activation-description",
+                                "Activate a control"
+                            )),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .items_center()
+                            .gap_1()
+                            .child(Kbd::new("help-escape-key", "Escape", palette))
+                            .child(gpui::text!(
+                                id = "help-escape-description",
+                                "Close this help first"
+                            )),
+                    )
+                    .child(Self::button(
+                        palette,
+                        Button::new("close-help")
+                            .accessibility_label("Close help")
+                            .on_click(move |_, window, cx| {
+                                help_state.update(cx, |state, cx| state.close(window, cx));
+                            })
+                            .child("Close help"),
+                    )),
+            )
+            .into_any_element()
+    }
+
+    fn render_preview_options(&self, palette: Palette, cx: &Context<Self>) -> gpui::AnyElement {
+        let owner = cx.entity();
+        let unknown_progress = Toggle::new("unknown-progress")
+            .pressed(self.preview_indeterminate)
+            .accessibility_label("Unknown progress")
+            .h(palette.control_height)
+            .px_3()
+            .border_1()
+            .border_color(palette.border)
+            .rounded(palette.radius)
+            .focus_visible(|style| style.border_color(palette.accent))
+            .when(self.preview_indeterminate, |toggle| {
+                toggle
+                    .bg(palette.accent)
+                    .text_color(palette.accent_foreground)
+            })
+            .on_change(move |pressed, _, _, cx| {
+                owner.update(cx, |this, cx| {
+                    this.preview_indeterminate = pressed;
+                    cx.notify();
+                });
+            })
+            .child("Unknown progress");
+        let preview = self.preview.read(cx);
+        let progress_preview = div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .px_2()
+            .child(if self.preview_indeterminate {
+                "Progress preview · Unknown".to_string()
+            } else {
+                format!("Progress preview · {:.0}%", preview.value())
+            })
+            .child(
+                Slider::new("preview-percentage", &self.preview)
+                    .accessibility_label("Preview percentage")
+                    .relative()
+                    .h(palette.control_height)
+                    .rounded(palette.radius)
+                    .focus_visible(|style| style.bg(palette.highlight))
+                    .child(
+                        div()
+                            .absolute()
+                            .left_0()
+                            .right_0()
+                            .top(relative(0.5))
+                            .mt(px(-2.))
+                            .h(px(4.))
+                            .rounded_full()
+                            .bg(palette.border),
+                    )
+                    .child(
+                        div()
+                            .absolute()
+                            .left_0()
+                            .top(relative(0.5))
+                            .mt(px(-2.))
+                            .h(px(4.))
+                            .w(relative(preview.percentage()))
+                            .rounded_full()
+                            .bg(palette.accent),
+                    )
+                    .child(
+                        div()
+                            .absolute()
+                            .left(relative(preview.percentage()))
+                            .top(relative(0.5))
+                            .ml(px(-7.))
+                            .mt(px(-7.))
+                            .size(px(14.))
+                            .rounded_full()
+                            .bg(palette.accent),
+                    ),
+            )
+            .child(
+                div()
+                    .h_5()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .when(self.preview_indeterminate, |row| {
+                        row.child(Spinner::new(
+                            "preview-progress",
+                            "Preview progress",
+                            palette,
+                        ))
+                        .child(
+                            Skeleton::new("preview-progress-placeholder", palette)
+                                .w_auto()
+                                .flex_1()
+                                .h_2(),
+                        )
+                    })
+                    .when(!self.preview_indeterminate, |row| {
+                        row.child(
+                            Progress::new("preview-progress")
+                                .accessibility_label("Preview progress")
+                                .value(preview.value())
+                                .w_full()
+                                .h_2()
+                                .rounded_full()
+                                .overflow_hidden()
+                                .bg(palette.border)
+                                .child(
+                                    div()
+                                        .debug_selector(|| "preview-progress-fill".into())
+                                        .h_full()
+                                        .w(relative(preview.percentage()))
+                                        .rounded_full()
+                                        .bg(palette.accent),
+                                ),
+                        )
+                    }),
+            )
+            .child(unknown_progress);
+        let formatting = self.formatting.read(cx);
+        let emphasis = div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child("Summary text emphasis")
+            .child(
+                ToggleGroup::new("text-emphasis", &self.formatting)
+                    .accessibility_label("Summary text emphasis")
+                    .flex()
+                    .flex_wrap()
+                    .gap_2()
+                    .children(formatting.items().iter().enumerate().map(|(index, item)| {
+                        ToggleOption::new(&self.formatting, index)
+                            .h(palette.control_height)
+                            .px_2()
+                            .border_1()
+                            .border_color(palette.border)
+                            .rounded(palette.radius)
+                            .focus_visible(|style| style.border_color(palette.accent))
+                            .when(formatting.is_pressed(index), |option| {
+                                option
+                                    .bg(palette.accent)
+                                    .text_color(palette.accent_foreground)
+                            })
+                            .when(item.is_disabled(), |option| option.opacity(0.45))
+                            .child(item.label().clone())
+                    })),
+            );
+
+        Collapsible::new("preview-options", &self.preview_options)
+            .flex()
+            .flex_col()
+            .gap_3()
+            .child(
+                CollapsibleTrigger::new(&self.preview_options)
+                    .accessibility_label("Preview options")
+                    .w_full()
+                    .h(palette.control_height)
+                    .px_3()
+                    .justify_between()
+                    .border_1()
+                    .border_color(palette.border)
+                    .rounded(palette.radius)
+                    .focus_visible(|style| style.border_color(palette.accent))
+                    .child("Preview options")
+                    .child(if self.preview_options.read(cx).is_open() {
+                        "−"
+                    } else {
+                        "+"
+                    }),
+            )
+            .child(
+                CollapsibleContent::new(&self.preview_options)
+                    .accessibility_label("Preview options")
+                    .flex()
+                    .flex_col()
+                    .gap_3()
+                    .child(progress_preview)
+                    .child(emphasis),
+            )
+            .into_any_element()
+    }
+
+    fn render_reset_popup(&self, palette: Palette, cx: &Context<Self>) -> gpui::AnyElement {
+        let owner = cx.entity();
+        DialogPopup::new()
+            .w(palette.dialog_width)
+            .p(palette.padding)
+            .flex()
+            .flex_col()
+            .gap(palette.gap)
+            .bg(palette.surface)
+            .text_color(palette.foreground)
+            .border_1()
+            .border_color(palette.border)
+            .rounded(palette.radius)
+            .child(DialogTitle::new().text_lg().child("Reset preview?"))
+            .child(
+                DialogDescription::new()
+                    .text_color(palette.muted)
+                    .child("Set progress back to 40% and show its known value."),
+            )
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap_2()
+                    .child(DialogClose::new(&self.reset_dialog).trigger(|button| {
+                        Self::button(
+                            palette,
+                            button
+                                .track_focus(&self.reset_cancel_focus)
+                                .accessibility_label("Cancel reset")
+                                .child("Cancel"),
+                        )
+                    }))
+                    .child(Self::button(
+                        palette,
+                        Button::new("confirm-preview-reset")
+                            .accessibility_label("Reset preview")
+                            .on_click(move |_, window, cx| {
+                                owner.update(cx, |this, cx| {
+                                    this.preview.update(cx, |state, cx| {
+                                        state.set_value(40.0, window, cx);
+                                    });
+                                    this.preview_indeterminate = false;
+                                    this.reset_dialog
+                                        .update(cx, |state, cx| state.close(window, cx));
+                                    cx.notify();
+                                });
+                            })
+                            .child("Reset preview"),
+                    )),
+            )
+            .into_any_element()
+    }
+
+    fn render_command_popup(
+        &self,
+        palette: Palette,
+        window: &Window,
+        cx: &Context<Self>,
+    ) -> gpui::AnyElement {
+        let command_state = self.commands.read(cx);
+        DialogPopup::new()
+            .w(palette.dialog_width)
+            .p(palette.padding)
+            .flex()
+            .flex_col()
+            .gap(palette.gap)
+            .bg(palette.surface)
+            .text_color(palette.foreground)
+            .border_1()
+            .border_color(palette.border)
+            .rounded(palette.radius)
+            .child(DialogTitle::new().text_lg().child("Search commands"))
+            .child(
+                Command::new("session-commands", &self.commands)
+                    .accessibility_label("Session commands")
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(
+                        InputGroup::new(
+                            "command-query-group",
+                            CommandInput::new("command-query", &self.commands)
+                                .accessibility_label("Search commands")
+                                .placeholder("Search actions or type 설정")
+                                .h(palette.control_height)
+                                .w_full(),
+                            palette,
+                        )
+                        .focused(command_state.focus_handle().is_focused(window))
+                        .leading(div().text_color(palette.muted).child("Find")),
+                    )
+                    .child(
+                        Separator::new("command-separator")
+                            .h(px(1.))
+                            .w_full()
+                            .bg(palette.border),
+                    )
+                    .child(
+                        CommandList::new("command-results", &self.commands)
+                            .accessibility_label("Matching commands")
+                            .max_h(px(220.))
+                            .children(command_state.visible_indices().iter().map(|&index| {
+                                let item = &command_state.items()[index];
+                                CommandOption::new(&self.commands, index)
+                                    .h(palette.control_height)
+                                    .px_3()
+                                    .flex()
+                                    .items_center()
+                                    .rounded(palette.radius)
+                                    .when(
+                                        command_state.highlighted_index() == Some(index),
+                                        |option| option.bg(palette.highlight),
+                                    )
+                                    .when(item.is_disabled(), |option| option.opacity(0.45))
+                                    .child(item.label().clone())
+                            })),
+                    )
+                    .when(command_state.visible_indices().is_empty(), |command| {
+                        let commands = self.commands.clone();
+                        command.child(
+                            EmptyState::new(
+                                "empty-commands",
+                                "No commands found",
+                                "Try another search or clear it to see all session actions.",
+                                palette,
+                            )
+                            .media(Badge::new("command-result-count", "0 results", palette))
+                            .action(Self::button(
+                                palette,
+                                Button::new("clear-command-search")
+                                    .accessibility_label("Clear search")
+                                    .on_click(move |_, window, cx| {
+                                        commands.update(cx, |state, cx| {
+                                            state.set_query("", window, cx);
+                                            state.focus_handle().focus(window, cx);
+                                        });
+                                    })
+                                    .child("Clear search"),
+                            )),
+                        )
+                    }),
+            )
+            .child(
+                div()
+                    .text_color(palette.muted)
+                    .child("↑ ↓ to choose · Enter to run · Escape to close"),
+            )
+            .into_any_element()
+    }
 }
 
 impl Render for Demo {
@@ -905,126 +1523,7 @@ impl Render for Demo {
             .selected_item(cx)
             .map(|item| item.label().clone())
             .unwrap_or_else(|| "None".into());
-        let preset_description = Self::preset_description(
-            preset_state
-                .selected_value(cx)
-                .map_or("", |value| value.as_ref()),
-        );
-        let preset_value = preset_state.selected_value(cx).map(|value| value.as_ref());
-        let (preset_initials, frame_ratio, frame_label) = match preset_value {
-            Some("presentation") => ("PR", 4. / 3., "4:3"),
-            Some("quality") => ("HQ", 16. / 9., "16:9"),
-            Some("broadcast") => ("BC", 16. / 9., "16:9"),
-            Some("balanced") => ("BL", 16. / 9., "16:9"),
-            _ => ("?", 16. / 9., "16:9"),
-        };
-        let preset_avatar = Avatar::new(
-            "preset-avatar",
-            format!("{preset_label} preset artwork"),
-            preset_initials,
-            palette,
-        )
-        .when(preset_value == Some("balanced"), |avatar| {
-            avatar.image(self.preset_artwork.clone())
-        });
-        let frame_session_name = self.input.read(cx).value();
-        let frame_description = format!("{frame_label} frame preview");
-        let frame_preview = AspectRatio::new("preset-frame", frame_ratio)
-            .rounded(palette.radius)
-            .bg(palette.field)
-            .child(
-                div()
-                    .id("preset-frame-content")
-                    .role(Role::Image)
-                    .aria_label(format!("{frame_label} recording frame preview"))
-                    .size_full()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .justify_center()
-                    .gap_2()
-                    .p_3()
-                    .overflow_hidden()
-                    .child(
-                        div()
-                            .max_w_full()
-                            .truncate()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child(
-                                gpui::text!(
-                                    id = "preset-frame-session-name",
-                                    frame_session_name.clone()
-                                )
-                                .test_text(frame_session_name),
-                            ),
-                    )
-                    .child(
-                        gpui::text!(id = "preset-frame-format", frame_description.clone())
-                            .test_text(frame_description),
-                    ),
-            );
-        let preset_dialog = self.dialog.clone();
-        let preset_preview = HoverCard::new("preset-preview", &self.preset_preview)
-            .accessibility_label("Recording preset preview")
-            .offset(px(6.))
-            .trigger(|button| {
-                button
-                    .h(palette.control_height)
-                    .px_3()
-                    .rounded(palette.radius)
-                    .border_1()
-                    .border_color(palette.border)
-                    .text_color(palette.muted)
-                    .focus_visible(|style| style.border_color(palette.accent))
-                    .accessibility_label(format!("Recording preset: {preset_label}. Edit settings"))
-                    .on_click(move |_, window, cx| {
-                        preset_dialog.update(cx, |state, cx| state.open(window, cx));
-                    })
-                    .child("Edit")
-            })
-            .content(
-                div()
-                    .id("preset-preview-content")
-                    .w(rems(18.))
-                    .p_3()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .border_1()
-                    .border_color(palette.border)
-                    .rounded(palette.radius)
-                    .bg(palette.surface)
-                    .text_color(palette.foreground)
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .child(preset_avatar)
-                            .child(
-                                div()
-                                    .font_weight(FontWeight::BOLD)
-                                    .child(preset_label.clone()),
-                            ),
-                    )
-                    .child(frame_preview)
-                    .child(div().text_sm().child(preset_description))
-                    .child(div().text_sm().text_color(palette.muted).child(format!(
-                        "Recording date: {}",
-                        self.calendar
-                            .read(cx)
-                            .selected_date()
-                            .map(|date| date.format("%Y-%m-%d").to_string())
-                            .unwrap_or_else(|| "Not scheduled".to_string())
-                    )))
-                    .child(div().text_sm().text_color(palette.muted).child(
-                        if self.notes.read(cx).value().is_empty() {
-                            "No session notes yet."
-                        } else {
-                            "Session notes are saved in settings."
-                        },
-                    )),
-            );
+        let preset_preview = self.render_preset_preview(palette, cx);
         let preset_field = Field::new("recording-preset-field", &preset_input, "Recording preset")
             .description("Search a preset and press Enter to select it.")
             .styles(|styles| styles.description(|style| style.text_sm().text_color(palette.muted)))
@@ -1178,159 +1677,7 @@ impl Render for Demo {
                     .when(item.is_disabled(), |tab| tab.opacity(0.45))
                     .child(item.label().clone())
             }));
-        let settings_help = self.help.clone();
-        let settings_tabs = self.tabs.clone();
-        let help_parent = self.help.clone();
-        let help_path = Breadcrumb::new("keyboard-guide-path")
-            .accessibility_label("Help location")
-            .child(
-                BreadcrumbList::new("keyboard-guide-path-list")
-                    .flex()
-                    .flex_wrap()
-                    .items_center()
-                    .gap_1()
-                    .child(
-                        BreadcrumbItem::new("settings-path-item").child(Self::button(
-                            palette,
-                            Button::new("help-to-settings")
-                                .accessibility_label("Session settings")
-                                .on_click(move |_, window, cx| {
-                                    settings_help.update(cx, |state, cx| state.close(window, cx));
-                                    let focus = settings_tabs.read(cx).tab_focus_handle(0).clone();
-                                    focus.focus(window, cx);
-                                })
-                                .child("Session settings"),
-                        )),
-                    )
-                    .child("›")
-                    .child(
-                        BreadcrumbItem::new("help-path-item").child(Self::button(
-                            palette,
-                            Button::new("help-to-parent")
-                                .accessibility_label("Help")
-                                .on_click(move |_, window, cx| {
-                                    help_parent.update(cx, |state, cx| state.close(window, cx));
-                                })
-                                .child("Help"),
-                        )),
-                    )
-                    .child("›")
-                    .child(
-                        BreadcrumbItem::new("keyboard-guide-current")
-                            .current(true)
-                            .child(gpui::text!(
-                                id = "keyboard-guide-current-text",
-                                "Keyboard guide"
-                            )),
-                    ),
-            );
-        let help_state = self.help.clone();
-        let help = Popover::new("keyboard-help", &self.help)
-            .accessibility_label("Keyboard help")
-            .offset(px(6.))
-            .trigger(|button| {
-                Self::button(
-                    palette,
-                    button
-                        .accessibility_label("Show keyboard help")
-                        .child("Show keyboard help"),
-                )
-            })
-            .content(
-                div()
-                    .w(palette.dialog_width - palette.padding * 2.)
-                    .max_w(popup_max_width)
-                    .p_3()
-                    .flex()
-                    .flex_col()
-                    .gap_3()
-                    .bg(palette.surface)
-                    .text_color(palette.foreground)
-                    .border_1()
-                    .border_color(palette.border)
-                    .rounded(palette.radius)
-                    .child(help_path)
-                    .child(
-                        div()
-                            .flex()
-                            .flex_wrap()
-                            .items_center()
-                            .gap_1()
-                            .child(Kbd::new("help-next-key", "Tab", palette))
-                            .child(gpui::text!(id = "help-focus-alternative", "or"))
-                            .child(
-                                KbdGroup::new("help-previous-shortcut", palette)
-                                    .key(Kbd::new("help-previous-shift", "Shift", palette))
-                                    .key(Kbd::new("help-previous-tab", "Tab", palette)),
-                            )
-                            .child(gpui::text!(
-                                id = "help-focus-description",
-                                "Move between controls"
-                            )),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_wrap()
-                            .items_center()
-                            .gap_1()
-                            .child(
-                                Kbd::new("help-left-key", "←", palette)
-                                    .accessibility_label("Arrow left"),
-                            )
-                            .child(
-                                Kbd::new("help-right-key", "→", palette)
-                                    .accessibility_label("Arrow right"),
-                            )
-                            .child(
-                                Kbd::new("help-up-key", "↑", palette)
-                                    .accessibility_label("Arrow up"),
-                            )
-                            .child(
-                                Kbd::new("help-down-key", "↓", palette)
-                                    .accessibility_label("Arrow down"),
-                            )
-                            .child(gpui::text!(
-                                id = "help-arrows-description",
-                                "Choose tabs and options"
-                            )),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_wrap()
-                            .items_center()
-                            .gap_1()
-                            .child(Kbd::new("help-enter-key", "Enter", palette))
-                            .child(gpui::text!(id = "help-activation-alternative", "or"))
-                            .child(Kbd::new("help-space-key", "Space", palette))
-                            .child(gpui::text!(
-                                id = "help-activation-description",
-                                "Activate a control"
-                            )),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_wrap()
-                            .items_center()
-                            .gap_1()
-                            .child(Kbd::new("help-escape-key", "Escape", palette))
-                            .child(gpui::text!(
-                                id = "help-escape-description",
-                                "Close this help first"
-                            )),
-                    )
-                    .child(Self::button(
-                        palette,
-                        Button::new("close-help")
-                            .accessibility_label("Close help")
-                            .on_click(move |_, window, cx| {
-                                help_state.update(cx, |state, cx| state.close(window, cx));
-                            })
-                            .child("Close help"),
-                    )),
-            );
+        let help = self.render_keyboard_help(palette, popup_max_width);
         let accordion_state = self.accordion.read(cx);
         let header = |index: usize| {
             let item = &accordion_state.items()[index];
@@ -1486,321 +1833,11 @@ impl Render for Demo {
             })
             .content(Self::menu_content(&self.actions, palette, cx));
 
-        let owner = cx.entity();
-        let unknown_progress = Toggle::new("unknown-progress")
-            .pressed(self.preview_indeterminate)
-            .accessibility_label("Unknown progress")
-            .h(palette.control_height)
-            .px_3()
-            .border_1()
-            .border_color(palette.border)
-            .rounded(palette.radius)
-            .focus_visible(|style| style.border_color(palette.accent))
-            .when(self.preview_indeterminate, |toggle| {
-                toggle
-                    .bg(palette.accent)
-                    .text_color(palette.accent_foreground)
-            })
-            .on_change(move |pressed, _, _, cx| {
-                owner.update(cx, |this, cx| {
-                    this.preview_indeterminate = pressed;
-                    cx.notify();
-                });
-            })
-            .child("Unknown progress");
-        let preview = self.preview.read(cx);
-        let progress_preview = div()
-            .flex()
-            .flex_col()
-            .gap_2()
-            .px_2()
-            .child(if self.preview_indeterminate {
-                "Progress preview · Unknown".to_string()
-            } else {
-                format!("Progress preview · {:.0}%", preview.value())
-            })
-            .child(
-                Slider::new("preview-percentage", &self.preview)
-                    .accessibility_label("Preview percentage")
-                    .relative()
-                    .h(palette.control_height)
-                    .rounded(palette.radius)
-                    .focus_visible(|style| style.bg(palette.highlight))
-                    .child(
-                        div()
-                            .absolute()
-                            .left_0()
-                            .right_0()
-                            .top(relative(0.5))
-                            .mt(px(-2.))
-                            .h(px(4.))
-                            .rounded_full()
-                            .bg(palette.border),
-                    )
-                    .child(
-                        div()
-                            .absolute()
-                            .left_0()
-                            .top(relative(0.5))
-                            .mt(px(-2.))
-                            .h(px(4.))
-                            .w(relative(preview.percentage()))
-                            .rounded_full()
-                            .bg(palette.accent),
-                    )
-                    .child(
-                        div()
-                            .absolute()
-                            .left(relative(preview.percentage()))
-                            .top(relative(0.5))
-                            .ml(px(-7.))
-                            .mt(px(-7.))
-                            .size(px(14.))
-                            .rounded_full()
-                            .bg(palette.accent),
-                    ),
-            )
-            .child(
-                div()
-                    .h_5()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .when(self.preview_indeterminate, |row| {
-                        row.child(Spinner::new(
-                            "preview-progress",
-                            "Preview progress",
-                            palette,
-                        ))
-                        .child(
-                            Skeleton::new("preview-progress-placeholder", palette)
-                                .w_auto()
-                                .flex_1()
-                                .h_2(),
-                        )
-                    })
-                    .when(!self.preview_indeterminate, |row| {
-                        row.child(
-                            Progress::new("preview-progress")
-                                .accessibility_label("Preview progress")
-                                .value(preview.value())
-                                .w_full()
-                                .h_2()
-                                .rounded_full()
-                                .overflow_hidden()
-                                .bg(palette.border)
-                                .child(
-                                    div()
-                                        .debug_selector(|| "preview-progress-fill".into())
-                                        .h_full()
-                                        .w(relative(preview.percentage()))
-                                        .rounded_full()
-                                        .bg(palette.accent),
-                                ),
-                        )
-                    }),
-            )
-            .child(unknown_progress);
+        let preview_options = self.render_preview_options(palette, cx);
         let formatting = self.formatting.read(cx);
-        let emphasis = div()
-            .flex()
-            .flex_col()
-            .gap_2()
-            .child("Summary text emphasis")
-            .child(
-                ToggleGroup::new("text-emphasis", &self.formatting)
-                    .accessibility_label("Summary text emphasis")
-                    .flex()
-                    .flex_wrap()
-                    .gap_2()
-                    .children(formatting.items().iter().enumerate().map(|(index, item)| {
-                        ToggleOption::new(&self.formatting, index)
-                            .h(palette.control_height)
-                            .px_2()
-                            .border_1()
-                            .border_color(palette.border)
-                            .rounded(palette.radius)
-                            .focus_visible(|style| style.border_color(palette.accent))
-                            .when(formatting.is_pressed(index), |option| {
-                                option
-                                    .bg(palette.accent)
-                                    .text_color(palette.accent_foreground)
-                            })
-                            .when(item.is_disabled(), |option| option.opacity(0.45))
-                            .child(item.label().clone())
-                    })),
-            );
+        let reset_popup = self.render_reset_popup(palette, cx);
 
-        let preview_options = Collapsible::new("preview-options", &self.preview_options)
-            .flex()
-            .flex_col()
-            .gap_3()
-            .child(
-                CollapsibleTrigger::new(&self.preview_options)
-                    .accessibility_label("Preview options")
-                    .w_full()
-                    .h(palette.control_height)
-                    .px_3()
-                    .justify_between()
-                    .border_1()
-                    .border_color(palette.border)
-                    .rounded(palette.radius)
-                    .focus_visible(|style| style.border_color(palette.accent))
-                    .child("Preview options")
-                    .child(if self.preview_options.read(cx).is_open() {
-                        "−"
-                    } else {
-                        "+"
-                    }),
-            )
-            .child(
-                CollapsibleContent::new(&self.preview_options)
-                    .accessibility_label("Preview options")
-                    .flex()
-                    .flex_col()
-                    .gap_3()
-                    .child(progress_preview)
-                    .child(emphasis),
-            );
-        let owner = cx.entity();
-        let reset_popup = DialogPopup::new()
-            .w(palette.dialog_width)
-            .p(palette.padding)
-            .flex()
-            .flex_col()
-            .gap(palette.gap)
-            .bg(palette.surface)
-            .text_color(palette.foreground)
-            .border_1()
-            .border_color(palette.border)
-            .rounded(palette.radius)
-            .child(DialogTitle::new().text_lg().child("Reset preview?"))
-            .child(
-                DialogDescription::new()
-                    .text_color(palette.muted)
-                    .child("Set progress back to 40% and show its known value."),
-            )
-            .child(
-                div()
-                    .flex()
-                    .justify_end()
-                    .gap_2()
-                    .child(DialogClose::new(&self.reset_dialog).trigger(|button| {
-                        Self::button(
-                            palette,
-                            button
-                                .track_focus(&self.reset_cancel_focus)
-                                .accessibility_label("Cancel reset")
-                                .child("Cancel"),
-                        )
-                    }))
-                    .child(Self::button(
-                        palette,
-                        Button::new("confirm-preview-reset")
-                            .accessibility_label("Reset preview")
-                            .on_click(move |_, window, cx| {
-                                owner.update(cx, |this, cx| {
-                                    this.preview.update(cx, |state, cx| {
-                                        state.set_value(40.0, window, cx);
-                                    });
-                                    this.preview_indeterminate = false;
-                                    this.reset_dialog
-                                        .update(cx, |state, cx| state.close(window, cx));
-                                    cx.notify();
-                                });
-                            })
-                            .child("Reset preview"),
-                    )),
-            );
-
-        let command_state = self.commands.read(cx);
-        let command_popup = DialogPopup::new()
-            .w(palette.dialog_width)
-            .p(palette.padding)
-            .flex()
-            .flex_col()
-            .gap(palette.gap)
-            .bg(palette.surface)
-            .text_color(palette.foreground)
-            .border_1()
-            .border_color(palette.border)
-            .rounded(palette.radius)
-            .child(DialogTitle::new().text_lg().child("Search commands"))
-            .child(
-                Command::new("session-commands", &self.commands)
-                    .accessibility_label("Session commands")
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child(
-                        InputGroup::new(
-                            "command-query-group",
-                            CommandInput::new("command-query", &self.commands)
-                                .accessibility_label("Search commands")
-                                .placeholder("Search actions or type 설정")
-                                .h(palette.control_height)
-                                .w_full(),
-                            palette,
-                        )
-                        .focused(command_state.focus_handle().is_focused(window))
-                        .leading(div().text_color(palette.muted).child("Find")),
-                    )
-                    .child(
-                        Separator::new("command-separator")
-                            .h(px(1.))
-                            .w_full()
-                            .bg(palette.border),
-                    )
-                    .child(
-                        CommandList::new("command-results", &self.commands)
-                            .accessibility_label("Matching commands")
-                            .max_h(px(220.))
-                            .children(command_state.visible_indices().iter().map(|&index| {
-                                let item = &command_state.items()[index];
-                                CommandOption::new(&self.commands, index)
-                                    .h(palette.control_height)
-                                    .px_3()
-                                    .flex()
-                                    .items_center()
-                                    .rounded(palette.radius)
-                                    .when(
-                                        command_state.highlighted_index() == Some(index),
-                                        |option| option.bg(palette.highlight),
-                                    )
-                                    .when(item.is_disabled(), |option| option.opacity(0.45))
-                                    .child(item.label().clone())
-                            })),
-                    )
-                    .when(command_state.visible_indices().is_empty(), |command| {
-                        let commands = self.commands.clone();
-                        command.child(
-                            EmptyState::new(
-                                "empty-commands",
-                                "No commands found",
-                                "Try another search or clear it to see all session actions.",
-                                palette,
-                            )
-                            .media(Badge::new("command-result-count", "0 results", palette))
-                            .action(Self::button(
-                                palette,
-                                Button::new("clear-command-search")
-                                    .accessibility_label("Clear search")
-                                    .on_click(move |_, window, cx| {
-                                        commands.update(cx, |state, cx| {
-                                            state.set_query("", window, cx);
-                                            state.focus_handle().focus(window, cx);
-                                        });
-                                    })
-                                    .child("Clear search"),
-                            )),
-                        )
-                    }),
-            )
-            .child(
-                div()
-                    .text_color(palette.muted)
-                    .child("↑ ↓ to choose · Enter to run · Escape to close"),
-            );
+        let command_popup = self.render_command_popup(palette, window, cx);
 
         div()
             .size_full()
