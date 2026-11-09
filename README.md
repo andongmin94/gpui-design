@@ -8,9 +8,10 @@ Headless separates control behavior from application-owned presentation; the
 examples render native GPUI windows.
 
 This is an early foundation for an independent component ecosystem. It currently
-includes 30 component families and an executable example that gives the same behavior
-two visual treatments. The source is maintained in this repository, with GPUI
-kept as an exactly pinned rendering dependency.
+includes 30 public library families and four copyable presentation recipes. An
+executable example gives the same behavior two visual treatments. The source is
+maintained in this repository, with GPUI kept as an exactly pinned rendering
+dependency.
 
 ## Current scope
 
@@ -51,12 +52,27 @@ Shared support includes the window root, popup positioning, input infrastructure
 and opt-in test observations. Internal editing machinery retained for Input is
 not a separate editor product. Public APIs are still being developed.
 
+### Copyable presentation recipes
+
+The [recipe modules](crates/base/examples/recipes) are application-owned source
+compositions, documented in the [presentation guide](docs/presentation-recipes.md).
+Copy the desired module and adapt its palette import to your application tokens.
+These types live in the example, outside the `gpui_design` crate exports.
+
+| Recipe | Supplied presentation | Existing example use |
+| --- | --- | --- |
+| **Card** | Named region with a heading, description, header action, body, and footer | Session summary and its controls |
+| **Badge** | Static label with secondary and accent appearances | Cursor and toolbar settings |
+| **Empty** (`EmptyState`) | Named empty state with description, optional media, and an action slot | No matching commands, with Clear search returning focus to the query |
+| **ButtonGroup** | Connected horizontal/vertical buttons with an optional text slot | Previous month, month label, and next month |
+
 The breadth target is the range of screens and interactions supported by
 shadcn/ui. The [component coverage map](docs/component-coverage.md) compares all
 66 entries in its current main catalogue with the actual public scope here.
 It distinguishes behavior, source-owned presentation recipes, and larger
-compositions. Each of the 30 available families has a defined contract; the map
-records its current limits and the work still needed for comparable coverage.
+compositions. The 30 library families and four recipes each have a defined scope;
+the map records their current limits and the work still needed for comparable
+coverage.
 
 Input provides a small, readable baseline for unset text, caret, and selection
 colors. Explicit `InputEditorStyle` values take precedence. Applications own the
@@ -89,6 +105,9 @@ retained values. The menu's Reset preview action opens an AlertDialog with Cance
 initially focused; only confirmation restores known progress at 40%.
 Search commands opens a Command inside Dialog. Its query matches action labels,
 values, and keywords, then dispatches the same application actions as the menu.
+Its empty state can clear the query without dispatching a command or closing the
+dialog. Card and Badge compose the summary; ButtonGroup shares the calendar
+controls' framing while preserving each Button's normal Tab stop and action.
 Session settings includes a retained multiline notes field and semantic separators;
 its body scrolls when the available window height cannot hold all fields.
 An editable recording-preset Combobox filters choices while retaining the last
@@ -108,7 +127,7 @@ The example's date bounds are 2026–2027; it does not schedule an actual record
 | --- | --- | --- |
 | Rendering and application runtime | Zed's GPUI, consumed through the pinned `gpui-pre` snapshot packages | Windows, layout, drawing, text, events, entities, and focus infrastructure |
 | Headless behavior | This repository's `gpui-design` crate, extracted from Longbridge's `gpui-base` 0.9.0 | Control state, interaction contracts, focus policy, and accessibility semantics |
-| Presentation and composition | Application code, currently demonstrated in `two_styles` | Colors, sizes, icons, component arrangement, and application actions |
+| Presentation and composition | Application code, including the copyable `examples/recipes` modules used by `two_styles` | Colors, sizes, icons, component arrangement, and application actions |
 
 `crates/base` is the directory name inherited from GPUI Kit. Its Cargo package is
 now `gpui-design`; the selected source is maintained here. The original
@@ -198,9 +217,11 @@ The GPUI snapshot family is pinned to **`=0.3.11`**. Update those pins and
 | `crates/base/src/` | The `gpui-design` library and its behavior-level tests |
 | `crates/base/tests/` | Integration tests using the public API |
 | `crates/base/examples/two_styles.rs` | Native example and application-owned styles |
+| `crates/base/examples/recipes/` | Copyable Card, Badge, EmptyState, and ButtonGroup presentations |
 | `docs/form-controls.md` | Form control usage and interaction contracts |
 | `docs/navigation-overlays.md` | Tabs, Accordion, command menus, and composed focus behavior |
 | `docs/layout-and-data.md` | Table structure, ScrollArea composition, and Resizable panes |
+| `docs/presentation-recipes.md` | Copying recipes, their slots, and application-owned styling |
 | `docs/component-coverage.md` | Current shadcn catalogue comparison, supported scope, and next priorities |
 | `Cargo.toml` / `Cargo.lock` | Workspace and matching dependency set |
 

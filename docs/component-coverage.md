@@ -6,22 +6,25 @@ Its main catalogue contains **66 entries**, each listed once below. The separate
 AI Elements catalogue is outside this comparison; conversation components already
 in the main catalogue remain included.
 
-GPUI Design currently documents **30 public component families**. This is not
-30/66 feature parity: a family can exist with a deliberately limited contract,
-and several shadcn entries describe presentation or combinations of other parts.
+GPUI Design currently documents **30 public library families and four copyable
+presentation recipes**, covering **34 catalogue entries** within the scopes below.
+This is not 34/66 feature parity: a family can exist with a deliberately limited
+contract, and several shadcn entries describe combinations of other parts.
 These counts do not measure performance, accessibility conformance, or completion
 of native desktop validation.
 
 The target is comparable application-building breadth: shared behavior in the
 library, and reusable presentation and screen compositions whose source belongs
 to the application. The groups below describe our implementation responsibilities,
-not shadcn's internal architecture. The current two-style example demonstrates
-composition; a separately distributed styled catalogue and installer are not yet
-available.
+not shadcn's internal architecture. The two-style example uses the reusable
+[presentation recipes](presentation-recipes.md). Recipe source is distributed in
+this repository; a registry and installer are not yet available.
 
 ## Status meanings
 
 - **Available:** a public family and consumer example cover the stated scope.
+- **Recipe:** reusable application source and a working consumer example cover
+  the stated presentation; the recipe is outside the library's public exports.
 - **Pending:** no supported public component or reusable recipe is provided yet.
 - **Platform mapping:** the browser-specific contract needs a deliberate GPUI
   equivalent; a name alias would not supply that behavior.
@@ -76,18 +79,19 @@ in the [form guide](form-controls.md),
 These entries primarily need reusable source compositions with consistent visual
 defaults and appropriate semantics. Existing GPUI layout and controls should do
 the work; adding a new state controller for each visual name is unnecessary.
-They remain pending until a usable recipe is actually provided.
+The four published recipes live in `crates/base/examples/recipes`, use the
+consumer's palette, and are composed into the native two-style example.
 
 | Catalogue entry | Status | Current scope or gap |
 | --- | --- | --- |
 | Alert | Pending | Inline message/status presentation and semantic guidance have not been packaged. |
 | Aspect Ratio | Pending | No documented proportion-preserving media recipe. |
 | Avatar | Pending | Image/fallback presentation and its loading-state composition are not provided. |
-| Badge | Pending | No reusable status-label presentation or variants. |
+| Badge | Recipe | Static named label with secondary/accent appearances. No click, toggle, or automatic live announcement. |
 | Breadcrumb | Pending | Navigation hierarchy, current-location semantics, and action wiring need a recipe. |
-| Button Group | Pending | Buttons exist; shared group layout and connected styling are not yet supplied. |
-| Card | Pending | Examples contain surfaces, but reusable header/content/footer parts are not supplied. |
-| Empty | Pending | No consistent empty-state composition with description and optional actions. |
+| Button Group | Recipe | Connected horizontal/vertical buttons, shared border, decorative separators, and optional static text. Existing Button actions, disabled states, and individual Tab stops are preserved; no roving selection model. |
+| Card | Recipe | Named region, level-two heading, description, header action, content, and footer slots. Layout and palette belong to the application; no card focus stop or state controller. |
+| Empty | Recipe | Named static group with heading, description, optional media, and supplied actions. The command-search example clears the query and restores input focus through its existing state. No loading controller or automatic live announcement. |
 | Input Group | Pending | Input and Button exist; addons, inline actions, and shared framing need a recipe. |
 | Item | Pending | No reusable content/action row composition. |
 | Kbd | Pending | Keyboard shortcut text is application content without a reusable presentation recipe. |
@@ -127,9 +131,9 @@ popup, focus, and scrolling machinery.
 
 1. Add deliberate application-owned data operations over Table. Preserve shared
    focus and selection behavior instead of duplicating those public foundations.
-2. Publish source-owned presentation recipes alongside those working flows,
-   starting with common surfaces, field framing, grouped actions, and empty
-   states. Keep palette and sizing decisions outside the behavior layer.
+2. Extend the source-owned recipe set alongside working flows, next covering
+   field framing, content/action rows, and inline messages. Keep palette and
+   sizing decisions outside the behavior layer.
 3. Extend menu composition where real screens need it, starting with checked
    commands and submenus. Continue composing panes with Resizable/ScrollArea;
    virtualization and transcript anchoring remain separate work.
@@ -137,9 +141,10 @@ popup, focus, and scrolling machinery.
    Track their actual supported scope here rather than counting aliases or
    unfinished wrappers as coverage.
 
-A supported entry needs a public contract and a consumer example that works end
-to end. Verify each new behavior at the layer that owns it, extend existing
-composition flows when appropriate, and keep the existing CI platform split.
+A supported entry needs a documented library API or copyable recipe and a consumer
+example that works end to end. Verify each new behavior at the layer that owns it,
+extend existing composition flows when appropriate, and keep the existing CI
+platform split.
 Native IME, screen-reader, visual, and performance observations must be reported
 separately from automated behavior checks.
 

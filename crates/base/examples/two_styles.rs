@@ -25,6 +25,10 @@ use gpui_design::{
     input::{InputAccessibility, InputEditorStyle, InputState},
 };
 
+#[path = "recipes/mod.rs"]
+mod recipes;
+use recipes::{Badge, ButtonGroup, Card, EmptyState};
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Appearance {
     Compact,
@@ -33,7 +37,7 @@ pub(crate) enum Appearance {
 
 // These tokens belong to this consumer, not the primitive library.
 #[derive(Clone, Copy)]
-struct Palette {
+pub(crate) struct Palette {
     canvas: Hsla,
     surface: Hsla,
     field: Hsla,
@@ -491,13 +495,10 @@ impl Demo {
             }));
         let previous = self.calendar.clone();
         let next = self.calendar.clone();
-        let month_controls = div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .gap_2()
-            .child(Self::button(
-                palette,
+        let month_controls = ButtonGroup::new("calendar-month-controls", "Calendar month", palette)
+            .axis(Axis::Horizontal)
+            .w_full()
+            .button(
                 Button::new("previous-month")
                     .accessibility_label("Previous month")
                     .disabled(!state.can_previous_month())
@@ -505,10 +506,9 @@ impl Demo {
                         previous.update(cx, |state, cx| state.previous_month(window, cx));
                     })
                     .child("‹"),
-            ))
-            .child(div().child(month.format("%B %Y").to_string()))
-            .child(Self::button(
-                palette,
+            )
+            .text(month.format("%B %Y").to_string())
+            .button(
                 Button::new("next-month")
                     .accessibility_label("Next month")
                     .disabled(!state.can_next_month())
@@ -516,7 +516,7 @@ impl Demo {
                         next.update(cx, |state, cx| state.next_month(window, cx));
                     })
                     .child("›"),
-            ));
+            );
         div()
             .w(palette.dialog_width - palette.padding * 2.)
             .p_3()
@@ -1493,11 +1493,27 @@ impl Render for Demo {
                             })),
                     )
                     .when(command_state.visible_indices().is_empty(), |command| {
+                        let commands = self.commands.clone();
                         command.child(
-                            div()
-                                .p_3()
-                                .text_color(palette.muted)
-                                .child("No commands found"),
+                            EmptyState::new(
+                                "empty-commands",
+                                "No commands found",
+                                "Try another search or clear it to see all session actions.",
+                                palette,
+                            )
+                            .media(Badge::new("command-result-count", "0 results", palette))
+                            .action(Self::button(
+                                palette,
+                                Button::new("clear-command-search")
+                                    .accessibility_label("Clear search")
+                                    .on_click(move |_, window, cx| {
+                                        commands.update(cx, |state, cx| {
+                                            state.set_query("", window, cx);
+                                            state.focus_handle().focus(window, cx);
+                                        });
+                                    })
+                                    .child("Clear search"),
+                            )),
                         )
                     }),
             )
@@ -1516,111 +1532,136 @@ impl Render for Demo {
             .text_color(palette.foreground)
             .text_size(palette.font_size)
             .child(
-                div()
-                    .w(palette.dialog_width)
-                    .p(palette.padding)
-                    .flex()
-                    .flex_col()
-                    .gap(palette.gap)
-                    .bg(palette.surface)
-                    .rounded(palette.radius)
-                    .child(
-                        ContextMenu::new("session-summary", &self.context_actions)
-                            .target_label("Session summary")
-                            .accessibility_label("Session summary actions")
-                            .w_full()
-                            .p_2()
+                Card::new(
+                    "session-card",
+                    match self.appearance {
+                        Appearance::Compact => "MiniCast controls",
+                        Appearance::Settings => "Workspace settings",
+                    },
+                    palette,
+                )
+                .w(palette.dialog_width)
+                .description("Session controls and recording preferences.")
+                .header_action(
+                    Badge::new(
+                        "toolbar-status",
+                        if self.keep_toolbar {
+                            "Toolbar pinned"
+                        } else {
+                            "Toolbar automatic"
+                        },
+                        palette,
+                    )
+                    .accent(self.keep_toolbar),
+                )
+                .content(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(palette.gap)
+                        .child(
+                            ContextMenu::new("session-summary", &self.context_actions)
+                                .target_label("Session summary")
+                                .accessibility_label("Session summary actions")
+                                .w_full()
+                                .p_2()
+                                .border_1()
+                                .border_color(palette.border)
+                                .focus_visible(|style| style.border_color(palette.accent))
+                                .rounded(palette.radius)
+                                .target(
+                                    div()
+                                        .flex()
+                                        .flex_col()
+                                        .gap_2()
+                                        .child(
+                                            div()
+                                                .text_color(palette.muted)
+                                                .when(formatting.is_pressed(0), |text| {
+                                                    text.font_weight(FontWeight::BOLD)
+                                                })
+                                                .when(formatting.is_pressed(2), |text| {
+                                                    text.italic()
+                                                })
+                                                .child(format!(
+                                                    "{} · {} · {} stroke",
+                                                    self.input.read(cx).value(),
+                                                    selected_label,
+                                                    stroke_label
+                                                )),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_sm()
+                                                .text_color(palette.muted)
+                                                .child("Session actions: right-click or Shift+F10"),
+                                        ),
+                                )
+                                .content(Self::menu_content(&self.context_actions, palette, cx)),
+                        )
+                        .child(
+                            div().flex().child(
+                                Badge::new(
+                                    "cursor-status",
+                                    if self.show_cursor {
+                                        "Cursor visible"
+                                    } else {
+                                        "Cursor hidden"
+                                    },
+                                    palette,
+                                )
+                                .accent(self.show_cursor),
+                            ),
+                        )
+                        .child(preset_preview)
+                        .child(div().text_color(palette.muted).child(format!(
+                                "Recording date: {}",
+                                self.calendar
+                                    .read(cx)
+                                    .selected_date()
+                                    .map(|date| date.format("%Y-%m-%d").to_string())
+                                    .unwrap_or_else(|| "Not scheduled".to_string())
+                            ))),
+                )
+                .footer(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(palette.gap)
+                        .child(
+                            Tooltip::new(
+                                "edit-session",
+                                &self.edit_hint,
+                                "Change the session name, recording preset, and notes.",
+                            )
+                            .max_w(rems(20.))
+                            .px_3()
+                            .py_2()
                             .border_1()
                             .border_color(palette.border)
-                            .focus_visible(|style| style.border_color(palette.accent))
                             .rounded(palette.radius)
-                            .target(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .gap_2()
-                                    .child(div().text_xl().child(match self.appearance {
-                                        Appearance::Compact => "MiniCast controls",
-                                        Appearance::Settings => "Workspace settings",
-                                    }))
-                                    .child(
-                                        div()
-                                            .text_color(palette.muted)
-                                            .when(formatting.is_pressed(0), |text| {
-                                                text.font_weight(FontWeight::BOLD)
-                                            })
-                                            .when(formatting.is_pressed(2), |text| text.italic())
-                                            .child(format!(
-                                                "{} · {} · {} stroke",
-                                                self.input.read(cx).value(),
-                                                selected_label,
-                                                stroke_label
-                                            )),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .text_color(palette.muted)
-                                            .child("Session actions: right-click or Shift+F10"),
-                                    ),
-                            )
-                            .content(Self::menu_content(&self.context_actions, palette, cx)),
-                    )
-                    .child(div().text_color(palette.muted).child(format!(
-                        "Cursor {} · Toolbar {}",
-                        if self.show_cursor {
-                            "visible"
-                        } else {
-                            "hidden"
-                        },
-                        if self.keep_toolbar {
-                            "pinned"
-                        } else {
-                            "automatic"
-                        }
-                    )))
-                    .child(preset_preview)
-                    .child(div().text_color(palette.muted).child(format!(
-                        "Recording date: {}",
-                        self.calendar
-                            .read(cx)
-                            .selected_date()
-                            .map(|date| date.format("%Y-%m-%d").to_string())
-                            .unwrap_or_else(|| "Not scheduled".to_string())
-                    )))
-                    .child(
-                        Tooltip::new(
-                            "edit-session",
-                            &self.edit_hint,
-                            "Change the session name, recording preset, and notes.",
+                            .bg(palette.surface)
+                            .text_color(palette.foreground)
+                            .trigger(|button| {
+                                Self::button(
+                                    palette,
+                                    button
+                                        .accessibility_label("Edit session")
+                                        .on_click(move |_, window, cx| {
+                                            dialog.update(cx, |state, cx| state.open(window, cx));
+                                        })
+                                        .child("Edit session"),
+                                )
+                            }),
                         )
-                        .max_w(rems(20.))
-                        .px_3()
-                        .py_2()
-                        .border_1()
-                        .border_color(palette.border)
-                        .rounded(palette.radius)
-                        .bg(palette.surface)
-                        .text_color(palette.foreground)
-                        .trigger(|button| {
-                            Self::button(
-                                palette,
-                                button
-                                    .accessibility_label("Edit session")
-                                    .on_click(move |_, window, cx| {
-                                        dialog.update(cx, |state, cx| state.open(window, cx));
-                                    })
-                                    .child("Edit session"),
-                            )
-                        }),
-                    )
-                    .child(actions)
-                    .child(preview_options)
-                    .child(
-                        div()
-                            .text_color(palette.muted)
-                            .child("Keyboard: Tab, arrows, Space, Enter and Escape"),
-                    ),
+                        .child(actions)
+                        .child(preview_options)
+                        .child(
+                            div()
+                                .text_color(palette.muted)
+                                .child("Keyboard: Tab, arrows, Space, Enter and Escape"),
+                        ),
+                ),
             )
             .child(
                 Dialog::new(&self.dialog)

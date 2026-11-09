@@ -1060,11 +1060,24 @@ fn command_search_opens_a_retained_multiline_form(cx: &mut TestAppContext) {
         assert!(demo.read(cx).command_dialog.read(cx).is_open());
     });
     assert!(actions.borrow().is_empty());
-    cx.simulate_keystrokes(if cfg!(target_os = "macos") {
-        "cmd-a"
-    } else {
-        "ctrl-a"
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    cx.update(|window, _| {
+        let clear = test_support::find(window, &[], &"clear-command-search".into()).unwrap();
+        assert_eq!(clear.role(), Some(Role::Button));
+        assert_eq!(clear.label(), Some("Clear search"));
+        assert_eq!(clear.focused(), Some(true));
     });
+    activate_key(cx, "enter");
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        let commands = demo.commands.read(cx);
+        assert!(commands.input().read(cx).value().is_empty());
+        assert_eq!(commands.visible_indices(), &[0, 1, 2, 3, 4]);
+        assert!(commands.focus_handle().is_focused(window));
+        assert!(demo.command_dialog.read(cx).is_open());
+    });
+    assert!(actions.borrow().is_empty());
     cx.simulate_input("설정");
     draw(cx);
     cx.update(|_, cx| {
@@ -1434,6 +1447,38 @@ fn date_picker_and_split_panes_preserve_nested_form_state(cx: &mut TestAppContex
             day.visible(),
             "opening the popup focuses its visible selected day"
         );
+    });
+
+    cx.simulate_keystrokes("shift-tab");
+    draw(cx);
+    cx.update(|window, _| {
+        let next = test_support::find(window, &[], &"next-month".into()).unwrap();
+        assert_eq!(next.focused(), Some(true));
+    });
+    cx.simulate_keystrokes("shift-tab");
+    draw(cx);
+    cx.update(|window, _| {
+        let previous = test_support::find(window, &[], &"previous-month".into()).unwrap();
+        assert_eq!(previous.focused(), Some(true));
+    });
+    activate_key(cx, "enter");
+    cx.update(|_, cx| {
+        assert_eq!(
+            demo.read(cx).calendar.read(cx).month(),
+            NaiveDate::from_ymd_opt(2026, 10, 1).unwrap()
+        );
+    });
+    cx.simulate_keystrokes("tab");
+    activate_key(cx, "enter");
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    cx.update(|window, cx| {
+        let calendar = demo.read(cx).calendar.read(cx);
+        assert_eq!(
+            calendar.month(),
+            NaiveDate::from_ymd_opt(2026, 11, 1).unwrap()
+        );
+        assert!(calendar.focus_handle().is_focused(window));
     });
 
     cx.simulate_keystrokes("right pagedown");
