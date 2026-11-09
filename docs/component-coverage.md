@@ -6,9 +6,9 @@ Its main catalogue contains **66 entries**, each listed once below. The separate
 AI Elements catalogue is outside this comparison; conversation components already
 in the main catalogue remain included.
 
-GPUI Design currently documents **30 public library families and seven copyable
-presentation recipes**, covering **37 catalogue entries** within the scopes below.
-This is not 37/66 feature parity: a family can exist with a deliberately limited
+GPUI Design currently documents **30 public library families and nine copyable
+presentation/composition recipes**, covering **39 catalogue entries** within the scopes below.
+This is not 39/66 feature parity: a family can exist with a deliberately limited
 contract, and several shadcn entries describe combinations of other parts.
 These counts do not measure performance, accessibility conformance, or completion
 of native desktop validation.
@@ -79,7 +79,7 @@ in the [form guide](form-controls.md),
 These entries primarily need reusable source compositions with consistent visual
 defaults and appropriate semantics. Existing GPUI layout and controls should do
 the work; adding a new state controller for each visual name is unnecessary.
-The seven published recipes live in `crates/base/examples/recipes`, use the
+The published recipes live in `crates/base/examples/recipes`, use the
 consumer's palette, and are composed into the native two-style example.
 
 | Catalogue entry | Status | Current scope or gap |
@@ -95,7 +95,7 @@ consumer's palette, and are composed into the native two-style example.
 | Input Group | Recipe | Shared frame for an existing InputBase, CommandInput, or other supplied control, leading/trailing addons, horizontal/vertical arrangement, and focus/error presentation. Native editing, Field metadata, addon actions, and disabled policy remain with the supplied controls and application. No separate editor or focus controller. |
 | Item | Recipe | Named row with a title, description, and supplied trailing action. No whole-row activation, selection, media/header/footer slots, or list controller. |
 | Kbd | Pending | Keyboard shortcut text is application content without a reusable presentation recipe. |
-| Pagination | Pending | Page controls and current-page presentation have not been composed into a supported recipe. |
+| Pagination | Recipe | Controlled previous/next Buttons, current-page text, named navigation, and zero/first/last-page boundaries. No numbered page links, ellipsis, routing, or data loading. |
 | Sheet | Pending | Dialog provides modal behavior; edge placement and sheet presentation are not yet offered. |
 | Skeleton | Pending | No reusable loading-placeholder shapes or reduced-motion presentation recipe. |
 | Spinner | Pending | No public activity-indicator presentation with naming guidance. |
@@ -117,7 +117,7 @@ popup, focus, and scrolling machinery.
 | Carousel | Pending | Coordinated item navigation and viewport behavior are not supplied. |
 | Chart | Pending | No chart rendering and interaction integration is provided. |
 | Code Block | Pending | Internal editing machinery does not constitute a public code-display, copy, and presentation component. |
-| Data Table | Pending | Table structure exists; reusable sorting/filtering/selection compositions are not yet supplied. |
+| Data Table | Recipe | Fixed text columns and immutable stable-ID rows, case-insensitive filtering, one-column ascending/descending text sorting, pagination, empty-state recovery, and application row actions. Current choice is supplied by the application. No multi-row selection, numeric/date comparators, column hiding/reordering, server data, virtualization, or native sort-direction metadata. |
 | Date Picker | Available | A single Calendar date inside Popover, current selected-day focus, activation commit-and-close, dismissal, and disabled state. Trigger formatting and calendar appearance belong to the application; text parsing, ranges, multiple selection, and presets are not supplied. |
 | Drawer | Pending | Modal infrastructure exists; drawer interaction and presentation are not implemented. |
 | Marker | Pending | Conversation status notes and labeled separators have no published recipe. |
@@ -129,8 +129,9 @@ popup, focus, and scrolling machinery.
 
 ## Next priorities
 
-1. Add deliberate application-owned data operations over Table. Preserve shared
-   focus and selection behavior instead of duplicating those public foundations.
+1. Extend data-table operations only where an application needs them, including
+   typed ordering or row selection. Preserve shared focus and activation behavior
+   instead of duplicating those public foundations.
 2. Extend the source-owned recipe set alongside working flows, including
    navigation and loading presentation. Keep palette and sizing decisions
    outside the behavior layer.

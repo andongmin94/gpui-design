@@ -1,6 +1,6 @@
 # Presentation recipes
 
-These seven modules are reusable application source, used by the native
+These nine recipes are reusable application source, used by the native
 [two-style example](../crates/base/examples/two_styles.rs). They compose GPUI
 layout with the existing controls and keep colors, spacing, and sizing in the
 consumer's `Palette`.
@@ -22,6 +22,14 @@ consumer's `Palette`.
 The source in this repository is the distribution mechanism. There is no recipe
 registry, installer, or separate theme provider. The existing crate continues to
 own interactive behavior; the application owns the copied recipe source.
+
+Some recipes compose other recipe modules. Copy those modules and their re-exports
+alongside the desired recipe:
+
+| Recipe | Other recipe modules required |
+| --- | --- |
+| Pagination | ButtonGroup |
+| DataTable | InputGroup, EmptyState, Pagination, and ButtonGroup |
 
 ## Card
 
@@ -192,6 +200,96 @@ presented; exposing that role is not evidence of native screen-reader delivery.
 Use AlertDialog for a modal decision that requires explicit confirmation. The
 current inline recipe has no action or media slot; `Styled` controls its frame.
 
+## Pagination
+
+[`pagination.rs`](../crates/base/examples/recipes/pagination.rs) composes existing
+Button and ButtonGroup controls into named native navigation. The application
+supplies the zero-based page index, page count, and callback.
+
+```rust,ignore
+Pagination::new("preset-pages", "Recording preset pages", page, page_count, palette)
+    .on_change(move |page, _, cx| {
+        table_state.update(cx, |state, cx| state.set_page(page, cx));
+    })
+```
+
+For a nonempty collection, the page index must be less than the count. Empty
+results use index zero and count zero, display `No pages`, and disable both
+buttons. Otherwise the text is `Page N of M`, Previous is disabled on the first
+page, and Next is disabled on the last. The buttons preserve ordinary Tab and
+activation behavior, including focus on a button that becomes disabled after its
+action. The recipe requests a page change; it owns no retained page or data.
+`Styled` controls the frame. Numbered links, ellipsis, routing, and fetching are
+outside this recipe's scope.
+
+## Data Table
+
+[`data_table.rs`](../crates/base/examples/recipes/data_table.rs) provides a working
+client-side text-table composition. It uses the existing native Input/Field,
+Table, ScrollArea, and Button, plus the InputGroup, EmptyState, and Pagination
+recipes. Columns and immutable rows belong to the consuming application.
+
+```rust,ignore
+let state = cx.new(|cx| {
+    DataTableState::new(
+        [
+            DataTableColumn::new("Preset", px(180.)),
+            DataTableColumn::new("Description", px(280.)),
+        ],
+        rows, // DataTableRow::new(stable_id, [name, description]).disabled(false)
+        2,    // Rows per page; must be positive.
+        window,
+        cx,
+    )
+});
+
+DataTable::new("preset-catalogue", &state, palette)
+    .accessibility_label("Recording presets")
+    .action_label("Use preset")
+    .selected_value(current_preset)
+    .on_action(move |id, window, cx| {
+        preset.update(cx, |state, cx| {
+            state.set_selected_value(Some(id.as_ref()), window, cx);
+        });
+    })
+```
+
+Keep the state entity in the application and observe it to redraw the parent.
+Apply the application's `InputEditorStyle` to `query_input()`, as the two-style
+example does. A row has a unique stable ID and one text value per column. The
+initial display order is the supplied row order. Header Buttons toggle one column
+between ascending and descending case-insensitive text order; equal keys retain
+their original order.
+
+The native input owns the query. Every whitespace-separated term must appear in
+the combined cell text, ignoring case. Matching/sorted indices are derived when
+the query or sort changes. Both changes return to the first page; moving focus
+does not reset it. `visible_rows()`, `filtered_count()`, `page_index()`, and
+`page_count()` expose the current view. `set_page` clamps to the available range,
+and page/filter/sort changes return the row viewport to its vertical start.
+
+The example derives its four rows from the same preset definitions used by the
+Combobox. `.selected_value` supplies that Combobox's current value each render;
+the table keeps no second selected value. A row action passes the stable ID to
+the application even after filtering, sorting, or paging. Current and unavailable
+rows have disabled action Buttons. The selected value remains in the application
+when its row is filtered out or appears on another page.
+
+An empty result replaces the row viewport with EmptyState and Clear filter.
+Clearing restores the rows and query focus without applying a row action. With
+results, focus follows query → sort Buttons → enabled row actions → enabled page
+Buttons. Horizontal and vertical ScrollArea scrolling reveals focused controls;
+there is no grid-style arrow navigation. Query, sort, and page survive unmounting
+the view while its state entity is retained.
+
+Native Table indices describe the displayed page. Header Button names announce
+the current sorting description and next action; native sort-direction metadata
+is not supplied by the pinned Table/GPUI API. The columns are fixed-width text,
+with one application action column. Numeric/date ordering, custom cell renderers,
+multi-column sorting, multiple row selection, column hiding/reordering, mutable
+row sources, remote data, and virtualization are outside the current scope.
+Adapt the copied source when an application needs different data operations.
+
 ## Verification scope
 
 The existing composition suite runs the same recipe modules as the native
@@ -201,6 +299,8 @@ and palette values have no separate test suite. The existing field/preset flow
 covers missing-name recovery, the disabled addon for a read-only input, urgent
 inline semantics, and the Item's retained preview/edit behavior. The date-picker
 flow also checks that the ordinary schedule notice remains a Note. The existing
-three-platform CI continues to check composition and native compilation; those
-results do not establish native screen-reader, IME, visual, or performance
-validation.
+three-platform CI continues to check composition and native compilation. One
+additional composed flow covers the preset table's sorting, filter/empty recovery,
+page boundaries, stable-ID action, and retained choice. There is no separate data
+test framework or duplicated platform-specific flow. These results do not
+establish native screen-reader, IME, visual, or performance validation.

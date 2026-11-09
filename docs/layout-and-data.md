@@ -62,6 +62,11 @@ column spans, automatic intrinsic column sizing, sorting, filtering, pagination,
 row selection, and virtualization are not supplied. Data operations should be
 composed over this structure when a real application needs them.
 
+The copyable [DataTable recipe](presentation-recipes.md#data-table) adds text
+filtering, single-column sorting, pagination, empty-state recovery, and stable-ID
+row actions. The native example uses it to browse and apply recording presets;
+its query and page state belong to the application, outside Table.
+
 ## ScrollArea
 
 Retain a GPUI ScrollHandle in the view and give the viewport a bounded size on
@@ -100,7 +105,8 @@ scrolled with the pointer or the retained handle; a separate keyboard scrolling
 control is not part of this contract.
 
 Descendants can use GPUI's native `request_autoscroll` during prepaint to request
-reveal. Input, Textarea, and Calendar already issue requests when needed.
+reveal. Input, Textarea, Calendar, and newly focused Button controls issue requests
+when needed.
 ScrollArea clamps the offset on its enabled axes and requests a new frame when
 the viewport needs to move. A nested area's adjusted request continues to its
 ancestors, and a sibling's pending request is preserved rather than used to

@@ -27,7 +27,10 @@ use gpui_design::{
 
 #[path = "recipes/mod.rs"]
 mod recipes;
-use recipes::{Alert, Badge, ButtonGroup, Card, EmptyState, InputGroup, Item};
+use recipes::{
+    Alert, Badge, ButtonGroup, Card, DataTable, DataTableColumn, DataTableRow, DataTableState,
+    EmptyState, InputGroup, Item,
+};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Appearance {
@@ -104,6 +107,7 @@ pub(crate) struct Demo {
     pub(crate) input: Entity<InputState>,
     pub(crate) notes: Entity<TextareaState>,
     pub(crate) preset: Entity<ComboboxState>,
+    pub(crate) preset_table: Entity<DataTableState>,
     pub(crate) edit_hint: Entity<TooltipState>,
     pub(crate) preset_preview: Entity<HoverCardState>,
     fields_scroll: ScrollHandle,
@@ -194,6 +198,40 @@ impl Demo {
         preset.read(cx).input().clone().update(cx, |state, _| {
             state.set_editor_style(Self::input_style(palette));
         });
+        let preset_rows = preset
+            .read(cx)
+            .items(cx)
+            .iter()
+            .map(|item| {
+                DataTableRow::new(
+                    item.value().clone(),
+                    [
+                        item.label().clone(),
+                        SharedString::from(Self::preset_description(item.value())),
+                    ],
+                )
+                .disabled(item.is_disabled())
+            })
+            .collect::<Vec<_>>();
+        let preset_table = cx.new(|cx| {
+            DataTableState::new(
+                [
+                    DataTableColumn::new("Preset", px(180.)),
+                    DataTableColumn::new("Description", px(280.)),
+                ],
+                preset_rows,
+                2,
+                window,
+                cx,
+            )
+        });
+        preset_table
+            .read(cx)
+            .query_input()
+            .clone()
+            .update(cx, |state, _| {
+                state.set_editor_style(Self::input_style(palette));
+            });
         let trigger_focus = cx.focus_handle().tab_stop(true);
         let edit_hint = cx.new(|cx| TooltipState::new(&trigger_focus, window, cx));
         let preview_focus = cx.focus_handle().tab_stop(true);
@@ -228,6 +266,7 @@ impl Demo {
                     TabItem::new("sync", "Sync (unavailable)").disabled(true),
                     TabItem::new("help", "Help"),
                     TabItem::new("schedule", "Schedule"),
+                    TabItem::new("presets", "Presets"),
                 ],
                 cx,
             )
@@ -291,6 +330,7 @@ impl Demo {
             cx.observe(&input, |_, _, cx| cx.notify()),
             cx.observe(&notes, |_, _, cx| cx.notify()),
             cx.observe(&preset, |_, _, cx| cx.notify()),
+            cx.observe(&preset_table, |_, _, cx| cx.notify()),
             cx.observe(&edit_hint, |_, _, cx| cx.notify()),
             cx.observe(&preset_preview, |_, _, cx| cx.notify()),
             cx.observe(&commands, |_, _, cx| cx.notify()),
@@ -329,6 +369,7 @@ impl Demo {
             input,
             notes,
             preset,
+            preset_table,
             edit_hint,
             preset_preview,
             fields_scroll: ScrollHandle::new(),
@@ -355,6 +396,16 @@ impl Demo {
             show_cursor: true,
             keep_toolbar: false,
             _subscriptions: subscriptions,
+        }
+    }
+
+    fn preset_description(value: &str) -> &'static str {
+        match value {
+            "balanced" => "A general-purpose preset for everyday sessions.",
+            "broadcast" => "Broadcast is unavailable in this example.",
+            "presentation" => "A preset for slides, workshops, and live demonstrations.",
+            "quality" => "A preset for detailed visual references.",
+            _ => "Choose a recording preset in the session settings.",
         }
     }
 
@@ -837,12 +888,11 @@ impl Render for Demo {
             .selected_item(cx)
             .map(|item| item.label().clone())
             .unwrap_or_else(|| "None".into());
-        let preset_description = match preset_state.selected_value(cx).map(|value| value.as_ref()) {
-            Some("balanced") => "A general-purpose preset for everyday sessions.",
-            Some("presentation") => "A preset for slides, workshops, and live demonstrations.",
-            Some("quality") => "A preset for detailed visual references.",
-            _ => "Choose a recording preset in the session settings.",
-        };
+        let preset_description = Self::preset_description(
+            preset_state
+                .selected_value(cx)
+                .map_or("", |value| value.as_ref()),
+        );
         let preset_dialog = self.dialog.clone();
         let preset_preview = HoverCard::new("preset-preview", &self.preset_preview)
             .accessibility_label("Recording preset preview")
@@ -1133,6 +1183,16 @@ impl Render for Demo {
                         .child("The application retains form values and supplies every style. Closing a panel or dialog preserves those values."),
                 ),
             );
+        let table_preset = self.preset.clone();
+        let preset_table = DataTable::new("preset-catalogue", &self.preset_table, palette)
+            .accessibility_label("Recording presets")
+            .action_label("Use preset")
+            .selected_value(preset_state.selected_value(cx).cloned())
+            .on_action(move |value, window, cx| {
+                table_preset.update(cx, |state, cx| {
+                    state.set_selected_value(Some(value.as_ref()), window, cx);
+                });
+            });
         let panels = div()
             .flex()
             .flex_col()
@@ -1176,6 +1236,13 @@ impl Render for Demo {
                     .flex_col()
                     .gap(palette.gap)
                     .child(self.schedule(palette, window, cx)),
+            )
+            .child(
+                TabPanel::new(&self.tabs, 4)
+                    .flex()
+                    .flex_col()
+                    .gap(palette.gap)
+                    .child(preset_table),
             );
         let popup = DialogPopup::new()
             .w(palette.dialog_width)

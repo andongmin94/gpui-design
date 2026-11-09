@@ -136,13 +136,22 @@ impl Button {
         self
     }
 
-    fn focus_handle(&self, window: &mut Window, cx: &mut App) -> FocusHandle {
-        self.provided_focus_handle.clone().unwrap_or_else(|| {
-            window
-                .use_keyed_state(self.id.clone(), cx, |_, cx| cx.focus_handle())
-                .read(cx)
-                .clone()
-        })
+    fn focus_handle_and_reveal(&self, window: &mut Window, cx: &mut App) -> (FocusHandle, bool) {
+        // Retain the implicit handle and the last rendered focus together. A
+        // supplied handle uses the same edge tracking without allocating a
+        // second focus handle. Ordinary redraws must not undo manual scrolling.
+        window
+            .use_keyed_state(self.id.clone(), cx, |_, _| (None::<FocusHandle>, false))
+            .update(cx, |(implicit, was_focused), cx| {
+                let handle = self
+                    .provided_focus_handle
+                    .clone()
+                    .unwrap_or_else(|| implicit.get_or_insert_with(|| cx.focus_handle()).clone());
+                let focused = self.focusable && handle.is_focused(window);
+                let reveal = focused && !*was_focused;
+                *was_focused = focused;
+                (handle, reveal)
+            })
     }
 
     fn resolved_style(&self) -> StyleRefinement {
@@ -213,7 +222,7 @@ impl StatefulInteractiveElement for Button {}
 
 impl RenderOnce for Button {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let focus_handle = self.focus_handle(window, cx);
+        let (focus_handle, reveal) = self.focus_handle_and_reveal(window, cx);
         let disabled = self.disabled;
         let style = self.resolved_style();
         let on_click = self.on_click;
@@ -246,6 +255,7 @@ impl RenderOnce for Button {
                 |this| {
                     this.track_focus(
                         &focus_handle
+                            .clone()
                             .tab_index(self.tab_index)
                             .tab_stop(self.tab_stop && !disabled),
                     )
@@ -265,6 +275,15 @@ impl RenderOnce for Button {
                 },
             )
             .children(self.children)
+            .when(reveal, |this| {
+                // ElementExt uses an unpainted absolute canvas, so the request
+                // has this button's bounds and adds no layout or focus node.
+                crate::ElementExt::on_prepaint(this, move |bounds, window, _| {
+                    if focus_handle.is_focused(window) {
+                        window.request_autoscroll(bounds);
+                    }
+                })
+            })
             .refine_style(&style)
             .a11y_disabled(disabled)
     }
@@ -389,35 +408,44 @@ mod tests {
         handles: [FocusHandle; 3],
         disabled: bool,
         activations: usize,
+        scroll: gpui::ScrollHandle,
     }
 
     impl Render for DisableDuringFocus {
         fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-            div()
-                .size_full()
-                .flex()
-                .tab_group()
-                .child(
-                    Button::new("before")
-                        .track_focus(&self.handles[0])
-                        .child("Before"),
-                )
-                .child(
-                    Button::new("disable-self")
-                        .track_focus(&self.handles[1])
-                        .disabled(self.disabled)
-                        .child("Disable self")
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.disabled = true;
-                            this.activations += 1;
-                            cx.notify();
-                        })),
-                )
-                .child(
-                    Button::new("after")
-                        .track_focus(&self.handles[2])
-                        .child("After"),
-                )
+            div().size_full().tab_group().child(
+                crate::ScrollArea::new("button-scroll", &self.scroll)
+                    .w(px(180.))
+                    .h(px(60.))
+                    .content_styles(|style| style.flex().flex_col().gap(px(40.)))
+                    .child(
+                        Button::new("before")
+                            .track_focus(&self.handles[0])
+                            .h(px(40.))
+                            .flex_shrink_0()
+                            .child("Before"),
+                    )
+                    .child(
+                        Button::new("disable-self")
+                            .track_focus(&self.handles[1])
+                            .h(px(40.))
+                            .flex_shrink_0()
+                            .disabled(self.disabled)
+                            .child("Disable self")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.disabled = true;
+                                this.activations += 1;
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        Button::new("after")
+                            .track_focus(&self.handles[2])
+                            .h(px(40.))
+                            .flex_shrink_0()
+                            .child("After"),
+                    ),
+            )
         }
     }
 
@@ -440,10 +468,12 @@ mod tests {
             [("tab", 2, "shift-tab", 0), ("shift-tab", 0, "tab", 2)]
         {
             let handles = cx.update(|cx| std::array::from_fn(|_| cx.focus_handle()));
+            let scroll = gpui::ScrollHandle::new();
             let controls = cx.new(|_| DisableDuringFocus {
                 handles: handles.clone(),
                 disabled: false,
                 activations: 0,
+                scroll: scroll.clone(),
             });
             let (_, cx) =
                 cx.add_window_view(|window, cx| crate::Root::new(controls.clone(), window, cx));
@@ -458,6 +488,20 @@ mod tests {
                 window.draw(cx).clear(cx);
                 assert_eq!(window.focused(cx).as_ref(), Some(&handles[1]));
             });
+            assert!(
+                scroll.offset().y < px(0.),
+                "new focus reveals the hidden button"
+            );
+            scroll.set_offset(point(px(0.), px(0.)));
+            cx.update(|window, cx| {
+                window.draw(cx).clear(cx);
+                window.draw(cx).clear(cx);
+            });
+            assert_eq!(
+                scroll.offset().y,
+                px(0.),
+                "redrawing retained focus preserves manual scroll position"
+            );
             press_transition_key(cx, "space");
             cx.update(|window, cx| {
                 window.draw(cx).clear(cx);

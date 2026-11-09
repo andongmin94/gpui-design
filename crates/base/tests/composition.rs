@@ -1467,7 +1467,7 @@ fn field_feedback_and_search_selection_work_inside_the_dialog(cx: &mut TestAppCo
 fn date_picker_and_split_panes_preserve_nested_form_state(cx: &mut TestAppContext) {
     let (cx, demo) = harness(cx, Appearance::Compact);
     open_dialog(cx, &demo);
-    cx.simulate_keystrokes("tab tab end tab");
+    cx.simulate_keystrokes("tab tab end left tab");
     draw(cx);
     cx.update(|window, cx| {
         let demo = demo.read(cx);
@@ -1699,6 +1699,226 @@ fn date_picker_and_split_panes_preserve_nested_form_state(cx: &mut TestAppContex
         assert!(test_support::texts(window).iter().any(|text| {
             text.path().contains(&"plan-date".into()) && text.text() == "2026-12-10"
         }));
+    });
+}
+
+#[gpui::test]
+fn preset_table_filters_sorts_pages_and_applies_stable_rows(cx: &mut TestAppContext) {
+    let (cx, demo) = harness(cx, Appearance::Settings);
+    open_dialog(cx, &demo);
+    cx.simulate_keystrokes("tab tab end tab");
+    draw(cx);
+    let id = gpui::ElementId::from("preset-catalogue");
+    let pagination = gpui::ElementId::from((id.clone(), "pagination"));
+    let previous = gpui::ElementId::from((pagination.clone(), "previous"));
+    let next = gpui::ElementId::from((pagination.clone(), "next"));
+    let sort = gpui::ElementId::from((id.clone(), "sort-0"));
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        let state = demo.preset_table.read(cx);
+        assert_eq!(demo.tabs.read(cx).selected_index(), Some(4));
+        assert!(state.query_input().focus_handle(cx).is_focused(window));
+        assert_eq!(state.page_count(), 2);
+        assert_eq!(
+            state
+                .visible_rows()
+                .map(|row| row.id().as_ref())
+                .collect::<Vec<_>>(),
+            ["balanced", "broadcast"]
+        );
+        let table = test_support::find(window, &[], &(id.clone(), "table").into()).unwrap();
+        assert_eq!(table.role(), Some(Role::Table));
+        assert_eq!(table.label(), Some("Recording presets"));
+        assert_eq!(
+            test_support::find(window, &[], &pagination).unwrap().role(),
+            Some(Role::Navigation)
+        );
+        assert_eq!(
+            test_support::find(window, &[], &previous)
+                .unwrap()
+                .disabled(),
+            Some(true)
+        );
+        let unavailable = gpui::ElementId::from((id.clone(), "row-broadcast"));
+        assert_eq!(
+            test_support::find(window, &[], &(unavailable, "action").into())
+                .unwrap()
+                .disabled(),
+            Some(true)
+        );
+    });
+
+    // Search, two sort buttons, then the only enabled page action.
+    cx.simulate_keystrokes("tab tab tab");
+    draw(cx);
+    cx.update(|window, _| {
+        assert_eq!(
+            test_support::find(window, &[], &next).unwrap().focused(),
+            Some(true)
+        )
+    });
+    activate_key(cx, "enter");
+    cx.update(|window, cx| {
+        let state = demo.read(cx).preset_table.read(cx);
+        assert_eq!(state.page_index(), 1);
+        assert_eq!(
+            state
+                .visible_rows()
+                .map(|row| row.id().as_ref())
+                .collect::<Vec<_>>(),
+            ["presentation", "quality"]
+        );
+        assert_eq!(
+            test_support::find(window, &[], &next).unwrap().disabled(),
+            Some(true)
+        );
+    });
+    cx.simulate_keystrokes("shift-tab shift-tab shift-tab shift-tab shift-tab");
+    draw(cx);
+    cx.update(|window, cx| {
+        assert_eq!(
+            test_support::find(window, &[], &sort).unwrap().focused(),
+            Some(true)
+        );
+        assert_eq!(
+            demo.read(cx).preset_table.read(cx).page_index(),
+            1,
+            "focus changes preserve the page"
+        );
+    });
+    activate_key(cx, "enter");
+    cx.update(|window, cx| {
+        assert_eq!(demo.read(cx).preset_table.read(cx).page_index(), 0);
+        assert_eq!(
+            test_support::find(window, &[], &sort).unwrap().label(),
+            Some("Preset, sorted ascending; sort descending")
+        );
+    });
+    activate_key(cx, "enter");
+    cx.update(|window, cx| {
+        let state = demo.read(cx).preset_table.read(cx);
+        assert_eq!(
+            state
+                .visible_rows()
+                .map(|row| row.id().as_ref())
+                .collect::<Vec<_>>(),
+            ["presentation", "quality"]
+        );
+        assert_eq!(
+            test_support::find(window, &[], &sort).unwrap().label(),
+            Some("Preset, sorted descending; sort ascending")
+        );
+    });
+
+    cx.simulate_keystrokes("shift-tab");
+    cx.simulate_input("no matching preset");
+    draw(cx);
+    cx.update(|window, cx| {
+        let state = demo.read(cx).preset_table.read(cx);
+        assert_eq!(state.filtered_count(), 0);
+        assert_eq!(state.page_index(), 0);
+        assert_eq!(state.page_count(), 0);
+        assert!(test_support::find(window, &[], &(id.clone(), "table").into()).is_none());
+        assert_eq!(
+            test_support::find(window, &[], &previous)
+                .unwrap()
+                .disabled(),
+            Some(true)
+        );
+        assert_eq!(
+            test_support::find(window, &[], &next).unwrap().disabled(),
+            Some(true)
+        );
+        assert_eq!(
+            demo.read(cx)
+                .preset
+                .read(cx)
+                .selected_value(cx)
+                .map(|value| value.as_ref()),
+            Some("balanced")
+        );
+    });
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    cx.update(|window, _| {
+        assert_eq!(
+            test_support::find(window, &[], &(id.clone(), "clear-filter").into())
+                .unwrap()
+                .focused(),
+            Some(true)
+        );
+    });
+    activate_key(cx, "enter");
+    cx.update(|window, cx| {
+        let state = demo.read(cx).preset_table.read(cx);
+        assert_eq!(state.filtered_count(), 4);
+        assert!(state.query_input().read(cx).value().is_empty());
+        assert!(state.query_input().focus_handle(cx).is_focused(window));
+    });
+    cx.simulate_input("pReSeNtAtIoN");
+    draw(cx);
+    cx.update(|_, cx| {
+        let state = demo.read(cx).preset_table.read(cx);
+        assert_eq!(state.filtered_count(), 1);
+        assert_eq!(state.page_count(), 1);
+        assert_eq!(
+            state.visible_rows().next().unwrap().id().as_ref(),
+            "presentation"
+        );
+    });
+    cx.simulate_keystrokes("tab tab tab");
+    draw(cx);
+    let row = gpui::ElementId::from((id.clone(), "row-presentation"));
+    let action = gpui::ElementId::from((row, "action"));
+    cx.update(|window, _| {
+        let action = test_support::find(window, &[], &action).unwrap();
+        assert_eq!(action.focused(), Some(true));
+        assert!(
+            action.visible(),
+            "keyboard traversal reveals the offscreen action column"
+        );
+    });
+    activate_key(cx, "enter");
+    cx.update(|window, cx| {
+        let preset = demo.read(cx).preset.read(cx);
+        assert_eq!(
+            preset.selected_value(cx).map(|value| value.as_ref()),
+            Some("presentation")
+        );
+        assert_eq!(preset.input().read(cx).value(), "Presentation");
+        let action = test_support::find(window, &[], &action).unwrap();
+        assert_eq!(action.disabled(), Some(true));
+        assert_eq!(action.focused(), Some(true));
+    });
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    cx.update(|window, _| {
+        assert!(
+            test_support::snapshots(window)
+                .iter()
+                .any(|item| item.label() == Some("Done") && item.focused() == Some(true))
+        );
+    });
+    activate_key(cx, "enter");
+    open_dialog(cx, &demo);
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        let state = demo.preset_table.read(cx);
+        assert_eq!(demo.tabs.read(cx).selected_index(), Some(4));
+        assert_eq!(state.query_input().read(cx).value(), "pReSeNtAtIoN");
+        assert_eq!(state.filtered_count(), 1);
+        assert_eq!(state.page_index(), 0);
+        assert_eq!(
+            test_support::find(window, &[], &sort).unwrap().label(),
+            Some("Preset, sorted descending; sort ascending")
+        );
+        assert_eq!(
+            demo.preset
+                .read(cx)
+                .selected_value(cx)
+                .map(|value| value.as_ref()),
+            Some("presentation")
+        );
     });
 }
 
