@@ -12,11 +12,11 @@ use std::{
 
 use gpui::{
     AppContext as _, Entity, EntityInputHandler as _, Focusable as _, KeyDownEvent, KeyUpEvent,
-    Keystroke, Modifiers, Role, ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext, point,
-    px,
+    Keystroke, Modifiers, MouseButton, Role, ScrollDelta, ScrollEvent, TestAppContext,
+    VisualTestContext, point, px,
 };
 use gpui_design::{
-    ComboboxEvent, CommandEvent, DropdownMenuEvent, NaiveDate, RadioGroupEvent, Root, SelectEvent,
+    ComboboxEvent, CommandEvent, MenuEvent, NaiveDate, RadioGroupEvent, Root, SelectEvent,
     TabsEvent, test_support,
 };
 use two_styles::{Appearance, Demo};
@@ -642,9 +642,9 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
     cx.update(|_, cx| {
         let menu = demo.read(cx).actions.clone();
         let commands = commands.clone();
-        cx.subscribe(&menu, move |menu, event: &DropdownMenuEvent, cx| {
+        cx.subscribe(&menu, move |menu, event: &MenuEvent, cx| {
             assert!(!menu.read(cx).is_open(cx), "commands observe a closed menu");
-            let DropdownMenuEvent::Action(value) = event;
+            let MenuEvent::Action(value) = event;
             commands.borrow_mut().push(value.clone());
         })
         .detach();
@@ -885,7 +885,7 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
             ["bold", "italic"].map(gpui::SharedString::from),
         );
     });
-    cx.simulate_keystrokes("tab");
+    cx.simulate_keystrokes("tab tab tab");
     draw(cx);
     cx.update(|window, cx| {
         assert!(
@@ -894,7 +894,7 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
                 .read(cx)
                 .focus_handle()
                 .is_focused(window),
-            "ToggleGroup has one Tab stop"
+            "ToggleGroup has one Tab stop before the summary, preview, and Edit controls"
         );
     });
 
@@ -953,11 +953,76 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
         let demo = demo.read(cx);
         assert!(!demo.preview_options.read(cx).is_open());
         assert!(test_support::find(window, &[], &"preview-progress".into()).is_none());
-        assert!(demo.edit_hint.read(cx).focus_handle().is_focused(window));
+        assert!(
+            demo.context_actions
+                .read(cx)
+                .focus_handle()
+                .is_focused(window)
+        );
         assert_eq!(demo.preview.read(cx).value(), 40.0);
         assert_eq!(
             demo.formatting.read(cx).selected_values(),
             ["bold", "italic"].map(gpui::SharedString::from),
+        );
+    });
+
+    // The same application actions are available from the summary's context menu.
+    cx.simulate_keystrokes("shift-f10");
+    draw(cx);
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        assert!(demo.context_actions.read(cx).is_open(cx));
+        assert!(!demo.actions.read(cx).is_open(cx));
+        assert!(
+            demo.context_actions
+                .read(cx)
+                .content_focus_handle()
+                .is_focused(window)
+        );
+        assert!(test_support::snapshots(window).iter().any(|item| {
+            item.role() == Some(Role::Menu) && item.label() == Some("Session summary actions")
+        }));
+    });
+    cx.simulate_keystrokes("down");
+    activate_key(cx, "enter");
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        assert!(!demo.show_cursor);
+        assert!(!demo.context_actions.read(cx).is_open(cx));
+        assert!(
+            demo.context_actions
+                .read(cx)
+                .focus_handle()
+                .is_focused(window)
+        );
+    });
+    let summary = cx.update(|window, _| {
+        test_support::find(window, &[], &"session-summary".into())
+            .unwrap()
+            .bounds()
+            .center()
+    });
+    cx.simulate_mouse_down(summary, MouseButton::Right, Modifiers::default());
+    cx.simulate_mouse_up(summary, MouseButton::Right, Modifiers::default());
+    draw(cx);
+    cx.simulate_keystrokes("e");
+    activate_key(cx, "enter");
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        assert!(!demo.context_actions.read(cx).is_open(cx));
+        assert!(demo.dialog.read(cx).is_open());
+        assert!(demo.input.focus_handle(cx).is_focused(window));
+    });
+    cx.simulate_keystrokes("escape");
+    draw(cx);
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        assert!(!demo.dialog.read(cx).is_open());
+        assert!(
+            demo.context_actions
+                .read(cx)
+                .focus_handle()
+                .is_focused(window)
         );
     });
 }
@@ -1152,7 +1217,24 @@ fn field_feedback_and_search_selection_work_inside_the_dialog(cx: &mut TestAppCo
                 .is_focused(window)
         );
     });
+    cx.simulate_keystrokes("shift-tab");
+    draw(cx);
+    cx.run_until_parked();
+    draw(cx);
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        assert!(demo.preset_preview.read(cx).is_open());
+        assert!(
+            demo.preset_preview
+                .read(cx)
+                .focus_handle()
+                .is_focused(window)
+        );
+        assert!(!demo.dialog.read(cx).is_open());
+    });
+    // The preview keeps the trigger's normal activation and the dialog's return focus.
     open_dialog(cx, &demo);
+    cx.update(|_, cx| assert!(!demo.read(cx).preset_preview.read(cx).is_open()));
     let select_all = if cfg!(target_os = "macos") {
         "cmd-a"
     } else {
@@ -1291,7 +1373,12 @@ fn field_feedback_and_search_selection_work_inside_the_dialog(cx: &mut TestAppCo
     cx.update(|window, cx| {
         let demo = demo.read(cx);
         assert!(!demo.dialog.read(cx).is_open());
-        assert!(demo.edit_hint.read(cx).focus_handle().is_focused(window));
+        assert!(
+            demo.preset_preview
+                .read(cx)
+                .focus_handle()
+                .is_focused(window)
+        );
         assert_eq!(
             demo.preset.read(cx).input().read(cx).value(),
             "Presentation"

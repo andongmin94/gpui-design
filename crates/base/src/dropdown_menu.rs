@@ -1,307 +1,34 @@
-//! Retained command-menu behavior with application-owned presentation.
-//! GPUI Design composes its Popover lifecycle and positioning with a menu
-//! cursor, command activation, and active-descendant accessibility semantics.
+//! A native button trigger for the shared command menu.
 
 use gpui::{
-    Anchor, AnyElement, App, AppContext as _, Context, ElementId, Entity, EventEmitter,
-    FocusHandle, InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, ParentElement,
-    Pixels, RenderOnce, Role, SharedString, StatefulInteractiveElement as _, StyleRefinement,
-    Styled, Subscription, Window, div, prelude::FluentBuilder as _, px,
+    Anchor, AnyElement, App, ElementId, Entity, InteractiveElement as _, IntoElement, KeyBinding,
+    Pixels, RenderOnce, SharedString, StyleRefinement, Styled, Window, px,
 };
 
 use crate::{
-    Button, Popover, PopoverState, StyledExt as _, TestSupportExt as _,
-    a11y_disabled::A11yDisabledExt as _,
-    actions::{Confirm, SelectDown, SelectFirst, SelectLast, SelectUp},
+    Button, MenuState, Popover, StyledExt as _,
+    actions::{SelectDown, SelectUp},
 };
 
-const CONTEXT: &str = "DropdownMenu";
 const TRIGGER_CONTEXT: &str = "DropdownMenuTrigger";
 
 pub(crate) fn init(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("down", SelectDown, Some(TRIGGER_CONTEXT)),
         KeyBinding::new("up", SelectUp, Some(TRIGGER_CONTEXT)),
-        KeyBinding::new("down", SelectDown, Some(CONTEXT)),
-        KeyBinding::new("up", SelectUp, Some(CONTEXT)),
-        KeyBinding::new("home", SelectFirst, Some(CONTEXT)),
-        KeyBinding::new("end", SelectLast, Some(CONTEXT)),
-        KeyBinding::new("enter", Confirm { secondary: false }, Some(CONTEXT)),
-        KeyBinding::new("space", Confirm { secondary: false }, Some(CONTEXT)),
     ]);
 }
-
-/// One command in a menu's fixed, ordered collection. Values must be unique.
-#[derive(Clone, Debug)]
-pub struct DropdownMenuItem {
-    value: SharedString,
-    label: SharedString,
-    disabled: bool,
-}
-
-impl DropdownMenuItem {
-    pub fn new(value: impl Into<SharedString>, label: impl Into<SharedString>) -> Self {
-        Self {
-            value: value.into(),
-            label: label.into(),
-            disabled: false,
-        }
-    }
-
-    pub fn disabled(mut self, disabled: bool) -> Self {
-        self.disabled = disabled;
-        self
-    }
-
-    pub fn value(&self) -> &SharedString {
-        &self.value
-    }
-
-    pub fn label(&self) -> &SharedString {
-        &self.label
-    }
-
-    pub fn is_disabled(&self) -> bool {
-        self.disabled
-    }
-}
-
-/// Emitted once per command activation, after closing and restoring focus.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum DropdownMenuEvent {
-    Action(SharedString),
-}
-
-/// Retained commands and cursor for one non-modal menu in one window.
-///
-/// The nested [`PopoverState`] exclusively owns open, disabled, dismissal, and
-/// focus-restoration behavior. The menu adds enabled-item navigation and command
-/// events. It never stores a selected value: repeated activation of the same
-/// command emits an event each time.
-///
-/// Keep the matching [`DropdownMenu`] mounted while closed and host the app in
-/// [`crate::Root`]. Empty and all-disabled collections may open, but cannot emit
-/// commands. Menu options are not individual Tab stops.
-pub struct DropdownMenuState {
-    items: Vec<DropdownMenuItem>,
-    highlighted: Option<usize>,
-    popover: Entity<PopoverState>,
-    focus: FocusHandle,
-    content_focus: FocusHandle,
-    _popover_subscription: Subscription,
-}
-
-impl DropdownMenuState {
-    pub fn new(items: impl IntoIterator<Item = DropdownMenuItem>, cx: &mut Context<Self>) -> Self {
-        let items: Vec<_> = items.into_iter().collect();
-        for (index, item) in items.iter().enumerate() {
-            assert!(
-                items[..index].iter().all(|other| other.value != item.value),
-                "DropdownMenuItem values must be unique"
-            );
-        }
-        let content_focus = cx.focus_handle();
-        let popover = cx.new(|cx| PopoverState::new(cx).with_initial_focus(&content_focus));
-        let focus = popover.read(cx).focus_handle().clone();
-        let subscription = cx.observe(&popover, |state, popover, cx| {
-            if popover.read(cx).is_open() {
-                // Native Button activation opens Popover directly. Preserve a
-                // cursor already chosen by ArrowUp/Down on the trigger.
-                if state.highlighted.is_none() {
-                    state.highlighted = state.items.iter().position(|item| !item.disabled);
-                }
-            } else {
-                state.highlighted = None;
-            }
-            cx.notify();
-        });
-        Self {
-            items,
-            highlighted: None,
-            popover,
-            focus,
-            content_focus,
-            _popover_subscription: subscription,
-        }
-    }
-
-    pub fn items(&self) -> &[DropdownMenuItem] {
-        &self.items
-    }
-
-    pub fn highlighted_index(&self) -> Option<usize> {
-        self.highlighted
-    }
-
-    pub fn is_open(&self, cx: &App) -> bool {
-        self.popover.read(cx).is_open()
-    }
-
-    pub fn is_disabled(&self, cx: &App) -> bool {
-        self.popover.read(cx).is_disabled()
-    }
-
-    /// The native trigger's focus handle.
-    pub fn focus_handle(&self) -> &FocusHandle {
-        &self.focus
-    }
-
-    /// The menu's focus handle; keyboard navigation moves its active descendant.
-    pub fn content_focus_handle(&self) -> &FocusHandle {
-        &self.content_focus
-    }
-
-    pub fn set_disabled(&mut self, disabled: bool, window: &mut Window, cx: &mut Context<Self>) {
-        if self.is_disabled(cx) == disabled {
-            return;
-        }
-        if disabled {
-            self.highlighted = None;
-        }
-        self.popover
-            .update(cx, |state, cx| state.set_disabled(disabled, window, cx));
-        cx.notify();
-    }
-
-    /// Opens with the first enabled command highlighted.
-    pub fn open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.open_at(false, window, cx);
-    }
-
-    /// Closes and restores the trigger while focus still belongs to the menu.
-    pub fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.is_open(cx) {
-            return;
-        }
-        self.highlighted = None;
-        self.popover.update(cx, |state, cx| state.close(window, cx));
-        cx.notify();
-    }
-
-    fn open_at(&mut self, last: bool, window: &mut Window, cx: &mut Context<Self>) {
-        if self.is_disabled(cx) || self.is_open(cx) {
-            return;
-        }
-        self.highlighted = self.edge(last);
-        self.popover.update(cx, |state, cx| state.open(window, cx));
-        cx.notify();
-    }
-
-    fn edge(&self, last: bool) -> Option<usize> {
-        if last {
-            self.items.iter().rposition(|item| !item.disabled)
-        } else {
-            self.items.iter().position(|item| !item.disabled)
-        }
-    }
-
-    fn move_cursor(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
-        if self.is_disabled(cx) || !self.is_open(cx) || self.items.is_empty() {
-            return;
-        }
-        let count = self.items.len();
-        let start = self
-            .highlighted
-            .unwrap_or(if forward { count - 1 } else { 0 });
-        for distance in 1..=count {
-            let index = if forward {
-                (start + distance) % count
-            } else {
-                (start + count - distance) % count
-            };
-            if !self.items[index].disabled {
-                self.highlight(index, window, cx);
-                break;
-            }
-        }
-    }
-
-    fn move_to_edge(&mut self, last: bool, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(index) = self.edge(last) {
-            self.highlight(index, window, cx);
-        }
-    }
-
-    fn highlight(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.is_open(cx)
-            || self.is_disabled(cx)
-            || self.items.get(index).is_none_or(|item| item.disabled)
-            || self.highlighted == Some(index)
-        {
-            return;
-        }
-        self.highlighted = Some(index);
-        cx.notify();
-        window.refresh();
-    }
-
-    fn typeahead(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        let modifiers = event.keystroke.modifiers;
-        if modifiers.control || modifiers.alt || modifiers.platform || modifiers.function {
-            return;
-        }
-        let text = event
-            .keystroke
-            .key_char
-            .as_deref()
-            .unwrap_or(&event.keystroke.key);
-        let mut characters = text.chars();
-        let Some(character) = characters.next() else {
-            return;
-        };
-        if characters.next().is_some() || character.is_control() || character.is_whitespace() {
-            return;
-        }
-        if !self.is_open(cx) || self.is_disabled(cx) || self.items.is_empty() {
-            return;
-        }
-        let prefix = character.to_lowercase().collect::<String>();
-        let count = self.items.len();
-        let start = self.highlighted.unwrap_or(count - 1);
-        for distance in 1..=count {
-            let index = (start + distance) % count;
-            let item = &self.items[index];
-            if !item.disabled && item.label.to_lowercase().starts_with(&prefix) {
-                self.highlight(index, window, cx);
-                cx.stop_propagation();
-                break;
-            }
-        }
-    }
-
-    fn activate(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.is_open(cx) || self.is_disabled(cx) {
-            return;
-        }
-        let Some(item) = self.items.get(index).filter(|item| !item.disabled) else {
-            return;
-        };
-        let value = item.value.clone();
-        // Subscribers may immediately focus another view or open a Dialog.
-        // Close first so this menu cannot steal that new focus afterward.
-        self.close(window, cx);
-        cx.emit(DropdownMenuEvent::Action(value));
-    }
-
-    fn confirm(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(index) = self.highlighted {
-            self.activate(index, window, cx);
-        }
-    }
-}
-
-impl EventEmitter<DropdownMenuEvent> for DropdownMenuState {}
 
 /// A native button trigger and anchored, unstyled command menu.
 ///
 /// `trigger` supplies the Button's label and presentation; the menu owns focus,
 /// disabled state, expansion, and activation. `accessibility_label` names the
-/// menu itself. Supply [`DropdownMenuOption`] children in collection order and
+/// menu itself. Supply [`crate::MenuOption`] children in collection order and
 /// keep interactive controls outside the menu's command content.
 #[derive(IntoElement)]
 pub struct DropdownMenu {
     id: ElementId,
-    state: Entity<DropdownMenuState>,
+    state: Entity<MenuState>,
     trigger: Button,
     content: Option<AnyElement>,
     label: Option<SharedString>,
@@ -311,7 +38,7 @@ pub struct DropdownMenu {
 }
 
 impl DropdownMenu {
-    pub fn new(id: impl Into<ElementId>, state: &Entity<DropdownMenuState>) -> Self {
+    pub fn new(id: impl Into<ElementId>, state: &Entity<MenuState>) -> Self {
         let id = id.into();
         Self {
             trigger: Button::new(id.clone()),
@@ -362,42 +89,9 @@ impl RenderOnce for DropdownMenu {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let state = self.state.read(cx);
         let popover = state.popover.clone();
-        let focus = state.content_focus.clone();
         let trigger_down = self.state.clone();
         let trigger_up = self.state.clone();
-        let up = self.state.clone();
-        let down = self.state.clone();
-        let first = self.state.clone();
-        let last = self.state.clone();
-        let confirm = self.state.clone();
-        let typeahead = self.state.clone();
-
-        let content = div()
-            .id(("dropdown-menu", self.state.entity_id()))
-            .test_support()
-            .role(Role::Menu)
-            .when_some(self.label, |this, label| this.aria_label(label))
-            .track_focus(&focus)
-            .key_context(CONTEXT)
-            .on_action(move |_: &SelectUp, window, cx| {
-                up.update(cx, |state, cx| state.move_cursor(false, window, cx));
-            })
-            .on_action(move |_: &SelectDown, window, cx| {
-                down.update(cx, |state, cx| state.move_cursor(true, window, cx));
-            })
-            .on_action(move |_: &SelectFirst, window, cx| {
-                first.update(cx, |state, cx| state.move_to_edge(false, window, cx));
-            })
-            .on_action(move |_: &SelectLast, window, cx| {
-                last.update(cx, |state, cx| state.move_to_edge(true, window, cx));
-            })
-            .on_action(move |_: &Confirm, window, cx| {
-                confirm.update(cx, |state, cx| state.confirm(window, cx));
-            })
-            .on_key_down(move |event, window, cx| {
-                typeahead.update(cx, |state, cx| state.typeahead(event, window, cx));
-            })
-            .children(self.content);
+        let content = crate::menu::menu_content(&self.state, self.label, self.content, cx);
 
         Popover::new(self.id, &popover)
             .content_role(None)
@@ -418,87 +112,21 @@ impl RenderOnce for DropdownMenu {
     }
 }
 
-/// One command's application-styled surface, with library-owned interaction.
-///
-/// Highlighted options expose the menu's active descendant without becoming
-/// individual Tab stops. Read [`DropdownMenuState::highlighted_index`] to style
-/// the keyboard/pointer cursor; disabled state comes from its fixed item.
-#[derive(IntoElement)]
-pub struct DropdownMenuOption {
-    state: Entity<DropdownMenuState>,
-    index: usize,
-    style: StyleRefinement,
-    children: Vec<AnyElement>,
-}
-
-impl DropdownMenuOption {
-    pub fn new(state: &Entity<DropdownMenuState>, index: usize) -> Self {
-        Self {
-            state: state.clone(),
-            index,
-            style: StyleRefinement::default(),
-            children: Vec::new(),
-        }
-    }
-}
-
-impl Styled for DropdownMenuOption {
-    fn style(&mut self) -> &mut StyleRefinement {
-        &mut self.style
-    }
-}
-
-impl ParentElement for DropdownMenuOption {
-    fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>) {
-        self.children.extend(elements);
-    }
-}
-
-impl RenderOnce for DropdownMenuOption {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        let state = self.state.read(cx);
-        let item = state
-            .items
-            .get(self.index)
-            .expect("DropdownMenuOption index is out of bounds");
-        let disabled = state.is_disabled(cx) || item.disabled;
-        let highlighted = state.is_open(cx) && state.highlighted == Some(self.index);
-        let label = item.label.clone();
-        let index = self.index;
-        let hover = self.state.clone();
-        let activate = self.state.clone();
-        div()
-            .id(("dropdown-menu-option", index))
-            .test_support()
-            .role(Role::MenuItem)
-            .aria_label(label)
-            .when(highlighted, |this| this.aria_active_descendant())
-            .when(!disabled, |this| {
-                this.on_hover(move |hovered, window, cx| {
-                    if *hovered {
-                        hover.update(cx, |state, cx| state.highlight(index, window, cx));
-                    }
-                })
-                .on_click(move |_, window, cx| {
-                    activate.update(cx, |state, cx| state.activate(index, window, cx));
-                })
-            })
-            .children(self.children)
-            .refine_style(&self.style)
-            .a11y_disabled(disabled)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Dialog, DialogBackdrop, DialogPopup, DialogState, Root};
+    use crate::{
+        Dialog, DialogBackdrop, DialogPopup, DialogState, MenuEvent, MenuItem, MenuOption,
+        PopoverState, Root,
+    };
     use gpui::{
-        KeyUpEvent, Keystroke, Modifiers, MouseButton, Render, TestAppContext, VisualTestContext,
+        AppContext as _, Context, FocusHandle, KeyDownEvent, KeyUpEvent, Keystroke, Modifiers,
+        MouseButton, ParentElement as _, Render, Role, Subscription, TestAppContext,
+        VisualTestContext, div,
     };
 
     struct Harness {
-        menu: Entity<DropdownMenuState>,
+        menu: Entity<MenuState>,
         dialog: Entity<DialogState>,
         outer: Entity<PopoverState>,
         before: FocusHandle,
@@ -518,7 +146,7 @@ mod tests {
                 .iter()
                 .enumerate()
                 .map(|(index, item)| {
-                    DropdownMenuOption::new(&self.menu, index).h(px(28.)).child(
+                    MenuOption::new(&self.menu, index).h(px(28.)).child(
                         div()
                             .debug_selector(move || format!("command-{index}").into())
                             .size_full()
@@ -596,15 +224,15 @@ mod tests {
         }
     }
 
-    fn items() -> Vec<DropdownMenuItem> {
+    fn items() -> Vec<MenuItem> {
         vec![
-            DropdownMenuItem::new("alpha", "Alpha").disabled(true),
-            DropdownMenuItem::new("open", "Open"),
-            DropdownMenuItem::new("save", "Save").disabled(true),
-            DropdownMenuItem::new("share", "Share"),
-            DropdownMenuItem::new("search", "Search"),
-            DropdownMenuItem::new("quit", "Quit"),
-            DropdownMenuItem::new("zip", "Zip").disabled(true),
+            MenuItem::new("alpha", "Alpha").disabled(true),
+            MenuItem::new("open", "Open"),
+            MenuItem::new("save", "Save").disabled(true),
+            MenuItem::new("share", "Share"),
+            MenuItem::new("search", "Search"),
+            MenuItem::new("quit", "Quit"),
+            MenuItem::new("zip", "Zip").disabled(true),
         ]
     }
 
@@ -632,13 +260,13 @@ mod tests {
 
     fn harness(
         cx: &mut TestAppContext,
-        items: Vec<DropdownMenuItem>,
+        items: Vec<MenuItem>,
     ) -> (&mut VisualTestContext, Entity<Harness>) {
         cx.update(crate::init);
         let (root, cx) = cx.add_window_view(move |window, cx| {
             let view = cx.new(|cx| {
                 let before = cx.focus_handle();
-                let menu = cx.new(|cx| DropdownMenuState::new(items, cx));
+                let menu = cx.new(|cx| MenuState::new(items, cx));
                 let dialog = cx.new(|cx| DialogState::new(cx).with_initial_focus(&before));
                 let outer = cx.new(PopoverState::new);
                 let subscriptions = vec![
@@ -649,7 +277,7 @@ mod tests {
                         &menu,
                         window,
                         |this: &mut Harness, menu, event, window, cx| {
-                            let DropdownMenuEvent::Action(value) = event;
+                            let MenuEvent::Action(value) = event;
                             assert!(!menu.read(cx).is_open(cx));
                             assert_eq!(menu.read(cx).highlighted_index(), None);
                             assert!(menu.read(cx).focus_handle().is_focused(window));
@@ -930,7 +558,7 @@ mod tests {
     ) {
         for commands in [
             Vec::new(),
-            vec![DropdownMenuItem::new("disabled", "Disabled").disabled(true)],
+            vec![MenuItem::new("disabled", "Disabled").disabled(true)],
         ] {
             let (cx, view) = harness(cx, commands);
             open(cx, &view, "enter");
@@ -949,7 +577,7 @@ mod tests {
             });
         }
 
-        let (cx, view) = harness(cx, vec![DropdownMenuItem::new("only", "Only")]);
+        let (cx, view) = harness(cx, vec![MenuItem::new("only", "Only")]);
         open(cx, &view, "up");
         for key in ["down", "up", "home", "end", "o"] {
             press(cx, key);
@@ -977,15 +605,13 @@ mod tests {
             let trigger = crate::test_support::find(window, &[], &"menu-trigger".into()).unwrap();
             assert_eq!(trigger.expanded(), Some(true));
             let scope =
-                crate::test_support::find(window, &[], &("dropdown-menu", menu.entity_id()).into())
-                    .unwrap();
+                crate::test_support::find(window, &[], &("menu", menu.entity_id()).into()).unwrap();
             assert_eq!(scope.role(), Some(Role::Menu));
             assert_eq!(scope.label(), Some("Commands"));
             assert_eq!(scope.focused(), Some(true));
             for (index, item) in menu.read(cx).items().iter().enumerate() {
                 let option =
-                    crate::test_support::find(window, &[], &("dropdown-menu-option", index).into())
-                        .unwrap();
+                    crate::test_support::find(window, &[], &("menu-option", index).into()).unwrap();
                 assert_eq!(option.role(), Some(Role::MenuItem));
                 assert_eq!(option.label(), Some(item.label().as_ref()));
                 assert_eq!(option.selected(), None);

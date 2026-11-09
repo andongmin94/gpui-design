@@ -6,8 +6,8 @@ Its main catalogue contains **66 entries**, each listed once below. The separate
 AI Elements catalogue is outside this comparison; conversation components already
 in the main catalogue remain included.
 
-GPUI Design currently documents **28 public component families**. This is not
-28/66 feature parity: a family can exist with a deliberately limited contract,
+GPUI Design currently documents **30 public component families**. This is not
+30/66 feature parity: a family can exist with a deliberately limited contract,
 and several shadcn entries describe presentation or combinations of other parts.
 These counts do not measure performance, accessibility conformance, or completion
 of native desktop validation.
@@ -43,12 +43,12 @@ in the [form guide](form-controls.md),
 | Collapsible | Available | One retained disclosure, Button trigger, active-only content, and focus handling when content closes. |
 | Combobox | Available | Editable search over fixed options, one committed selection, keyboard/pointer commit, and draft cancellation on dismissal. Free-form values, async sources, multiple selection, and groups are not included. |
 | Command | Available | Fixed command items, text filtering, keyboard/pointer actions, and composition with Dialog. Async sources, fuzzy ranking, and groups are not included. |
-| Context Menu | Pending | Context-menu triggers and placement are not supplied by the current trigger-button menu. |
+| Context Menu | Available | Secondary-click placement, Shift-F10/Menu-key opening, a focusable target, and shared Menu command navigation, dismissal, and focus restoration. Target content is noninteractive; submenus, checked/radio commands, and touch long-press are not supplied. |
 | Dialog | Available | Modal open/close, initial focus, containment, dismissal, and return focus; the application supplies its surface and contents. |
 | Direction | Pending | A consistent RTL layout and navigation policy has not been established. Text rendering alone does not establish this support. |
-| Dropdown Menu | Available | Fixed plain commands, enabled-item navigation, single-character search, and dismissal. Submenus and checked/radio menu items are not included. |
+| Dropdown Menu | Available | A Button entry point to the shared Menu state, fixed plain commands, enabled-item navigation, single-character search, and dismissal. Submenus and checked/radio menu items are not included. |
 | Field | Available | Label focus, help/error descriptions, and required/invalid metadata for existing Input/Textarea-based controls, including a Combobox query. Validation remains application-owned; arbitrary control types are not yet covered. |
-| Hover Card | Pending | Hover/focus opening and dismissal need a distinct lifecycle beyond manually opening a Popover. |
+| Hover Card | Available | Noninteractive rich preview on delayed hover or trigger focus, delayed closing across trigger/card pointer travel, dismissal, disabled state, and retained-state unmount cleanup. Opening and dismissal preserve existing focus; interactive preview controls and touch long-press are not supplied. |
 | Input | Available | Single-line editing, selection, clipboard, focus, and the native input interface through the retained editing engine. |
 | Input OTP | Pending | Segmented entry and paste distribution are not provided by ordinary Input. |
 | Label | Pending | Field provides associated labels for text inputs. A standalone label component for the wider control set is not yet supplied. |
@@ -127,12 +127,12 @@ popup, focus, and scrolling machinery.
 
 1. Add deliberate application-owned data operations over Table. Preserve shared
    focus and selection behavior instead of duplicating those public foundations.
-2. Add Context Menu and Hover Card interaction contracts over shared popup
-   placement and focus. Continue composing real panes with Resizable/ScrollArea;
-   virtualization and transcript anchoring remain separate work.
-3. Publish source-owned presentation recipes alongside those working flows,
+2. Publish source-owned presentation recipes alongside those working flows,
    starting with common surfaces, field framing, grouped actions, and empty
    states. Keep palette and sizing decisions outside the behavior layer.
+3. Extend menu composition where real screens need it, starting with checked
+   commands and submenus. Continue composing panes with Resizable/ScrollArea;
+   virtualization and transcript anchoring remain separate work.
 4. Build the larger conversation and data compositions on these shared parts.
    Track their actual supported scope here rather than counting aliases or
    unfinished wrappers as coverage.

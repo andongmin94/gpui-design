@@ -7,9 +7,9 @@ use std::{cell::Cell, rc::Rc};
 use gpui::{
     Anchor, AnyElement, App, Bounds, ClickEvent, Context, ElementId, Entity, FocusHandle,
     HitboxBehavior, InteractiveElement as _, IntoElement, KeyBinding, MouseButton, MouseDownEvent,
-    ParentElement as _, Pixels, RenderOnce, Role, SharedString, StatefulInteractiveElement as _,
-    StyleRefinement, Styled, Subscription, Window, anchored, canvas, deferred, div, point,
-    prelude::FluentBuilder as _, px,
+    ParentElement as _, Pixels, Point, RenderOnce, Role, SharedString,
+    StatefulInteractiveElement as _, StyleRefinement, Styled, Subscription, Window, anchored,
+    canvas, deferred, div, point, prelude::FluentBuilder as _, px,
 };
 
 use crate::{
@@ -236,6 +236,8 @@ pub struct Popover {
     id: ElementId,
     state: Entity<PopoverState>,
     trigger: Button,
+    supplied_trigger: Option<AnyElement>,
+    position: Option<Point<Pixels>>,
     content: Option<AnyElement>,
     label: Option<SharedString>,
     content_role: Option<Role>,
@@ -249,6 +251,8 @@ impl Popover {
         let id = id.into();
         Self {
             trigger: Button::new(id.clone()),
+            supplied_trigger: None,
+            position: None,
             id,
             state: state.clone(),
             content: None,
@@ -262,6 +266,18 @@ impl Popover {
 
     pub fn trigger(mut self, build: impl FnOnce(Button) -> Button) -> Self {
         self.trigger = build(self.trigger);
+        self
+    }
+
+    // A context target supplies its own activation and focus binding while
+    // sharing this surface's dismissal, traversal, and return-focus lifecycle.
+    pub(crate) fn supplied_trigger(mut self, trigger: impl IntoElement) -> Self {
+        self.supplied_trigger = Some(trigger.into_any_element());
+        self
+    }
+
+    pub(crate) fn at_position(mut self, position: Point<Pixels>) -> Self {
+        self.position = Some(position);
         self
     }
 
@@ -310,29 +326,34 @@ impl RenderOnce for Popover {
         let content_focus = model.content_focus.clone();
         let press_state = self.state.clone();
         let trigger_state = self.state.clone();
-        let trigger = self
-            .trigger
-            .role(Role::Button)
-            .track_focus(&focus)
-            .focusable(true)
-            .tab_stop(true)
-            .disabled(disabled)
-            .aria_expanded(open)
-            .when(!disabled, |this| {
-                this.on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                    press_state.update(cx, |state, _| {
-                        state.open_on_pointer_down = state.open;
-                    });
+        let trigger = if let Some(trigger) = self.supplied_trigger {
+            trigger
+        } else {
+            self.trigger
+                .role(Role::Button)
+                .track_focus(&focus)
+                .focusable(true)
+                .tab_stop(true)
+                .disabled(disabled)
+                .aria_expanded(open)
+                .when(!disabled, |this| {
+                    this.on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                        press_state.update(cx, |state, _| {
+                            state.open_on_pointer_down = state.open;
+                        });
+                    })
                 })
-            })
-            .on_click(move |event, window, cx| {
-                trigger_state.update(cx, |state, cx| state.activate(event, window, cx));
-            });
+                .on_click(move |event, window, cx| {
+                    trigger_state.update(cx, |state, cx| state.activate(event, window, cx));
+                })
+                .into_any_element()
+        };
         let trigger_bounds = Rc::new(Cell::new(Bounds::<Pixels>::default()));
         let position_bounds = trigger_bounds.clone();
         let mut popup = Popup::new((self.id, "popover-host"), trigger)
             .anchor(self.anchor)
             .offset(self.offset)
+            .when_some(self.position, |popup, position| popup.at_position(position))
             .on_position(move |_, bounds| position_bounds.set(bounds));
 
         let mut host = div().refine_style(&self.style);

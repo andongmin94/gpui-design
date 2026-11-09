@@ -2,8 +2,10 @@
 
 The [two-style example](../crates/base/examples/two_styles.rs) combines the same
 settings behavior with compact dark and spacious light presentation. Its
-Session actions menu can open Dialog, toggle application values, or request a
-preview reset through AlertDialog. A Collapsible holds the preview controls.
+Session actions menu and the summary's ContextMenu can open Dialog, toggle
+application values, or request a preview reset through AlertDialog. HoverCard
+previews the current preset, date, and notes status while the preset button keeps
+its ordinary settings action. A Collapsible holds the preview controls.
 Search commands opens a Command query and result list inside Dialog; both menus
 dispatch the same application actions. Separator provides semantic division
 between content regions, and the settings form includes retained multiline notes.
@@ -194,10 +196,11 @@ the popup surface.
 
 ## DropdownMenu
 
-The command menu reuses Popover for anchoring, open/close state, dismissal, and
-focus restoration. It adds a command cursor and activation events. Create
-`DropdownMenuState::new(items, cx)` with fixed, ordered
-`DropdownMenuItem::new(value, label)` entries. Values must be unique; use
+DropdownMenu and ContextMenu share `MenuState`, `MenuItem`, `MenuEvent`, and
+`MenuOption`. Their shared command behavior reuses Popover for open/close state,
+dismissal, traversal, and focus restoration. Create
+`MenuState::new(items, cx)` with fixed, ordered
+`MenuItem::new(value, label)` entries. Values must be unique; use
 `.disabled(true)` for unavailable commands. Empty or entirely disabled collections
 can open but cannot execute a command.
 
@@ -205,7 +208,7 @@ Render `DropdownMenu::new(id, &state)` with:
 
 - `.trigger(|button| ...)` for the native trigger's accessible name and appearance.
 - `.accessibility_label(...)` for the menu's accessible name.
-- `.content(...)` containing one `DropdownMenuOption::new(&state, index)` per item,
+- `.content(...)` containing one `MenuOption::new(&state, index)` per item,
   in collection order. Supply its text, spacing, colors, and other visual content.
 - `.anchor(...)` and `.offset(...)` to configure the existing popup positioning.
 
@@ -230,7 +233,7 @@ Ctrl, Alt, platform, and Fn shortcuts do not feed this search. Pointer hover mov
 the same cursor used by keyboard navigation. Disabled commands remain visible
 and carry disabled metadata, but are skipped by navigation and cannot execute.
 
-Subscribe to `DropdownMenuEvent::Action(value)` to handle a command in the
+Subscribe to `MenuEvent::Action(value)` to handle a command in the
 application. The menu closes and restores its trigger before delivering the
 event. A handler can therefore open Dialog, whose close operation later returns
 to the menu trigger. The example uses `cx.subscribe_in` to receive the window
@@ -252,6 +255,59 @@ scope, named MenuItem commands, and the active descendant. It does not emit a
 native has-popup property or a trigger-to-menu controls relationship. These
 contracts describe the implemented behavior, not a claim of full accessibility
 pattern conformance or completed screen-reader validation.
+
+## ContextMenu
+
+Use the same `MenuState::new(items, cx)`, `MenuItem`, `MenuOption`, and
+`MenuEvent::Action(value)` contract for commands associated with a visible region.
+Create a distinct state entity for each mounted menu host. The example's
+DropdownMenu and ContextMenu share item definitions and application callbacks,
+but keep their open state, cursor, and return-focus target separate.
+
+```rust
+ContextMenu::new("session-summary", &menu)
+    .target_label("Session summary")
+    .accessibility_label("Session actions")
+    .target(summary_content)
+    .content(menu_surface)
+    .p_2()
+    .border_1()
+    .focus_visible(|style| style.border_color(accent))
+```
+
+The target is a focusable, named region, not an action button. Supply
+noninteractive target content with `.target(...)` and the same ordered
+`MenuOption::new(&menu, index)` elements used by DropdownMenu inside `.content`.
+`target_label` names the region; `accessibility_label` names the menu. Styles and
+interactive style builders apply to the target, while the application styles its
+menu surface separately.
+
+| Input on the target | Behavior |
+| --- | --- |
+| Left click | Focus the region without opening the menu |
+| Right click | Open at the pointer's window coordinate; another request repositions the open menu |
+| Shift-F10 / Menu key | Open a closed menu below the target |
+| Native ShowContextMenu accessibility action | Open below the target |
+| Menu navigation and activation | Use the same enabled-item cursor, typeahead, and action-after-close behavior as DropdownMenu |
+| Escape | Close and return focus to the target |
+| Tab / Shift-Tab | Close through Popover's ordinary target-relative traversal |
+
+The Menu key is available when the platform delivers it. Imperative
+`MenuState::open(window, cx)` also uses target-relative placement. Pointer
+placement uses the existing Popup/Positioner measurement and viewport clamping;
+it does not replace their geometry engine. Outside clicks and parent Dialog
+containment use the same Popover lifecycle.
+
+`set_disabled(true, window, cx)` closes the menu and blocks target entry and
+activation. An already focused disabled target retains its binding so Tab can
+leave. If removing the whole target, move focus to a surviving control as part of
+that application update. Retained popup state is dismissed on detachment.
+
+Native metadata includes a named target, expanded/disabled state, the Shift-F10
+shortcut and ShowContextMenu action, plus the shared Menu/MenuItem semantics.
+This scope covers fixed plain commands on a noninteractive target. Interactive
+descendant targets, submenus, checked/radio commands, and touch long-press are
+not included.
 
 ## Command
 
@@ -332,6 +388,67 @@ content, touch long-press behavior, and a configurable provider are not part of
 this contract. The example wraps its existing Edit session button, so the same
 button opens the settings Dialog and remains its return-focus target.
 
+## HoverCard
+
+HoverCard supplies a rich, noninteractive preview of a Button's ordinary action.
+Retain a stable trigger focus handle and create
+`HoverCardState::new(&trigger_focus, window, cx)`. Observe the state to redraw the
+consumer. Optional `.with_delays(open_duration, close_duration)` configures pointer
+entry and exit delays before mounting; defaults are 500 ms and 200 ms.
+
+```rust
+HoverCard::new("preset-preview", &preview)
+    .accessibility_label("Recording preset preview")
+    .offset(px(6.))
+    .trigger(|button| {
+        button
+            .accessibility_label("Recording preset. Edit settings")
+            .on_click(open_settings)
+            .child("Preset: Balanced")
+    })
+    .content(preview_surface)
+```
+
+The trigger builder preserves the Button's action and supplies its appearance.
+The state owns its focus handle and disabled state; use `set_disabled` to
+coordinate the preview and Button. `Styled` methods on HoverCard apply to the
+host frame. Style the application-supplied content separately, and use
+`.anchor(...)` and `.offset(...)` for the existing Popup geometry.
+
+| Input | Behavior |
+| --- | --- |
+| Pointer enters the trigger | Open after the entry delay without moving focus |
+| Pointer leaves trigger and card | Close after the exit delay, unless the trigger retains keyboard focus |
+| Pointer enters the card or returns to the trigger | Cancel delayed closing |
+| Keyboard focus enters the trigger | Open immediately; focus remains on the Button |
+| Escape | Dismiss a visible preview and suppress reopening during the current entry |
+| Click / Enter / Space | Dismiss the preview; the Button or clicked control still performs its ordinary action |
+| Focus changes / window deactivates | Dismiss without moving focus |
+
+The close delay lets a pointer cross the trigger-to-card gap. Keyboard-opened
+previews remain until blur or explicit dismissal, even if the pointer moves away.
+Escape leaves focus in place and does not reopen the card merely because another
+frame is drawn or the pointer moves within the same trigger. A fresh trigger
+entry or keyboard focus can show it again. Cancelling a pending, undisplayed
+preview leaves Escape available to an enclosing surface.
+
+State methods are `is_open`, `is_disabled`, `focus_handle`,
+`close(window, cx)`, and `set_disabled(disabled, window, cx)`. Explicit close
+suppresses the current entry. Re-enabling waits for another entry or focus.
+Unmounting cancels delayed work and clears retained visibility; a mounted
+Escape subscription belongs only to that window.
+
+Popup owns placement, viewport clamping, deferred painting, and occlusion. The
+visible preview is a supplementary Tooltip surface with no Tab stop; it never
+opens a focus trap. `accessibility_label` names that surface. Keep essential
+information available in the Button's accessible description or its ordinary
+destination, rather than only in a pointer preview. Interactive content belongs
+in Popover. Touch long-press and a global hover provider are not supplied.
+
+The example previews the current recording preset, recording date, and notes
+status. Clicking or pressing Enter on that same Button opens the settings Dialog,
+which returns focus to the Button when closed.
+
 ## Separator
 
 `Separator::new(id)` supplies a semantic horizontal separator.
@@ -379,6 +496,10 @@ The consumer flows cover command search into the multiline settings
 form, normal and disabled-field Tab traversal, and retained notes.
 They also cover the tooltip trigger, Field label/feedback, and searchable preset
 selection inside Dialog, including query cancellation and retained selection.
+The existing flows also exercise keyboard and pointer context-menu commands
+opening that Dialog, and a HoverCard trigger retaining its ordinary action and
+return-focus target. New primitive tests cover point placement and pointer
+preview timing at their owning layer.
 The full suite runs once on Linux; composition checks and native
 example builds also run on Windows and macOS. They do not replace
 native IME, screen reader, DPI, and visual checks on a desktop.

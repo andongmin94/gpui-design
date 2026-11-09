@@ -32,6 +32,7 @@ pub struct Popup {
     style: StyleRefinement,
     anchor: Anchor,
     offset: Pixels,
+    position: Option<Point<Pixels>>,
     on_position: Option<Box<dyn Fn(ResolvedPosition, Bounds<Pixels>)>>,
     trigger: AnyElement,
     content: Option<AnyElement>,
@@ -46,6 +47,7 @@ impl Popup {
             style: StyleRefinement::default(),
             anchor: Anchor::TopLeft,
             offset: px(0.),
+            position: None,
             on_position: None,
             trigger: trigger.into_any_element(),
             content: None,
@@ -60,6 +62,13 @@ impl Popup {
     /// Gap from the trigger along the anchor's outward direction, zero by default.
     pub fn offset(mut self, offset: Pixels) -> Self {
         self.offset = offset;
+        self
+    }
+
+    // Context menus use the request's window coordinate while keeping the
+    // same trigger measurement, clipping, and viewport clamping machinery.
+    pub(crate) fn at_position(mut self, position: Point<Pixels>) -> Self {
+        self.position = Some(position);
         self
     }
 
@@ -134,11 +143,11 @@ impl RenderOnce for Popup {
         let anchor = self.anchor;
         let trigger_bounds = Rc::new(Cell::new(state.read(cx).bounds));
         let offset = self.offset;
-        let position = Rc::new(Cell::new(anchor_position(
-            anchor,
-            state.read(cx).bounds,
-            offset,
-        )));
+        let requested_position = self.position;
+        let position =
+            Rc::new(Cell::new(requested_position.unwrap_or_else(|| {
+                anchor_position(anchor, state.read(cx).bounds, offset)
+            })));
 
         // A closed popup places nothing: it notes its trigger's bounds, for when
         // it opens, without asking for another frame.
@@ -154,7 +163,10 @@ impl RenderOnce for Popup {
                         let trigger_bounds = trigger_bounds.clone();
                         move |bounds, window, cx| {
                             trigger_bounds.set(bounds);
-                            position.set(anchor_position(anchor, bounds, offset));
+                            position.set(
+                                requested_position
+                                    .unwrap_or_else(|| anchor_position(anchor, bounds, offset)),
+                            );
                             let first = state.update(cx, |state, _| {
                                 let first = !state.captured;
                                 state.bounds = bounds;

@@ -12,16 +12,16 @@ use gpui_design::{
     Accordion, AccordionHeader, AccordionItem, AccordionPanel, AccordionState, AlertDialog, Button,
     Calendar, CalendarDay, CalendarState, Checkbox, CheckboxState, Collapsible, CollapsibleContent,
     CollapsibleState, CollapsibleTrigger, Combobox, ComboboxList, ComboboxOption, ComboboxState,
-    Command, CommandEvent, CommandInput, CommandList, CommandOption, CommandState, DatePicker,
-    DatePickerState, Dialog, DialogBackdrop, DialogClose, DialogDescription, DialogPopup,
-    DialogState, DialogTitle, DropdownMenu, DropdownMenuEvent, DropdownMenuItem,
-    DropdownMenuOption, DropdownMenuState, Field, Input, InputBase, NaiveDate, Popover,
-    PopoverState, Progress, RadioGroup, RadioGroupState, RadioItem, RadioOption, Resizable,
-    ResizableState, ScrollArea, ScrollbarAxis, ScrollbarMode, SearchItem, Select, SelectItem,
-    SelectOption, SelectState, Separator, Slider, SliderState, Switch, Tab, TabItem, TabList,
-    TabPanel, Table, TableCaption, TableCell, TableColumn, TableRow, TabsState, TestTextExt as _,
-    Textarea, TextareaState, Toggle, ToggleGroup, ToggleGroupState, ToggleItem, ToggleOption,
-    Tooltip, TooltipState,
+    Command, CommandEvent, CommandInput, CommandList, CommandOption, CommandState, ContextMenu,
+    DatePicker, DatePickerState, Dialog, DialogBackdrop, DialogClose, DialogDescription,
+    DialogPopup, DialogState, DialogTitle, DropdownMenu, Field, HoverCard, HoverCardState, Input,
+    InputBase, MenuEvent, MenuItem, MenuOption, MenuState, NaiveDate, Popover, PopoverState,
+    Progress, RadioGroup, RadioGroupState, RadioItem, RadioOption, Resizable, ResizableState,
+    ScrollArea, ScrollbarAxis, ScrollbarMode, SearchItem, Select, SelectItem, SelectOption,
+    SelectState, Separator, Slider, SliderState, Switch, Tab, TabItem, TabList, TabPanel, Table,
+    TableCaption, TableCell, TableColumn, TableRow, TabsState, TestTextExt as _, Textarea,
+    TextareaState, Toggle, ToggleGroup, ToggleGroupState, ToggleItem, ToggleOption, Tooltip,
+    TooltipState,
     input::{InputAccessibility, InputEditorStyle, InputState},
 };
 
@@ -101,6 +101,7 @@ pub(crate) struct Demo {
     pub(crate) notes: Entity<TextareaState>,
     pub(crate) preset: Entity<ComboboxState>,
     pub(crate) edit_hint: Entity<TooltipState>,
+    pub(crate) preset_preview: Entity<HoverCardState>,
     fields_scroll: ScrollHandle,
     pub(crate) calendar: Entity<CalendarState>,
     pub(crate) date_picker: Entity<DatePickerState>,
@@ -113,7 +114,8 @@ pub(crate) struct Demo {
     pub(crate) stroke: Entity<RadioGroupState>,
     pub(crate) tabs: Entity<TabsState>,
     pub(crate) help: Entity<PopoverState>,
-    pub(crate) actions: Entity<DropdownMenuState>,
+    pub(crate) actions: Entity<MenuState>,
+    pub(crate) context_actions: Entity<MenuState>,
     pub(crate) accordion: Entity<AccordionState>,
     pub(crate) preview: Entity<SliderState>,
     pub(crate) preview_options: Entity<CollapsibleState>,
@@ -190,6 +192,8 @@ impl Demo {
         });
         let trigger_focus = cx.focus_handle().tab_stop(true);
         let edit_hint = cx.new(|cx| TooltipState::new(&trigger_focus, window, cx));
+        let preview_focus = cx.focus_handle().tab_stop(true);
+        let preset_preview = cx.new(|cx| HoverCardState::new(&preview_focus, window, cx));
         let select = cx.new(|cx| {
             SelectState::new(
                 [
@@ -241,19 +245,16 @@ impl Demo {
                 .default_ratio(0.5)
         });
         let help = cx.new(PopoverState::new);
-        let actions = cx.new(|cx| {
-            DropdownMenuState::new(
-                [
-                    DropdownMenuItem::new("edit", "Edit session"),
-                    DropdownMenuItem::new("share", "Share (unavailable)").disabled(true),
-                    DropdownMenuItem::new("cursor", "Toggle cursor"),
-                    DropdownMenuItem::new("toolbar", "Toggle toolbar pin"),
-                    DropdownMenuItem::new("reset", "Reset preview"),
-                    DropdownMenuItem::new("commands", "Search commands"),
-                ],
-                cx,
-            )
-        });
+        let menu_items = [
+            MenuItem::new("edit", "Edit session"),
+            MenuItem::new("share", "Share (unavailable)").disabled(true),
+            MenuItem::new("cursor", "Toggle cursor"),
+            MenuItem::new("toolbar", "Toggle toolbar pin"),
+            MenuItem::new("reset", "Reset preview"),
+            MenuItem::new("commands", "Search commands"),
+        ];
+        let actions = cx.new(|cx| MenuState::new(menu_items.clone(), cx));
+        let context_actions = cx.new(|cx| MenuState::new(menu_items, cx));
         let accordion = cx.new(|cx| {
             AccordionState::new(
                 [
@@ -287,6 +288,7 @@ impl Demo {
             cx.observe(&notes, |_, _, cx| cx.notify()),
             cx.observe(&preset, |_, _, cx| cx.notify()),
             cx.observe(&edit_hint, |_, _, cx| cx.notify()),
+            cx.observe(&preset_preview, |_, _, cx| cx.notify()),
             cx.observe(&commands, |_, _, cx| cx.notify()),
             cx.observe(&command_dialog, |_, _, cx| cx.notify()),
             cx.observe(&select, |_, _, cx| cx.notify()),
@@ -296,6 +298,7 @@ impl Demo {
             cx.observe(&schedule_split, |_, _, cx| cx.notify()),
             cx.observe(&help, |_, _, cx| cx.notify()),
             cx.observe(&actions, |_, _, cx| cx.notify()),
+            cx.observe(&context_actions, |_, _, cx| cx.notify()),
             cx.observe(&accordion, |_, _, cx| cx.notify()),
             cx.observe(&preview, |_, _, cx| cx.notify()),
             cx.observe(&preview_options, |_, _, cx| cx.notify()),
@@ -303,7 +306,11 @@ impl Demo {
             cx.observe(&formatting, |_, _, cx| cx.notify()),
             cx.observe(&dialog, |_, _, cx| cx.notify()),
             cx.subscribe_in(&actions, window, |this, _, event, window, cx| {
-                let DropdownMenuEvent::Action(value) = event;
+                let MenuEvent::Action(value) = event;
+                this.perform_action(value, window, cx);
+            }),
+            cx.subscribe_in(&context_actions, window, |this, _, event, window, cx| {
+                let MenuEvent::Action(value) = event;
                 this.perform_action(value, window, cx);
             }),
             cx.subscribe_in(&commands, window, |this, _, event, window, cx| {
@@ -319,6 +326,7 @@ impl Demo {
             notes,
             preset,
             edit_hint,
+            preset_preview,
             fields_scroll: ScrollHandle::new(),
             calendar,
             date_picker,
@@ -332,6 +340,7 @@ impl Demo {
             tabs,
             help,
             actions,
+            context_actions,
             accordion,
             preview,
             preview_options,
@@ -384,6 +393,35 @@ impl Demo {
             .text_color(palette.accent_foreground)
             .hover(|style| style.opacity(0.85))
             .focus_visible(|style| style.border_color(palette.foreground))
+    }
+
+    fn menu_content(
+        menu: &Entity<MenuState>,
+        palette: Palette,
+        cx: &Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let state = menu.read(cx);
+        div()
+            .min_w(rems(14.))
+            .p_1()
+            .border_1()
+            .border_color(palette.border)
+            .rounded(palette.radius)
+            .bg(palette.surface)
+            .text_color(palette.foreground)
+            .children(state.items().iter().enumerate().map(|(index, item)| {
+                MenuOption::new(menu, index)
+                    .h(palette.control_height)
+                    .px_3()
+                    .flex()
+                    .items_center()
+                    .rounded(palette.radius)
+                    .when(state.highlighted_index() == Some(index), |option| {
+                        option.bg(palette.highlight)
+                    })
+                    .when(item.is_disabled(), |option| option.opacity(0.45))
+                    .child(item.label().clone())
+            }))
     }
 
     fn calendar_content(&self, palette: Palette, cx: &Context<Self>) -> impl IntoElement + use<> {
@@ -778,6 +816,66 @@ impl Render for Demo {
             .selected_item(cx)
             .map(|item| item.label().clone())
             .unwrap_or_else(|| "None".into());
+        let preset_description = match preset_state.selected_value(cx).map(|value| value.as_ref()) {
+            Some("balanced") => "A general-purpose preset for everyday sessions.",
+            Some("presentation") => "A preset for slides, workshops, and live demonstrations.",
+            Some("quality") => "A preset for detailed visual references.",
+            _ => "Choose a recording preset in the session settings.",
+        };
+        let preset_dialog = self.dialog.clone();
+        let preset_preview = HoverCard::new("preset-preview", &self.preset_preview)
+            .accessibility_label("Recording preset preview")
+            .offset(px(6.))
+            .trigger(|button| {
+                button
+                    .h(palette.control_height)
+                    .px_3()
+                    .rounded(palette.radius)
+                    .border_1()
+                    .border_color(palette.border)
+                    .text_color(palette.muted)
+                    .focus_visible(|style| style.border_color(palette.accent))
+                    .accessibility_label(format!("Recording preset: {preset_label}. Edit settings"))
+                    .on_click(move |_, window, cx| {
+                        preset_dialog.update(cx, |state, cx| state.open(window, cx));
+                    })
+                    .child(format!("Preset: {preset_label}"))
+            })
+            .content(
+                div()
+                    .id("preset-preview-content")
+                    .w(rems(18.))
+                    .p_3()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .border_1()
+                    .border_color(palette.border)
+                    .rounded(palette.radius)
+                    .bg(palette.surface)
+                    .text_color(palette.foreground)
+                    .child(
+                        div()
+                            .font_weight(FontWeight::BOLD)
+                            .child(preset_label.clone()),
+                    )
+                    .child(div().text_sm().child(preset_description))
+                    .child(div().text_sm().text_color(palette.muted).child(format!(
+                        "Recording date: {}",
+                        self.calendar
+                            .read(cx)
+                            .selected_date()
+                            .map(|date| date.format("%Y-%m-%d").to_string())
+                            .unwrap_or_else(|| "Not scheduled".to_string())
+                    )))
+                    .child(div().text_sm().text_color(palette.muted).child(
+                        if self.notes.read(cx).value().is_empty() {
+                            "No session notes yet."
+                        } else {
+                            "Session notes are saved in settings."
+                        },
+                    )),
+            );
         let preset_field = Field::new("recording-preset-field", &preset_input, "Recording preset")
             .description("Search a preset and press Enter to select it.")
             .styles(|styles| styles.description(|style| style.text_sm().text_color(palette.muted)))
@@ -1111,7 +1209,6 @@ impl Render for Demo {
                     })),
             );
 
-        let action_state = self.actions.read(cx);
         let actions = DropdownMenu::new("session-actions", &self.actions)
             .accessibility_label("Session actions")
             .offset(px(6.))
@@ -1123,36 +1220,7 @@ impl Render for Demo {
                         .child("Session actions ▾"),
                 )
             })
-            .content(
-                div()
-                    .min_w(rems(14.))
-                    .p_1()
-                    .border_1()
-                    .border_color(palette.border)
-                    .rounded(palette.radius)
-                    .bg(palette.surface)
-                    .text_color(palette.foreground)
-                    .children(
-                        action_state
-                            .items()
-                            .iter()
-                            .enumerate()
-                            .map(|(index, item)| {
-                                DropdownMenuOption::new(&self.actions, index)
-                                    .h(palette.control_height)
-                                    .px_3()
-                                    .flex()
-                                    .items_center()
-                                    .rounded(palette.radius)
-                                    .when(
-                                        action_state.highlighted_index() == Some(index),
-                                        |option| option.bg(palette.highlight),
-                                    )
-                                    .when(item.is_disabled(), |option| option.opacity(0.45))
-                                    .child(item.label().clone())
-                            }),
-                    ),
-            );
+            .content(Self::menu_content(&self.actions, palette, cx));
 
         let owner = cx.entity();
         let unknown_progress = Toggle::new("unknown-progress")
@@ -1456,23 +1524,47 @@ impl Render for Demo {
                     .gap(palette.gap)
                     .bg(palette.surface)
                     .rounded(palette.radius)
-                    .child(div().text_xl().child(match self.appearance {
-                        Appearance::Compact => "MiniCast controls",
-                        Appearance::Settings => "Workspace settings",
-                    }))
                     .child(
-                        div()
-                            .text_color(palette.muted)
-                            .when(formatting.is_pressed(0), |text| {
-                                text.font_weight(FontWeight::BOLD)
-                            })
-                            .when(formatting.is_pressed(2), |text| text.italic())
-                            .child(format!(
-                                "{} · {} · {} stroke",
-                                self.input.read(cx).value(),
-                                selected_label,
-                                stroke_label
-                            )),
+                        ContextMenu::new("session-summary", &self.context_actions)
+                            .target_label("Session summary")
+                            .accessibility_label("Session summary actions")
+                            .w_full()
+                            .p_2()
+                            .border_1()
+                            .border_color(palette.border)
+                            .focus_visible(|style| style.border_color(palette.accent))
+                            .rounded(palette.radius)
+                            .target(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap_2()
+                                    .child(div().text_xl().child(match self.appearance {
+                                        Appearance::Compact => "MiniCast controls",
+                                        Appearance::Settings => "Workspace settings",
+                                    }))
+                                    .child(
+                                        div()
+                                            .text_color(palette.muted)
+                                            .when(formatting.is_pressed(0), |text| {
+                                                text.font_weight(FontWeight::BOLD)
+                                            })
+                                            .when(formatting.is_pressed(2), |text| text.italic())
+                                            .child(format!(
+                                                "{} · {} · {} stroke",
+                                                self.input.read(cx).value(),
+                                                selected_label,
+                                                stroke_label
+                                            )),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .text_color(palette.muted)
+                                            .child("Session actions: right-click or Shift+F10"),
+                                    ),
+                            )
+                            .content(Self::menu_content(&self.context_actions, palette, cx)),
                     )
                     .child(div().text_color(palette.muted).child(format!(
                         "Cursor {} · Toolbar {}",
@@ -1487,11 +1579,7 @@ impl Render for Demo {
                             "automatic"
                         }
                     )))
-                    .child(
-                        div()
-                            .text_color(palette.muted)
-                            .child(format!("Preset: {preset_label}")),
-                    )
+                    .child(preset_preview)
                     .child(div().text_color(palette.muted).child(format!(
                         "Recording date: {}",
                         self.calendar

@@ -19,6 +19,7 @@ mod collapsible;
 mod combobox;
 mod command;
 mod component_traits;
+mod context_menu;
 mod date_picker;
 mod dialog;
 mod dropdown_menu;
@@ -28,9 +29,11 @@ mod field;
 mod focus_trap;
 mod geometry;
 mod global_state;
+mod hover_card;
 pub mod input;
 #[cfg(all(target_os = "macos", not(test)))]
 mod macos_accessibility;
+mod menu;
 mod observe;
 mod overscroll;
 mod popover;
@@ -77,14 +80,13 @@ pub use command::{
     Command, CommandEvent, CommandInput, CommandList, CommandOption, CommandState, SearchItem,
 };
 pub use component_traits::Selectable;
+pub use context_menu::ContextMenu;
 pub use date_picker::{DatePicker, DatePickerEvent, DatePickerState};
 pub use dialog::{
     Dialog, DialogBackdrop, DialogChangeReason, DialogClose, DialogDescription, DialogEvent,
     DialogPopup, DialogState, DialogTitle,
 };
-pub use dropdown_menu::{
-    DropdownMenu, DropdownMenuEvent, DropdownMenuItem, DropdownMenuOption, DropdownMenuState,
-};
+pub use dropdown_menu::DropdownMenu;
 pub use element_ext::ElementExt;
 pub use event::{InteractiveElementExt, OngoingScrollExt};
 pub use field::{Field, FieldStyles};
@@ -92,12 +94,14 @@ pub use focus_trap::FocusTrapElement;
 pub(crate) use focus_trap::active_focus_trap;
 pub use geometry::*;
 pub(crate) use global_state::GlobalState;
+pub use hover_card::{HoverCard, HoverCardState};
 pub use input::{
     Input, InputAccessibility, InputBase, InputEditorStyle, InputState, InputStyles, Textarea,
     TextareaState,
 };
 #[cfg(all(target_os = "macos", not(test)))]
 pub(crate) use macos_accessibility::install_window_hit_test_forwarder;
+pub use menu::{MenuEvent, MenuItem, MenuOption, MenuState};
 pub use observe::{ObservedElement, ObservedTextElement, TestSupportExt, TestTextExt};
 pub use popover::{Popover, PopoverState};
 pub use popup::{POPUP_PRIORITY, Popup};
@@ -144,9 +148,11 @@ pub fn init(cx: &mut App) {
     reduce_motion::init(cx);
     accordion::init(cx);
     calendar::init(cx);
+    context_menu::init(cx);
     dialog::init(cx);
     dropdown_menu::init(cx);
     focus_trap::init(cx);
+    menu::init(cx);
     popover::init(cx);
     radio_group::init(cx);
     resizable::init(cx);
