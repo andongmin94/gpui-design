@@ -1,9 +1,9 @@
 # Presentation recipes
 
-These twelve recipes are reusable application source, used by the native
+These fourteen recipes are reusable application source, used by the native
 [two-style example](../crates/base/examples/two_styles.rs). They compose GPUI
 layout with the existing controls and keep colors, spacing, and sizing in the
-consumer's `Palette`.
+consumer's `Palette` or application-supplied `Styled` values.
 
 ## Copy into an application
 
@@ -13,9 +13,10 @@ consumer's `Palette`.
 2. Declare the copied modules and re-export the types, following the small
    [`mod.rs`](../crates/base/examples/recipes/mod.rs). Copy only the modules needed
    by the application and list only those modules.
-3. Change `use super::super::Palette` to the application's token type and adapt
-   the field names or recipe styling. The example's `Palette` and its compact
-   and settings values show every field used by these recipes.
+3. For recipes that import `use super::super::Palette`, use the application's
+   token type and adapt the field names or recipe styling. The example's
+   `Palette` and its compact and settings values show the fields used by these
+   recipes. AspectRatio takes no palette; its consumer supplies the visual style.
 4. Import the types from that application module. They use `pub(crate)` visibility
    and are not exported from `gpui_design`. No extra dependency is required.
 
@@ -379,6 +380,74 @@ loading state or content measurement; a collection of placeholders is ordinary
 application layout. The example shows one where the percentage fill is not yet
 available and removes it when known progress is restored.
 
+## Avatar
+
+[`avatar.rs`](../crates/base/examples/recipes/avatar.rs) presents a circular image
+with explicit alternative text and application-supplied fallback text:
+
+```rust,ignore
+Avatar::new("preset-avatar", "Balanced preset artwork", "BL", palette)
+    .image(preset_artwork)
+    .size(rems(2.5))
+```
+
+`image` accepts GPUI's existing `ImageSource` conversions. Omitting it shows the
+fallback immediately; an image error also shows the fallback. While an image is
+pending, GPUI's native 200 ms loading delay applies before showing the fallback.
+GPUI owns decoding, loading, caching, and redraws. The recipe adds no separate
+loading task, timer, cache, or retry policy.
+
+The root supplies one native Image role and the given accessible name in every
+state. The image and fallback add no separate name or focus stop. Supply a name
+that describes the image's meaning, rather than relying on the visible initials.
+The application chooses fallback text and any localization; this recipe does not
+derive initials from names. The default frame is 2.5 rem square, with palette
+colors and circular clipping. `Styled` can change its size and colors; keep width
+and height equal for a circle. Images use GPUI's cover fit. Status badges, avatar
+groups, and interactive actions remain application compositions.
+
+The example embeds [`preset-avatar.svg`](../crates/base/examples/assets/preset-avatar.svg)
+for the Balanced preset. Other presets use explicit text such as `PR` and `HQ`,
+and an empty selection uses `?`, with an accessible name derived from the current
+preset label. The source is selected while rendering the existing HoverCard from
+the retained Combobox state; there is no second selected-preset value. This
+bundled artwork requires no network request. Applications supply their own assets
+when copying the recipe.
+
+## Aspect Ratio
+
+[`aspect_ratio.rs`](../crates/base/examples/recipes/aspect_ratio.rs) provides a
+clipped media frame using GPUI's existing aspect-ratio layout:
+
+```rust,ignore
+AspectRatio::new("recording-frame", 16. / 9.)
+    .w(px(320.))
+    .rounded(palette.radius)
+    .bg(palette.field)
+    .child(media)
+```
+
+The ratio is width divided by height and must be finite and positive. The default
+width fills its parent; give that parent a definite width or set `.w(...)` on the
+frame. Leave height automatic so GPUI can derive it from the width. Explicit
+height or min/max constraints follow GPUI's ordinary layout rules and can
+override its preferred ratio.
+
+Children live in an absolute container that fills the frame, so their intrinsic
+sizes do not determine its height. Oversized content is clipped, including
+pointer interaction outside the frame. Supply `.size_full()` on an image or other
+child that should fill the container, and choose image object fit on that child.
+The frame adds no accessible role, name, focus stop, or retained state. Media
+children supply their own accessible descriptions and interaction. Background,
+rounding, and other presentation belong to the application through `Styled`.
+
+The preset HoverCard shows an illustrative recording frame containing the current
+session name. It uses 4:3 for Presentation and 16:9 for other presets or an empty
+selection. Changing the retained preset changes the ratio on the next render;
+editing the session name changes the displayed text. The supplied child has the
+native Image name describing the format. The preview creates no recording and
+does not add controls to HoverCard's noninteractive content.
+
 ## Verification scope
 
 The existing composition suite runs the same recipe modules as the native
@@ -406,3 +475,13 @@ context-menu flow exercises the existing shortcut displayed by its keycaps.
 There is no separate keybinding test controller,
 palette suite, or CI job for these static key hints. Native screen-reader speech
 and desktop visual rendering remain separate validation work.
+
+The media recipes add two focused regressions within the same composition target.
+Avatar exercises absent, pending, failed, loaded, and cleared image sources while
+checking its native name, focus neutrality, and fixed geometry; the loaded path
+decodes the bundled SVG. AspectRatio exercises two container widths, oversized
+content, and pointer clipping beyond the frame. The existing preset flow checks
+that the retained choice drives the preview's artwork, frame ratio, and session
+name while preserving the existing trigger and dismissal behavior. These checks
+do not establish remote image transport, native screen-reader speech, desktop
+visual rendering, or performance measurements.

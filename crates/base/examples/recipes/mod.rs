@@ -1,8 +1,10 @@
 //! Copyable application presentations built from GPUI layout and shared controls.
 //!
-//! The consumer owns these files and the palette imported by each recipe.
+//! The consumer owns these files and their palette imports or Styled values.
 
 mod alert;
+mod aspect_ratio;
+mod avatar;
 mod badge;
 mod button_group;
 mod card;
@@ -16,6 +18,8 @@ mod skeleton;
 mod spinner;
 
 pub(crate) use alert::Alert;
+pub(crate) use aspect_ratio::AspectRatio;
+pub(crate) use avatar::Avatar;
 pub(crate) use badge::Badge;
 pub(crate) use button_group::ButtonGroup;
 pub(crate) use card::Card;

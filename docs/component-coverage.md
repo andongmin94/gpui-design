@@ -6,9 +6,9 @@ Its main catalogue contains **66 entries**, each listed once below. The separate
 AI Elements catalogue is outside this comparison; conversation components already
 in the main catalogue remain included.
 
-GPUI Design currently documents **31 public library families and twelve copyable
-presentation/composition recipes**, covering **43 catalogue entries** within the scopes below.
-This is not 43/66 feature parity: a family can exist with a deliberately limited
+GPUI Design currently documents **31 public library families and fourteen copyable
+presentation/composition recipes**, covering **45 catalogue entries** within the scopes below.
+This is not 45/66 feature parity: a family can exist with a deliberately limited
 contract, and several shadcn entries describe combinations of other parts.
 These counts do not measure performance, accessibility conformance, or completion
 of native desktop validation.
@@ -80,14 +80,14 @@ in the [form guide](form-controls.md),
 These entries primarily need reusable source compositions with consistent visual
 defaults and appropriate semantics. Existing GPUI layout and controls should do
 the work; adding a new state controller for each visual name is unnecessary.
-The published recipes live in `crates/base/examples/recipes`, use the
-consumer's palette, and are composed into the native two-style example.
+The published recipes live in `crates/base/examples/recipes`, keep visual styling
+in the consumer, and are composed into the native two-style example.
 
 | Catalogue entry | Status | Current scope or gap |
 | --- | --- | --- |
 | Alert | Recipe | Inline title/description, default informational Note semantics, explicit urgent Alert semantics, and independent destructive styling. No notification queue, dismissal state, or live-region delivery controller. |
-| Aspect Ratio | Pending | No documented proportion-preserving media recipe. |
-| Avatar | Pending | Image/fallback presentation and its loading-state composition are not provided. |
+| Aspect Ratio | Recipe | Finite positive width/height ratio through GPUI layout, a width-controlled frame, and clipped application-owned content. The wrapper adds no role, name, or focus stop; media semantics and object fit belong to its children. Explicit height or min/max constraints follow GPUI's ordinary layout rules. |
+| Avatar | Recipe | Named circular image with explicit application-supplied fallback text for absent, pending, or failed sources. GPUI owns loading, its loading delay, and caching; the wrapper preserves one Image name and no focus stop. No initials generator, status badge, group layout, or separate loading controller. |
 | Badge | Recipe | Static named label with secondary/accent appearances. No click, toggle, or automatic live announcement. |
 | Button Group | Recipe | Connected horizontal/vertical buttons, shared border, decorative separators, and optional static text. Existing Button actions, disabled states, and individual Tab stops are preserved; no roving selection model. |
 | Card | Recipe | Named region, level-two heading, description, header action, content, and footer slots. Layout and palette belong to the application; no card focus stop or state controller. |
@@ -133,8 +133,9 @@ popup, focus, and scrolling machinery.
    typed ordering or row selection. Preserve shared focus and activation behavior
    instead of duplicating those public foundations.
 2. Extend the source-owned recipe set alongside working flows, including
-   media presentation and larger navigation compositions. Keep palette and sizing
-   decisions outside the behavior layer.
+   typography and larger navigation compositions. Build further media layouts
+   from Avatar and AspectRatio, keeping palette and sizing decisions outside the
+   behavior layer.
 3. Extend menu composition where real screens need it, starting with checked
    commands and submenus. Continue composing panes with Resizable/ScrollArea;
    virtualization and transcript anchoring remain separate work.

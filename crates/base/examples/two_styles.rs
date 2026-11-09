@@ -1,12 +1,14 @@
 //! The same headless controls with two application-owned presentations.
 //! Run with `compact` (the default) or `settings`.
 
+use std::sync::Arc;
+
 use chrono::Datelike as _;
 use gpui::{
-    AppContext as _, Axis, Context, Entity, FocusHandle, Focusable as _, FontWeight, Hsla,
-    InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Rems, Render, Role,
-    ScrollHandle, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Window,
-    div, prelude::FluentBuilder as _, px, relative, rems, rgb,
+    AppContext as _, Axis, Context, Entity, FocusHandle, Focusable as _, FontWeight, Hsla, Image,
+    ImageFormat, InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Rems, Render,
+    Role, ScrollHandle, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription,
+    Window, div, prelude::FluentBuilder as _, px, relative, rems, rgb,
 };
 use gpui_design::{
     Accordion, AccordionHeader, AccordionItem, AccordionPanel, AccordionState, AlertDialog,
@@ -28,8 +30,8 @@ use gpui_design::{
 #[path = "recipes/mod.rs"]
 mod recipes;
 use recipes::{
-    Alert, Badge, ButtonGroup, Card, DataTable, DataTableColumn, DataTableRow, DataTableState,
-    EmptyState, InputGroup, Item, Kbd, KbdGroup, Skeleton, Spinner,
+    Alert, AspectRatio, Avatar, Badge, ButtonGroup, Card, DataTable, DataTableColumn, DataTableRow,
+    DataTableState, EmptyState, InputGroup, Item, Kbd, KbdGroup, Skeleton, Spinner,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -110,6 +112,7 @@ pub(crate) struct Demo {
     pub(crate) preset_table: Entity<DataTableState>,
     pub(crate) edit_hint: Entity<TooltipState>,
     pub(crate) preset_preview: Entity<HoverCardState>,
+    preset_artwork: Arc<Image>,
     fields_scroll: ScrollHandle,
     pub(crate) calendar: Entity<CalendarState>,
     pub(crate) date_picker: Entity<DatePickerState>,
@@ -372,6 +375,10 @@ impl Demo {
             preset_table,
             edit_hint,
             preset_preview,
+            preset_artwork: Arc::new(Image::from_bytes(
+                ImageFormat::Svg,
+                include_bytes!("assets/preset-avatar.svg").to_vec(),
+            )),
             fields_scroll: ScrollHandle::new(),
             calendar,
             date_picker,
@@ -893,6 +900,59 @@ impl Render for Demo {
                 .selected_value(cx)
                 .map_or("", |value| value.as_ref()),
         );
+        let preset_value = preset_state.selected_value(cx).map(|value| value.as_ref());
+        let (preset_initials, frame_ratio, frame_label) = match preset_value {
+            Some("presentation") => ("PR", 4. / 3., "4:3"),
+            Some("quality") => ("HQ", 16. / 9., "16:9"),
+            Some("broadcast") => ("BC", 16. / 9., "16:9"),
+            Some("balanced") => ("BL", 16. / 9., "16:9"),
+            _ => ("?", 16. / 9., "16:9"),
+        };
+        let preset_avatar = Avatar::new(
+            "preset-avatar",
+            format!("{preset_label} preset artwork"),
+            preset_initials,
+            palette,
+        )
+        .when(preset_value == Some("balanced"), |avatar| {
+            avatar.image(self.preset_artwork.clone())
+        });
+        let frame_session_name = self.input.read(cx).value();
+        let frame_description = format!("{frame_label} frame preview");
+        let frame_preview = AspectRatio::new("preset-frame", frame_ratio)
+            .rounded(palette.radius)
+            .bg(palette.field)
+            .child(
+                div()
+                    .id("preset-frame-content")
+                    .role(Role::Image)
+                    .aria_label(format!("{frame_label} recording frame preview"))
+                    .size_full()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .justify_center()
+                    .gap_2()
+                    .p_3()
+                    .overflow_hidden()
+                    .child(
+                        div()
+                            .max_w_full()
+                            .truncate()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(
+                                gpui::text!(
+                                    id = "preset-frame-session-name",
+                                    frame_session_name.clone()
+                                )
+                                .test_text(frame_session_name),
+                            ),
+                    )
+                    .child(
+                        gpui::text!(id = "preset-frame-format", frame_description.clone())
+                            .test_text(frame_description),
+                    ),
+            );
         let preset_dialog = self.dialog.clone();
         let preset_preview = HoverCard::new("preset-preview", &self.preset_preview)
             .accessibility_label("Recording preset preview")
@@ -927,9 +987,17 @@ impl Render for Demo {
                     .text_color(palette.foreground)
                     .child(
                         div()
-                            .font_weight(FontWeight::BOLD)
-                            .child(preset_label.clone()),
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(preset_avatar)
+                            .child(
+                                div()
+                                    .font_weight(FontWeight::BOLD)
+                                    .child(preset_label.clone()),
+                            ),
                     )
+                    .child(frame_preview)
                     .child(div().text_sm().child(preset_description))
                     .child(div().text_sm().text_color(palette.muted).child(format!(
                         "Recording date: {}",

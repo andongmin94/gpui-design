@@ -1325,6 +1325,15 @@ fn field_feedback_and_search_selection_work_inside_the_dialog(cx: &mut TestAppCo
                 .is_focused(window)
         );
         assert!(!demo.dialog.read(cx).is_open());
+        let avatar = test_support::find(window, &[], &"preset-avatar".into()).unwrap();
+        assert_eq!(avatar.role(), Some(Role::Image));
+        assert_eq!(avatar.label(), Some("Balanced preset artwork"));
+        assert_eq!(avatar.focused(), None);
+        let frame = test_support::find(window, &[], &"preset-frame".into()).unwrap();
+        let size = frame.bounds().size;
+        assert!((size.width / size.height - 16. / 9.).abs() < 0.01);
+        assert_eq!(frame.role(), None);
+        assert_eq!(frame.focused(), None);
     });
     // The preview keeps the trigger's normal activation and the dialog's return focus.
     open_dialog(cx, &demo);
@@ -1528,6 +1537,41 @@ fn field_feedback_and_search_selection_work_inside_the_dialog(cx: &mut TestAppCo
             "Presentation"
         );
         assert!(test_support::find(window, &[], &"session-name-alert".into()).is_none());
+    });
+    // The newly committed preset changes the media presentation without owning
+    // another selected value or taking focus from the existing preview trigger.
+    cx.run_until_parked();
+    draw(cx);
+    cx.update(|window, cx| {
+        assert!(demo.read(cx).preset_preview.read(cx).is_open());
+        let avatar = test_support::find(window, &[], &"preset-avatar".into()).unwrap();
+        assert_eq!(avatar.label(), Some("Presentation preset artwork"));
+        let fallback = (gpui::ElementId::from("preset-avatar"), "fallback").into();
+        assert!(test_support::find(window, &[], &fallback).is_some());
+        let image = (gpui::ElementId::from("preset-avatar"), "image").into();
+        assert!(test_support::find(window, &[], &image).is_none());
+        let frame = test_support::find(window, &[], &"preset-frame".into()).unwrap();
+        let size = frame.bounds().size;
+        assert!((size.width / size.height - 4. / 3.).abs() < 0.01);
+        let texts = test_support::texts(window);
+        for (id, value) in [
+            ("preset-frame-session-name", "Workshop"),
+            ("preset-frame-format", "4:3 frame preview"),
+        ] {
+            assert!(texts.iter().any(|text| {
+                text.path().contains(&id.into()) && text.visible() && text.text() == value
+            }));
+        }
+        assert!(texts.iter().any(|text| {
+            text.path().contains(&fallback) && text.visible() && text.text() == "PR"
+        }));
+        assert!(
+            demo.read(cx)
+                .preset_preview
+                .read(cx)
+                .focus_handle()
+                .is_focused(window)
+        );
     });
     open_dialog(cx, &demo);
     cx.update(|_, cx| {

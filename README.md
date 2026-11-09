@@ -8,7 +8,7 @@ Headless separates control behavior from application-owned presentation; the
 examples render native GPUI windows.
 
 This is an early foundation for an independent component ecosystem. It currently
-includes 31 public library families and twelve copyable presentation recipes. An
+includes 31 public library families and fourteen copyable presentation recipes. An
 executable example gives the same behavior two visual treatments. The source is
 maintained in this repository, with GPUI kept as an exactly pinned rendering
 dependency.
@@ -57,7 +57,8 @@ not a separate editor product. Public APIs are still being developed.
 
 The [recipe modules](crates/base/examples/recipes) are application-owned source
 compositions, documented in the [presentation guide](docs/presentation-recipes.md).
-Copy the desired module and adapt its palette import to your application tokens.
+Copy the desired module and adapt its styling and any palette import to your
+application tokens.
 These types live in the example, outside the `gpui_design` crate exports.
 
 | Recipe | Supplied presentation | Existing example use |
@@ -74,12 +75,14 @@ These types live in the example, outside the `gpui_design` crate exports.
 | **DataTable** | Client-side text filtering, one-column text sorting, pagination, and stable-ID row actions over Table | Searching the existing recording presets and applying one to the retained settings |
 | **Spinner** | Named indeterminate Progress with a rotating arc that respects GPUI's reduced-motion setting | The unknown-progress preview |
 | **Skeleton** | Static decorative placeholder with application-controlled size and shape | The preview's unavailable percentage display |
+| **Avatar** | Named circular image with explicit fallback text, using GPUI's image loader and cache | Preset artwork or initials in the existing HoverCard preview |
+| **AspectRatio** | Clipped media frame with a finite positive width/height ratio and application-owned content | A recording-frame illustration driven by the retained preset and session name |
 
 The breadth target is the range of screens and interactions supported by
 shadcn/ui. The [component coverage map](docs/component-coverage.md) compares all
 66 entries in its current main catalogue with the actual public scope here.
 It distinguishes behavior, source-owned presentation recipes, and larger
-compositions. The 31 library families and twelve recipes cover 43 catalogue entries
+compositions. The 31 library families and fourteen recipes cover 45 catalogue entries
 within defined scopes. The map records each entry's limits and the work still
 needed; this count does not establish full shadcn/ui feature parity.
 
@@ -102,6 +105,12 @@ The two hosts use separate MenuState entities with shared command definitions an
 the same application callback. Right-click the summary or focus it and press
 Shift-F10. Hovering or focusing the preset button previews the preset, date, and
 notes status in HoverCard; normal button activation opens settings.
+That preview uses Avatar for the bundled Balanced artwork and explicit fallback
+text for other presets or an empty selection. AspectRatio frames the current
+session name at 4:3 for Presentation and 16:9 otherwise. Both presentations read
+the existing retained preset, so applying a preset updates the next preview.
+The artwork is embedded from `examples/assets`; this illustrative recording
+frame uses no network request and generates no recording.
 The dialog combines Preferences,
 Help, Schedule, and Presets tabs, and retains values when it is closed and reopened. Help uses an
 Accordion whose keyboard section opens a guide in a non-modal Popover.
@@ -245,7 +254,8 @@ The GPUI snapshot family is pinned to **`=0.3.11`**. Update those pins and
 | `crates/base/src/` | The `gpui-design` library and its behavior-level tests |
 | `crates/base/tests/` | Integration tests using the public API |
 | `crates/base/examples/two_styles.rs` | Native example and application-owned styles |
-| `crates/base/examples/recipes/` | Twelve copyable presentation/composition recipes, including data tables, loading indicators, and keycaps |
+| `crates/base/examples/recipes/` | Fourteen copyable presentation/composition recipes, including media frames, avatars, data tables, loading indicators, and keycaps |
+| `crates/base/examples/assets/` | Embedded example artwork used by the preset preview and its image-decoding regression |
 | `docs/form-controls.md` | Form control usage and interaction contracts |
 | `docs/navigation-overlays.md` | Breadcrumb, Tabs, Accordion, command menus, and composed focus behavior |
 | `docs/layout-and-data.md` | Table structure, ScrollArea composition, and Resizable panes |
