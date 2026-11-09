@@ -1,8 +1,8 @@
 # Layout and data
 
-Table and ScrollArea provide reusable structure and native behavior. Applications
+Table, ScrollArea, and Resizable provide reusable structure and native behavior. Applications
 own their data, layout dimensions, colors, typography, and cell contents. The
-[two-style example](../crates/base/examples/two_styles.rs) combines both in its
+[two-style example](../crates/base/examples/two_styles.rs) combines them in its
 Schedule tab and uses ScrollArea for the surrounding form.
 
 ## Table
@@ -90,8 +90,8 @@ ancestor visibility and opacity apply to both.
 `scrollbar_mode` accepts the existing Scrolling, Hover, or Always modes.
 `scrollbar_styles` uses the existing typed track/thumb styles. The bar overlays
 content and reserves no gutter, so leave application padding if its content
-should not overlap the bar. For example, the horizontal plan table uses bottom
-padding and an always-visible scrollbar.
+should not overlap the bar. For example, the plan table uses bottom/right
+padding and always-visible scrollbars for its resizable viewport.
 
 The public frame exposes the native ScrollView role and accepts an accessible label.
 It adds no independent focus stop or key bindings: input arrows keep editing
@@ -114,15 +114,90 @@ anchor streaming/transcript content.
 
 Set the table's width or minimum width explicitly when columns should exceed
 the viewport. The native example uses three fixed columns totaling 490 pixels
-inside a horizontal ScrollArea. Its surrounding settings form scrolls vertically.
+inside a ScrollArea supporting both axes. Its surrounding settings form scrolls vertically.
 The nested table can move horizontally without altering the form's date or
 scrolling unrelated siblings. Date selection and name/preset edits update the
 table from the same retained state used by the other controls.
 
+## Resizable
+
+Resizable divides a bounded frame into two continuously mounted panes. Its
+state owns the first pane's ratio, resize limits, and one divider focus handle.
+The remaining share belongs to the second pane:
+
+```rust
+let split = cx.new(|cx| {
+    ResizableState::new(Axis::Vertical, cx)
+        .limits(0.3..=0.7)
+        .default_ratio(0.5)
+});
+
+Resizable::new("notes-and-preview", &split)
+    .w_full()
+    .h(px(280.))
+    .first(notes)
+    .second(preview)
+    .handle(|handle| {
+        handle
+            .accessibility_label("Space for session notes")
+            .h(px(10.))
+            .bg(divider_color)
+    })
+```
+
+`Axis::Horizontal` places panes left/right and uses the handle's width.
+`Axis::Vertical` places them top/bottom and uses its height. Set an actual handle
+thickness and bound the frame's dimensions. The ratio divides the usable pane
+space after that thickness, so a 50/50 split shares the available space equally
+and stays proportional when the parent resizes. Frame padding is supported;
+the internal layout has no gap, and main-axis divider margins are reserved.
+Put spacing inside the application's pane contents.
+
+The default ratio is 0.5 with limits 0.1–0.9. `limits` accepts finite fractions
+with `0 < minimum < maximum < 1`, and `default_ratio` clamps the initial value.
+For example, limits 0.3–0.7 guarantee both panes retain at least 30% of the usable
+space. They are proportions, not pixel minimums. Panes clip overflow; use
+ScrollArea inside a pane when its content should scroll. Nest independent
+two-pane groups for more complex layouts.
+
+| Input | Result |
+| --- | --- |
+| Drag the divider | Resize from the actual press position, bounded by the ratio limits |
+| Left / Right in a horizontal group | Decrease / increase the first pane by two percentage points |
+| Up / Down in a vertical group | Decrease / increase the first pane by two percentage points |
+| Home / End | Reach the minimum / maximum first-pane ratio |
+| Tab / Shift+Tab | Traverse the divider and pane controls in ordinary document order |
+
+Only the divider owns the resize key context. Text editing, selection, and
+scrolling inside panes retain their own behavior. Pointer dragging uses GPUI's
+existing drag lifecycle and identifies its owning state, so independent or
+nested groups do not react to another group's drag.
+
+The divider has a native Splitter role with numeric value, limits, and step in
+percent. Native orientation describes the divider line: a left/right layout has
+a vertical divider, while a top/bottom layout has a horizontal divider. Give it
+a label identifying the pane it adjusts and keep its grip children non-interactive.
+The application supplies hover/focus/disabled styling and all pane content.
+
+Observe the state to update presentation. `ratio()`, `min_ratio()`, `max_ratio()`,
+`axis()`, `focus_handle()`, and `is_disabled()` expose its contract.
+`set_ratio(ratio, window, cx)` clamps a finite value and emits
+`ResizableEvent::Change` only when the ratio changes, including programmatic
+updates. `set_disabled` blocks pointer, keyboard, and accessibility resizing and
+normal Tab entry. A divider already focused retains its binding so Tab can leave;
+application updates through `set_ratio` remain available.
+
+The Schedule example reuses the same notes state as Preferences in the first
+pane and puts its plan table in a two-axis ScrollArea in the second. Closing or
+switching tabs preserves text and ratio because the application retains their
+states. The component does not implement zero-size collapse, pixel constraints,
+an arbitrary multi-pane solver, or automatic storage/persistence.
+
 ## Verification boundary
 
 Focused tests cover column alignment, table metadata, interactive cell children,
-native scrolling and reveal, and the calendar-to-table example flow. Existing
+native scrolling and reveal, divider dragging/keyboard behavior, and the
+DatePicker-to-resizable-plan example flow. Existing
 CI also builds the native example on Linux, Windows, and macOS. Automated GPUI
 event/layout checks do not establish native visual, screen-reader, mixed-DPI, or
 performance results.

@@ -19,6 +19,7 @@ mod collapsible;
 mod combobox;
 mod command;
 mod component_traits;
+mod date_picker;
 mod dialog;
 mod dropdown_menu;
 mod element_ext;
@@ -38,6 +39,7 @@ mod positioner;
 mod progress;
 mod radio_group;
 mod reduce_motion;
+mod resizable;
 mod root;
 mod scroll_area;
 mod scroll_bounce;
@@ -75,6 +77,7 @@ pub use command::{
     Command, CommandEvent, CommandInput, CommandList, CommandOption, CommandState, SearchItem,
 };
 pub use component_traits::Selectable;
+pub use date_picker::{DatePicker, DatePickerEvent, DatePickerState};
 pub use dialog::{
     Dialog, DialogBackdrop, DialogChangeReason, DialogClose, DialogDescription, DialogEvent,
     DialogPopup, DialogState, DialogTitle,
@@ -102,6 +105,7 @@ pub use positioner::{Align, Positioner, ResolvedPosition};
 pub use progress::Progress;
 pub use radio_group::{RadioGroup, RadioGroupEvent, RadioGroupState, RadioItem, RadioOption};
 pub use reduce_motion::apply_system_reduce_motion;
+pub use resizable::{Resizable, ResizableEvent, ResizableHandle, ResizableState};
 pub use root::Root;
 pub use scroll_area::ScrollArea;
 pub use scroll_bounce::{ScrollBounce, ScrollBounceMotion};
@@ -145,6 +149,7 @@ pub fn init(cx: &mut App) {
     focus_trap::init(cx);
     popover::init(cx);
     radio_group::init(cx);
+    resizable::init(cx);
     select::init(cx);
     slider::init(cx);
     tabs::init(cx);

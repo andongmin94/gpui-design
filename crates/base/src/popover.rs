@@ -36,6 +36,7 @@ pub struct PopoverState {
     focus: FocusHandle,
     content_focus: FocusHandle,
     initial_focus: Option<FocusHandle>,
+    initial_focus_builder: Option<Box<dyn Fn(&mut Window, &mut App) -> FocusHandle>>,
     open_on_pointer_down: bool,
     deferred_context: Option<DeferredPopover>,
     dismiss_subscription: Option<Subscription>,
@@ -49,6 +50,7 @@ impl PopoverState {
             focus: cx.focus_handle().tab_stop(true),
             content_focus: cx.focus_handle(),
             initial_focus: None,
+            initial_focus_builder: None,
             open_on_pointer_down: false,
             deferred_context: None,
             dismiss_subscription: None,
@@ -58,6 +60,17 @@ impl PopoverState {
     /// Chooses a control rendered inside the content for initial focus.
     pub fn with_initial_focus(mut self, focus: &FocusHandle) -> Self {
         self.initial_focus = Some(focus.clone());
+        self
+    }
+
+    // Composed controls can prepare retained content and resolve a changing
+    // focus target synchronously before opening. The resolved handle also
+    // supports close-before-first-paint, before that control joins the tree.
+    pub(crate) fn with_initial_focus_builder(
+        mut self,
+        build: impl Fn(&mut Window, &mut App) -> FocusHandle + 'static,
+    ) -> Self {
+        self.initial_focus_builder = Some(Box::new(build));
         self
     }
 
@@ -94,6 +107,9 @@ impl PopoverState {
     pub fn open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.disabled || self.open {
             return;
+        }
+        if let Some(build) = &self.initial_focus_builder {
+            self.initial_focus = Some(build(window, cx));
         }
         self.open = true;
         self.deferred_context = Some(GlobalState::register_deferred_popover(cx));

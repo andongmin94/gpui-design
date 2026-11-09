@@ -12,15 +12,16 @@ use gpui_design::{
     Accordion, AccordionHeader, AccordionItem, AccordionPanel, AccordionState, AlertDialog, Button,
     Calendar, CalendarDay, CalendarState, Checkbox, CheckboxState, Collapsible, CollapsibleContent,
     CollapsibleState, CollapsibleTrigger, Combobox, ComboboxList, ComboboxOption, ComboboxState,
-    Command, CommandEvent, CommandInput, CommandList, CommandOption, CommandState, Dialog,
-    DialogBackdrop, DialogClose, DialogDescription, DialogPopup, DialogState, DialogTitle,
-    DropdownMenu, DropdownMenuEvent, DropdownMenuItem, DropdownMenuOption, DropdownMenuState,
-    Field, Input, InputBase, NaiveDate, Popover, PopoverState, Progress, RadioGroup,
-    RadioGroupState, RadioItem, RadioOption, ScrollArea, ScrollbarAxis, ScrollbarMode, SearchItem,
-    Select, SelectItem, SelectOption, SelectState, Separator, Slider, SliderState, Switch, Tab,
-    TabItem, TabList, TabPanel, Table, TableCaption, TableCell, TableColumn, TableRow, TabsState,
-    TestTextExt as _, Textarea, TextareaState, Toggle, ToggleGroup, ToggleGroupState, ToggleItem,
-    ToggleOption, Tooltip, TooltipState,
+    Command, CommandEvent, CommandInput, CommandList, CommandOption, CommandState, DatePicker,
+    DatePickerState, Dialog, DialogBackdrop, DialogClose, DialogDescription, DialogPopup,
+    DialogState, DialogTitle, DropdownMenu, DropdownMenuEvent, DropdownMenuItem,
+    DropdownMenuOption, DropdownMenuState, Field, Input, InputBase, NaiveDate, Popover,
+    PopoverState, Progress, RadioGroup, RadioGroupState, RadioItem, RadioOption, Resizable,
+    ResizableState, ScrollArea, ScrollbarAxis, ScrollbarMode, SearchItem, Select, SelectItem,
+    SelectOption, SelectState, Separator, Slider, SliderState, Switch, Tab, TabItem, TabList,
+    TabPanel, Table, TableCaption, TableCell, TableColumn, TableRow, TabsState, TestTextExt as _,
+    Textarea, TextareaState, Toggle, ToggleGroup, ToggleGroupState, ToggleItem, ToggleOption,
+    Tooltip, TooltipState,
     input::{InputAccessibility, InputEditorStyle, InputState},
 };
 
@@ -102,6 +103,8 @@ pub(crate) struct Demo {
     pub(crate) edit_hint: Entity<TooltipState>,
     fields_scroll: ScrollHandle,
     pub(crate) calendar: Entity<CalendarState>,
+    pub(crate) date_picker: Entity<DatePickerState>,
+    pub(crate) schedule_split: Entity<ResizableState>,
     pub(crate) schedule_scroll: ScrollHandle,
     pub(crate) commands: Entity<CommandState>,
     pub(crate) command_dialog: Entity<DialogState>,
@@ -231,6 +234,12 @@ impl Demo {
                 )
                 .default_value(initial)
         });
+        let date_picker = cx.new(|cx| DatePickerState::new(&calendar, window, cx));
+        let schedule_split = cx.new(|cx| {
+            ResizableState::new(Axis::Vertical, cx)
+                .limits(0.3..=0.7)
+                .default_ratio(0.5)
+        });
         let help = cx.new(PopoverState::new);
         let actions = cx.new(|cx| {
             DropdownMenuState::new(
@@ -283,7 +292,8 @@ impl Demo {
             cx.observe(&select, |_, _, cx| cx.notify()),
             cx.observe(&stroke, |_, _, cx| cx.notify()),
             cx.observe(&tabs, |_, _, cx| cx.notify()),
-            cx.observe(&calendar, |_, _, cx| cx.notify()),
+            cx.observe(&date_picker, |_, _, cx| cx.notify()),
+            cx.observe(&schedule_split, |_, _, cx| cx.notify()),
             cx.observe(&help, |_, _, cx| cx.notify()),
             cx.observe(&actions, |_, _, cx| cx.notify()),
             cx.observe(&accordion, |_, _, cx| cx.notify()),
@@ -311,6 +321,8 @@ impl Demo {
             edit_hint,
             fields_scroll: ScrollHandle::new(),
             calendar,
+            date_picker,
+            schedule_split,
             schedule_scroll: ScrollHandle::new(),
             commands,
             command_dialog,
@@ -374,13 +386,10 @@ impl Demo {
             .focus_visible(|style| style.border_color(palette.foreground))
     }
 
-    fn schedule(&self, palette: Palette, cx: &Context<Self>) -> impl IntoElement + use<> {
+    fn calendar_content(&self, palette: Palette, cx: &Context<Self>) -> impl IntoElement + use<> {
         let state = self.calendar.read(cx);
         let month = state.month();
         let selected = state.selected_date();
-        let date_label = selected
-            .map(|date| date.format("%Y-%m-%d").to_string())
-            .unwrap_or_else(|| "Not scheduled".to_string());
         let calendar = Calendar::new("recording-calendar", &self.calendar)
             .accessibility_label(format!("Recording date, {}", month.format("%B %Y")))
             .flex()
@@ -470,6 +479,76 @@ impl Demo {
                     })
                     .child("›"),
             ));
+        div()
+            .w(palette.dialog_width - palette.padding * 2.)
+            .p_3()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .bg(palette.surface)
+            .text_color(palette.foreground)
+            .border_1()
+            .border_color(palette.border)
+            .rounded(palette.radius)
+            .child(month_controls)
+            .child(calendar)
+            .child(
+                div().text_sm().text_color(palette.muted).child(
+                    "Arrows move by day or week. Page Up/Down changes month. Enter selects.",
+                ),
+            )
+    }
+
+    fn schedule(
+        &self,
+        palette: Palette,
+        window: &Window,
+        cx: &Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let date_label = self
+            .calendar
+            .read(cx)
+            .selected_date()
+            .map(|date| date.format("%Y-%m-%d").to_string())
+            .unwrap_or_else(|| "Pick a date".to_string());
+        let picker = DatePicker::new("recording-date", &self.date_picker)
+            .accessibility_label("Choose recording date")
+            .offset(px(6.))
+            .trigger(|button| {
+                Self::button(
+                    palette,
+                    button
+                        .w_full()
+                        .accessibility_label(format!("Recording date, {date_label}"))
+                        .child(date_label.clone()),
+                )
+            })
+            .content(self.calendar_content(palette, cx));
+        let notes = Field::new("schedule-notes-field", &self.notes, "Session notes")
+            .description("The same notes are available in Preferences.")
+            .styles(|styles| styles.description(|style| style.text_sm().text_color(palette.muted)))
+            .size_full()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .gap_1()
+            .child(
+                InputBase::new("schedule-notes")
+                    .role(None::<Role>)
+                    .semantic_owner::<Textarea>(self.notes.entity_id())
+                    .focused(self.notes.focus_handle(cx).is_focused(window))
+                    .flex_1()
+                    .min_h_0()
+                    .w_full()
+                    .px_3()
+                    .py_2()
+                    .border_1()
+                    .border_color(palette.border)
+                    .rounded(palette.radius)
+                    .bg(palette.field)
+                    .styles(|styles| styles.focused(|style| style.border_color(palette.accent)))
+                    .child(Textarea::new(&self.notes)),
+            );
         let preset = self
             .preset
             .read(cx)
@@ -525,25 +604,36 @@ impl Demo {
             .flex()
             .flex_col()
             .gap(palette.gap)
-            .child(month_controls)
-            .child(calendar)
+            .child(picker)
             .child(
-                div().text_sm().text_color(palette.muted).child(
-                    "Arrows move by day or week. Page Up/Down changes month. Enter selects.",
-                ),
-            )
-            .child(
-                ScrollArea::new("recording-plan-scroll", &self.schedule_scroll)
-                    .axis(ScrollbarAxis::Horizontal)
-                    .accessibility_label("Recording plan columns")
-                    .scrollbar_mode(ScrollbarMode::Always)
-                    .scrollbar_styles(|styles| {
-                        styles.thumb(|thumb| thumb.bg(palette.muted).radius(px(3.)))
-                    })
+                Resizable::new("schedule-panes", &self.schedule_split)
                     .w_full()
-                    .min_w_0()
-                    .content_styles(|style| style.pb(px(16.)))
-                    .child(plan),
+                    .h(px(280.))
+                    .first(notes)
+                    .handle(|handle| {
+                        handle
+                            .accessibility_label("Space for session notes")
+                            .h(px(10.))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .bg(palette.surface)
+                            .focus_visible(|style| style.bg(palette.highlight))
+                            .child(div().w_8().h(px(2.)).bg(palette.border))
+                    })
+                    .second(
+                        ScrollArea::new("recording-plan-scroll", &self.schedule_scroll)
+                            .axis(ScrollbarAxis::Both)
+                            .accessibility_label("Recording plan columns and rows")
+                            .scrollbar_mode(ScrollbarMode::Always)
+                            .scrollbar_styles(|styles| {
+                                styles.thumb(|thumb| thumb.bg(palette.muted).radius(px(3.)))
+                            })
+                            .size_full()
+                            .min_w_0()
+                            .content_styles(|style| style.pb(px(16.)).pr(px(16.)))
+                            .child(plan),
+                    ),
             )
     }
 }
@@ -966,7 +1056,7 @@ impl Render for Demo {
                     .flex()
                     .flex_col()
                     .gap(palette.gap)
-                    .child(self.schedule(palette, cx)),
+                    .child(self.schedule(palette, window, cx)),
             );
         let popup = DialogPopup::new()
             .w(palette.dialog_width)

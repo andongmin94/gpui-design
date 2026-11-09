@@ -1313,15 +1313,26 @@ fn field_feedback_and_search_selection_work_inside_the_dialog(cx: &mut TestAppCo
 }
 
 #[gpui::test]
-fn calendar_selection_updates_a_scrollable_table_inside_the_dialog(cx: &mut TestAppContext) {
+fn date_picker_and_split_panes_preserve_nested_form_state(cx: &mut TestAppContext) {
     let (cx, demo) = harness(cx, Appearance::Compact);
     open_dialog(cx, &demo);
-    cx.simulate_keystrokes("tab tab end tab tab tab");
-    draw(cx);
+    cx.simulate_keystrokes("tab tab end tab");
     draw(cx);
     cx.update(|window, cx| {
         let demo = demo.read(cx);
         assert_eq!(demo.tabs.read(cx).selected_index(), Some(3));
+        assert!(demo.date_picker.read(cx).focus_handle().is_focused(window));
+        assert!(!demo.date_picker.read(cx).is_open(cx));
+        assert!(test_support::find(window, &[], &"recording-calendar".into()).is_none());
+        let trigger = test_support::find(window, &[], &"recording-date".into()).unwrap();
+        assert_eq!(trigger.role(), Some(Role::Button));
+        assert_eq!(trigger.expanded(), Some(false));
+        assert_eq!(trigger.label(), Some("Recording date, 2026-11-09"));
+    });
+    activate_key(cx, "enter");
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        assert!(demo.date_picker.read(cx).is_open(cx));
         let calendar = demo.calendar.read(cx);
         assert!(calendar.focus_handle().is_focused(window));
         assert_eq!(
@@ -1332,7 +1343,10 @@ fn calendar_selection_updates_a_scrollable_table_inside_the_dialog(cx: &mut Test
             .into_iter()
             .find(|item| item.role() == Some(Role::GridCell) && item.focused() == Some(true))
             .unwrap();
-        assert!(day.visible(), "entering the grid reveals the focused date");
+        assert!(
+            day.visible(),
+            "opening the popup focuses its visible selected day"
+        );
     });
 
     cx.simulate_keystrokes("right pagedown");
@@ -1352,13 +1366,84 @@ fn calendar_selection_updates_a_scrollable_table_inside_the_dialog(cx: &mut Test
         assert_eq!(grid.role(), Some(Role::Grid));
         assert_eq!(grid.label(), Some("Recording date, December 2026"));
     });
+    cx.simulate_keystrokes("escape");
+    draw(cx);
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        assert!(!demo.date_picker.read(cx).is_open(cx));
+        assert!(
+            demo.dialog.read(cx).is_open(),
+            "Escape closes the picker before the dialog"
+        );
+        assert!(demo.date_picker.read(cx).focus_handle().is_focused(window));
+        assert_eq!(
+            demo.calendar.read(cx).selected_date(),
+            NaiveDate::from_ymd_opt(2026, 11, 9)
+        );
+    });
+    activate_key(cx, "enter");
+    cx.update(|window, cx| {
+        let calendar = demo.read(cx).calendar.read(cx);
+        assert_eq!(
+            calendar.focused_date(),
+            NaiveDate::from_ymd_opt(2026, 11, 9).unwrap()
+        );
+        assert!(calendar.focus_handle().is_focused(window));
+    });
+    cx.simulate_keystrokes("right pagedown");
+    draw(cx);
     activate_key(cx, "enter");
     draw(cx);
-    let fields = cx.update(|window, cx| {
+    cx.update(|window, cx| {
         assert_eq!(
             demo.read(cx).calendar.read(cx).selected_date(),
             NaiveDate::from_ymd_opt(2026, 12, 10)
         );
+        let demo = demo.read(cx);
+        assert!(!demo.date_picker.read(cx).is_open(cx));
+        assert!(demo.date_picker.read(cx).focus_handle().is_focused(window));
+        assert_eq!(
+            test_support::find(window, &[], &"recording-date".into())
+                .unwrap()
+                .label(),
+            Some("Recording date, 2026-12-10")
+        );
+    });
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    cx.simulate_input("Prepare the workshop demo.");
+    cx.simulate_keystrokes("home down");
+    draw(cx);
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        assert!(demo.notes.focus_handle(cx).is_focused(window));
+        assert_eq!(
+            demo.schedule_split.read(cx).ratio(),
+            0.5,
+            "editing keys do not resize panes"
+        );
+    });
+    let old_table_height = cx.update(|_, cx| demo.read(cx).schedule_scroll.bounds().size.height);
+    cx.simulate_keystrokes("tab down");
+    draw(cx);
+    draw(cx);
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        let split = demo.schedule_split.read(cx);
+        assert!(split.focus_handle().is_focused(window));
+        assert!((split.ratio() - 0.52).abs() < 0.001);
+        assert!(demo.schedule_scroll.bounds().size.height < old_table_height);
+        let id = (gpui::ElementId::from("schedule-panes"), "handle").into();
+        let handle = test_support::find(window, &[], &id).unwrap();
+        assert_eq!(handle.role(), Some(Role::Splitter));
+        assert_eq!(handle.label(), Some("Space for session notes"));
+        assert!(
+            handle.visible(),
+            "the keyboard-focused divider is visible in the form"
+        );
+        assert_eq!(demo.notes.read(cx).value(), "Prepare the workshop demo.");
+    });
+    let fields = cx.update(|window, _| {
         test_support::find(window, &[], &"settings-fields".into())
             .unwrap()
             .bounds()
@@ -1405,8 +1490,8 @@ fn calendar_selection_updates_a_scrollable_table_inside_the_dialog(cx: &mut Test
         assert!(demo.read(cx).schedule_scroll.offset().x < px(0.));
     });
 
-    // Calendar navigation never closes its parent. Escape does, and the date
-    // survives mounting the grid and table again when the dialog reopens.
+    // With the picker closed, Escape closes the parent. Date, note text, and
+    // panel sizes survive mounting the form again when the dialog reopens.
     cx.simulate_keystrokes("escape");
     draw(cx);
     cx.update(|window, cx| {
@@ -1422,6 +1507,9 @@ fn calendar_selection_updates_a_scrollable_table_inside_the_dialog(cx: &mut Test
             demo.calendar.read(cx).selected_date(),
             NaiveDate::from_ymd_opt(2026, 12, 10)
         );
+        assert!(!demo.date_picker.read(cx).is_open(cx));
+        assert!((demo.schedule_split.read(cx).ratio() - 0.52).abs() < 0.001);
+        assert_eq!(demo.notes.read(cx).value(), "Prepare the workshop demo.");
         assert!(test_support::texts(window).iter().any(|text| {
             text.path().contains(&"plan-date".into()) && text.text() == "2026-12-10"
         }));

@@ -6,8 +6,8 @@ Its main catalogue contains **66 entries**, each listed once below. The separate
 AI Elements catalogue is outside this comparison; conversation components already
 in the main catalogue remain included.
 
-GPUI Design currently documents **26 public component families**. This is not
-26/66 feature parity: a family can exist with a deliberately limited contract,
+GPUI Design currently documents **28 public component families**. This is not
+28/66 feature parity: a family can exist with a deliberately limited contract,
 and several shadcn entries describe presentation or combinations of other parts.
 These counts do not measure performance, accessibility conformance, or completion
 of native desktop validation.
@@ -58,7 +58,7 @@ in the [form guide](form-controls.md),
 | Popover | Available | Anchored non-modal content, retained open state, dismissal, normal focus traversal, and return focus. |
 | Progress | Available | Controlled known progress or an indeterminate state; the application owns fill geometry and animation. |
 | Radio Group | Available | Fixed items, exclusive selection, roving Tab entry, and immediate arrow selection. |
-| Resizable | Pending | A pane-divider component with pointer/keyboard resizing and size constraints is not implemented. |
+| Resizable | Available | Two retained panes, horizontal/vertical arrangement, pointer/keyboard resizing, fractional limits, and native splitter values. Groups can nest; collapse, pixel-based minimums, automatic persistence, and arbitrary multi-pane solving are not supplied. |
 | Scroll Area | Available | Native viewport with existing overlay scrollbar, vertical/horizontal/both axes, retained offsets, and scoped descendant reveal. No virtualization, streaming anchoring, or separate keyboard scroll focus. |
 | Select | Available | One committed value from fixed ordered options, with a separate open-popup cursor. Editable search and multiple selection are not included. |
 | Separator | Available | Horizontal/vertical, semantic or decorative separation; the application supplies its visual style. |
@@ -114,7 +114,7 @@ popup, focus, and scrolling machinery.
 | Chart | Pending | No chart rendering and interaction integration is provided. |
 | Code Block | Pending | Internal editing machinery does not constitute a public code-display, copy, and presentation component. |
 | Data Table | Pending | Table structure exists; reusable sorting/filtering/selection compositions are not yet supplied. |
-| Date Picker | Pending | Calendar and Popover exist; trigger/value formatting, popup focus, and date-commit composition are not yet supplied as a supported recipe. |
+| Date Picker | Available | A single Calendar date inside Popover, current selected-day focus, activation commit-and-close, dismissal, and disabled state. Trigger formatting and calendar appearance belong to the application; text parsing, ranges, multiple selection, and presets are not supplied. |
 | Drawer | Pending | Modal infrastructure exists; drawer interaction and presentation are not implemented. |
 | Marker | Pending | Conversation status notes and labeled separators have no published recipe. |
 | Message | Pending | Message-row layout, metadata, and actions have no reusable composition. |
@@ -125,12 +125,11 @@ popup, focus, and scrolling machinery.
 
 ## Next priorities
 
-1. Build a Date Picker recipe from Calendar and Popover, and add deliberate
-   application-owned data operations over Table. Preserve shared focus and
-   selection behavior instead of duplicating those public foundations.
-2. Add Resizable for application panes and extend scrolling compositions where
-   a real screen requires them. Reuse ScrollArea and existing pointer/viewport
-   infrastructure; virtualization and transcript anchoring remain separate work.
+1. Add deliberate application-owned data operations over Table. Preserve shared
+   focus and selection behavior instead of duplicating those public foundations.
+2. Add Context Menu and Hover Card interaction contracts over shared popup
+   placement and focus. Continue composing real panes with Resizable/ScrollArea;
+   virtualization and transcript anchoring remain separate work.
 3. Publish source-owned presentation recipes alongside those working flows,
    starting with common surfaces, field framing, grouped actions, and empty
    states. Keep palette and sizing decisions outside the behavior layer.

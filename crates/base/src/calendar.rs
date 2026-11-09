@@ -44,6 +44,14 @@ pub enum CalendarEvent {
     Change(NaiveDate),
 }
 
+// Compositions such as DatePicker close after every successful activation,
+// including the already selected date, without duplicating Change events.
+#[derive(Clone, Copy)]
+pub(crate) struct CalendarActivation {
+    pub(crate) date: NaiveDate,
+    pub(crate) changed: bool,
+}
+
 /// Retained single selection and one roving Tab stop for a Gregorian calendar.
 ///
 /// The grid contains six Monday-first weeks, including adjacent-month dates.
@@ -302,12 +310,14 @@ impl CalendarState {
             return;
         }
         self.set_cursor(date, true, window, cx);
-        if self.selected != Some(date) {
+        let changed = self.selected != Some(date);
+        if changed {
             self.selected = Some(date);
             cx.emit(CalendarEvent::Change(date));
             cx.notify();
             window.refresh();
         }
+        cx.emit(CalendarActivation { date, changed });
     }
 
     fn move_days(&mut self, days: i64, window: &mut Window, cx: &mut Context<Self>) {
@@ -348,6 +358,7 @@ impl CalendarState {
 }
 
 impl EventEmitter<CalendarEvent> for CalendarState {}
+impl EventEmitter<CalendarActivation> for CalendarState {}
 
 /// An unstyled keyboard and accessibility grid. Render a header row containing
 /// seven `Role::ColumnHeader` cells, followed by six `Role::Row` containers with

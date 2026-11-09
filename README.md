@@ -8,7 +8,7 @@ Headless separates control behavior from application-owned presentation; the
 examples render native GPUI windows.
 
 This is an early foundation for an independent component ecosystem. It currently
-includes 26 component families and an executable example that gives the same behavior
+includes 28 component families and an executable example that gives the same behavior
 two visual treatments. The source is maintained in this repository, with GPUI
 kept as an exactly pinned rendering dependency.
 
@@ -28,6 +28,7 @@ kept as an exactly pinned rendering dependency.
 | **Select** | Single selection from fixed options, keyboard navigation, disabled options, commit, and focus | Trigger, popup content, and option rendering |
 | **Combobox** | Editable search over fixed options, separate committed selection, keyboard/pointer commit, and draft cancellation on dismissal | Query frame, suggestion surface, result rows, and empty state |
 | **Calendar** | Single date selection, separate focused date, bounded month/year navigation, and a Monday-first grid | Month controls, weekday/date labels, grid layout, and day styling |
+| **DatePicker** | Calendar selection inside Popover, selected-date or retained-cursor initial focus, commit-and-close, dismissal, and disabled state | Formatted trigger, calendar/month controls, and popup surface |
 | **Slider** | One numeric value, bounded steps, keyboard and pointer adjustment, disabled state, and focus | Track, fill, thumb, sizing, and state styling |
 | **Progress** | Controlled percentage or indeterminate progress, accessible name and numeric range | Track, fill, label, and any animation |
 | **Tabs** | Active panel, one tab-list stop, automatic activation, orientation-aware keys, and disabled tabs | Tab-list layout, tab styling, and panel contents |
@@ -42,6 +43,7 @@ kept as an exactly pinned rendering dependency.
 | **Separator** | Semantic or decorative separation, with horizontal/vertical orientation | Length, thickness, color, and spacing |
 | **Table** | Shared fixed/flexible columns, header/body/footer structure, and native row/cell semantics | Width, cell content, typography, borders, and data operations |
 | **ScrollArea** | Native viewport, existing overlay scrollbar, retained offsets, and descendant reveal on enabled axes | Viewport dimensions, content layout, and scrollbar appearance |
+| **Resizable** | Two-pane ratio, pointer/keyboard resizing, fractional limits, retained sizes, and native splitter semantics | Frame size, pane content, divider thickness, and grip styling |
 
 Shared support includes the window root, popup positioning, input infrastructure,
 and opt-in test observations. Internal editing machinery retained for Input is
@@ -51,7 +53,7 @@ The breadth target is the range of screens and interactions supported by
 shadcn/ui. The [component coverage map](docs/component-coverage.md) compares all
 66 entries in its current main catalogue with the actual public scope here.
 It distinguishes behavior, source-owned presentation recipes, and larger
-compositions. Each of the 26 available families has a defined contract; the map
+compositions. Each of the 28 available families has a defined contract; the map
 records its current limits and the work still needed for comparable coverage.
 
 Input provides a small, readable baseline for unset text, caret, and selection
@@ -86,9 +88,11 @@ An editable recording-preset Combobox filters choices while retaining the last
 committed preset. The session-name Field connects its visible label, help text,
 and application-supplied required/error state to the native input. A text Tooltip
 on the existing Edit button explains what the settings screen changes.
-Schedule uses a single-date Calendar and a Table reflecting the retained session
-name, date, and recording preset. The table sits in a horizontal ScrollArea, while
-the form uses a vertical ScrollArea that reveals focused inputs and calendar days.
+Schedule uses a DatePicker composed from Calendar and Popover, and a Table
+reflecting the retained session name, date, and recording preset. A vertical
+Resizable divides shared session notes and the plan table. The table scrolls
+horizontally and vertically as its pane changes size, while the surrounding form
+uses a vertical ScrollArea. Date, notes, and pane ratio survive closing the dialog.
 The example's date bounds are 2026–2027; it does not schedule an actual recording.
 
 ## Layers and source ownership
@@ -120,7 +124,10 @@ multiline editing state. Field projects associated text into that native input's
 semantics. Tooltip reuses Button and GPUI's native tooltip layer while retaining
 hover/focus visibility.
 Calendar composes Button for day activation and uses the already locked Chrono
-date type for Gregorian arithmetic. Table uses shared GPUI column tracks and
+date type for Gregorian arithmetic. DatePicker coordinates that Calendar with
+Popover's focus and dismissal lifecycle; it has no duplicate date value or popup
+engine. Resizable uses GPUI flex layout and native dragging for two retained panes.
+Table uses shared GPUI column tracks and
 native table semantics. ScrollArea composes GPUI's ScrollHandle viewport with the
 retained Scrollbar implementation, without another scrolling engine.
 Appearance belongs in the application. A separately distributed
@@ -139,7 +146,7 @@ primitive and lets keyboard focus leave its contents within the enclosing window
 or dialog. DropdownMenu builds on that lifecycle and closes before dispatching a
 command, so a command can open another surface without losing its new focus.
 The [layout and data guide](docs/layout-and-data.md) explains shared Table columns,
-ScrollArea composition, and their current limits.
+ScrollArea composition, Resizable panes, and their current limits.
 
 ## Run the example
 
@@ -182,7 +189,7 @@ The GPUI snapshot family is pinned to **`=0.3.11`**. Update those pins and
 | `crates/base/examples/two_styles.rs` | Native example and application-owned styles |
 | `docs/form-controls.md` | Form control usage and interaction contracts |
 | `docs/navigation-overlays.md` | Tabs, Accordion, command menus, and composed focus behavior |
-| `docs/layout-and-data.md` | Table structure, shared columns, and ScrollArea composition |
+| `docs/layout-and-data.md` | Table structure, ScrollArea composition, and Resizable panes |
 | `docs/component-coverage.md` | Current shadcn catalogue comparison, supported scope, and next priorities |
 | `Cargo.toml` / `Cargo.lock` | Workspace and matching dependency set |
 

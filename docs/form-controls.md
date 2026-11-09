@@ -3,7 +3,7 @@
 The [native settings example](../crates/base/examples/two_styles.rs) is a complete
 consumer of the public API. Run it in either appearance using the commands in the
 [README](../README.md#run-the-example). It combines Button, Input, Select,
-Textarea, Field, Combobox, Calendar, Checkbox, Switch, RadioGroup, Slider, Progress, Toggle, and ToggleGroup
+Textarea, Field, Combobox, Calendar, DatePicker, Checkbox, Switch, RadioGroup, Slider, Progress, Toggle, and ToggleGroup
 with the navigation and overlay controls,
 without putting appearance in the library. The [navigation and overlay guide](navigation-overlays.md)
 describes its tabs and keyboard-help popover. The [layout and data guide](layout-and-data.md)
@@ -21,6 +21,7 @@ control a stable element ID and an accessible label.
 | Field | Application label, help, requirement, and validation error | Render current metadata around an existing Input, Textarea, or Combobox query; no new input state |
 | Combobox | Retained `Entity<ComboboxState>` | Observe for rendering; `ComboboxEvent::Change` reports a different committed user choice |
 | Calendar | Retained `Entity<CalendarState>` | Observe for rendering; `CalendarEvent::Change` reports a different user-selected date |
+| DatePicker | Retained `Entity<DatePickerState>` composing existing Calendar/Popover state | Observe for date/popup rendering; `DatePickerEvent::Change` runs after a different date commits and the popup closes |
 | Checkbox | Application field of type `CheckboxState` or `bool` | `on_change` reports the next state; store it and call `cx.notify()` |
 | Toggle | Application `bool` | `on_change` requests the next pressed value; render it back with `pressed` |
 | ToggleGroup | Retained `Entity<ToggleGroupState>` | Observe for rendering; `ToggleGroupEvent::Change` reports selected values in item order |
@@ -187,7 +188,7 @@ The application owns grid geometry, weekday names, localized full-date labels,
 selected-day styles, and month navigation buttons. `CalendarDay` defaults to an
 ISO date accessibility label, supports `.accessibility_label(...)`, and accepts
 ordinary GPUI styles plus Button's `.styles(...)` for selected/disabled states.
-See `Demo::schedule` in the native example for the complete composition.
+See `Demo::calendar_content` in the native example for the complete composition.
 
 | Input | Result |
 | --- | --- |
@@ -214,9 +215,73 @@ selection and removes normal Tab entry while preserving the selected date.
 
 This contract covers a single Gregorian date and bounded selection. Range or
 multiple selection, arbitrary disabled-day predicates, locale/week-start
-configuration, clocks, timezone handling, and a composed Date Picker are outside
-the current family. The example demonstrates a retained plan, not a recording
-scheduler.
+configuration, clocks, and timezone handling are outside the current family.
+DatePicker adds a popup composition over this same single-date contract. The
+example demonstrates a retained plan, not a recording scheduler.
+
+## DatePicker
+
+DatePicker connects an existing Calendar to Popover's trigger, placement,
+dismissal, and focus lifecycle. Calendar remains the only owner of the selected
+date. Construct the calendar with its bounds and optional initial value, then
+create the picker once in the same window:
+
+```rust
+let picker = cx.new(|cx| DatePickerState::new(&calendar, window, cx));
+```
+
+Observe the picker for rendering: it observes both its Calendar and Popover, so
+a separate Calendar observation is unnecessary for the same view. Access the
+date with `selected_date(cx)` and the nested date state with `calendar()`.
+Render the Calendar only inside this picker's popup, not simultaneously in a
+second standalone grid.
+
+```rust
+DatePicker::new("recording-date", &picker)
+    .accessibility_label("Choose recording date")
+    .offset(px(6.))
+    .trigger(|button| {
+        button
+            .accessibility_label(format!("Recording date, {formatted_date}"))
+            .child(formatted_date)
+    })
+    .content(calendar_surface)
+```
+
+The application supplies formatted trigger text, the calendar/month controls,
+and the popup's dimensions and appearance. `accessibility_label` names the
+popup; name the Button trigger separately. Ordinary CalendarDay activation is
+enough to finish selection; the application should not duplicate a click-to-close
+handler on every day. Root remains responsible for normal Tab traversal and an
+enclosing Dialog's focus containment.
+
+| Action | Result |
+| --- | --- |
+| Open with a selected date | Reset navigation to that date and focus its current grid slot |
+| Open without selection | Retain and focus the Calendar's last navigation date |
+| Navigate days/months | Change navigation without changing the committed date |
+| Click / Enter / Space on an enabled day | Select it, close, and restore the trigger; reselecting the same date also closes |
+| Escape | Close the picker before an enclosing Dialog, retaining selection |
+| Tab / Shift+Tab past popup contents | Close and continue from the trigger's position |
+| Click outside | Close while preserving the outside control's new focus |
+
+The day focus is resolved immediately before opening because month changes can
+move the selected date to a different focus slot. `DatePickerEvent::Change` is
+emitted only for a different user-selected value and only after the popup closes.
+Subscribers can therefore focus another control or open a new surface without
+the finishing picker taking focus back. Public Calendar Change behavior remains
+deduplicated; the composition also observes successful same-date activation.
+
+`open` and `close` provide imperative lifecycle control. `set_disabled` closes
+an open popup and disables both its trigger and Calendar. Use this method to
+coordinate disabled state instead of modifying the nested calendar independently.
+`set_selected_date(Some(date), window, cx)` validates the bounds, closes the
+popup, and changes the value without emitting Change. Invalid dates leave the
+picker unchanged; `None` clears selection and retains Calendar navigation.
+
+This picker supports one date and an application-formatted Button trigger. It
+does not parse text, choose date ranges/multiple dates, supply presets, or add
+locale/timezone rules beyond the Calendar contract.
 
 ## Checkbox and Switch
 
