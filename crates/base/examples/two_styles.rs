@@ -1,6 +1,7 @@
 //! The same headless controls with two application-owned presentations.
 //! Run with `compact` (the default) or `settings`.
 
+use chrono::Datelike as _;
 use gpui::{
     AppContext as _, Axis, Context, Entity, FocusHandle, Focusable as _, FontWeight, Hsla,
     InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Rems, Render, Role,
@@ -9,15 +10,17 @@ use gpui::{
 };
 use gpui_design::{
     Accordion, AccordionHeader, AccordionItem, AccordionPanel, AccordionState, AlertDialog, Button,
-    Checkbox, CheckboxState, Collapsible, CollapsibleContent, CollapsibleState, CollapsibleTrigger,
-    Combobox, ComboboxList, ComboboxOption, ComboboxState, Command, CommandEvent, CommandInput,
-    CommandList, CommandOption, CommandState, Dialog, DialogBackdrop, DialogClose,
-    DialogDescription, DialogPopup, DialogState, DialogTitle, DropdownMenu, DropdownMenuEvent,
-    DropdownMenuItem, DropdownMenuOption, DropdownMenuState, Field, Input, InputBase, Popover,
-    PopoverState, Progress, RadioGroup, RadioGroupState, RadioItem, RadioOption, SearchItem,
+    Calendar, CalendarDay, CalendarState, Checkbox, CheckboxState, Collapsible, CollapsibleContent,
+    CollapsibleState, CollapsibleTrigger, Combobox, ComboboxList, ComboboxOption, ComboboxState,
+    Command, CommandEvent, CommandInput, CommandList, CommandOption, CommandState, Dialog,
+    DialogBackdrop, DialogClose, DialogDescription, DialogPopup, DialogState, DialogTitle,
+    DropdownMenu, DropdownMenuEvent, DropdownMenuItem, DropdownMenuOption, DropdownMenuState,
+    Field, Input, InputBase, NaiveDate, Popover, PopoverState, Progress, RadioGroup,
+    RadioGroupState, RadioItem, RadioOption, ScrollArea, ScrollbarAxis, ScrollbarMode, SearchItem,
     Select, SelectItem, SelectOption, SelectState, Separator, Slider, SliderState, Switch, Tab,
-    TabItem, TabList, TabPanel, TabsState, Textarea, TextareaState, Toggle, ToggleGroup,
-    ToggleGroupState, ToggleItem, ToggleOption, Tooltip, TooltipState,
+    TabItem, TabList, TabPanel, Table, TableCaption, TableCell, TableColumn, TableRow, TabsState,
+    TestTextExt as _, Textarea, TextareaState, Toggle, ToggleGroup, ToggleGroupState, ToggleItem,
+    ToggleOption, Tooltip, TooltipState,
     input::{InputAccessibility, InputEditorStyle, InputState},
 };
 
@@ -98,6 +101,8 @@ pub(crate) struct Demo {
     pub(crate) preset: Entity<ComboboxState>,
     pub(crate) edit_hint: Entity<TooltipState>,
     fields_scroll: ScrollHandle,
+    pub(crate) calendar: Entity<CalendarState>,
+    pub(crate) schedule_scroll: ScrollHandle,
     pub(crate) commands: Entity<CommandState>,
     pub(crate) command_dialog: Entity<DialogState>,
     pub(crate) dialog: Entity<DialogState>,
@@ -211,10 +216,20 @@ impl Demo {
                     TabItem::new("preferences", "Preferences"),
                     TabItem::new("sync", "Sync (unavailable)").disabled(true),
                     TabItem::new("help", "Help"),
+                    TabItem::new("schedule", "Schedule"),
                 ],
                 cx,
             )
             .default_value("preferences")
+        });
+        let calendar = cx.new(|cx| {
+            let initial = NaiveDate::from_ymd_opt(2026, 11, 9).unwrap();
+            CalendarState::new(initial, cx)
+                .bounds(
+                    NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+                    NaiveDate::from_ymd_opt(2027, 12, 31).unwrap(),
+                )
+                .default_value(initial)
         });
         let help = cx.new(PopoverState::new);
         let actions = cx.new(|cx| {
@@ -268,6 +283,7 @@ impl Demo {
             cx.observe(&select, |_, _, cx| cx.notify()),
             cx.observe(&stroke, |_, _, cx| cx.notify()),
             cx.observe(&tabs, |_, _, cx| cx.notify()),
+            cx.observe(&calendar, |_, _, cx| cx.notify()),
             cx.observe(&help, |_, _, cx| cx.notify()),
             cx.observe(&actions, |_, _, cx| cx.notify()),
             cx.observe(&accordion, |_, _, cx| cx.notify()),
@@ -294,6 +310,8 @@ impl Demo {
             preset,
             edit_hint,
             fields_scroll: ScrollHandle::new(),
+            calendar,
+            schedule_scroll: ScrollHandle::new(),
             commands,
             command_dialog,
             dialog,
@@ -354,6 +372,179 @@ impl Demo {
             .text_color(palette.accent_foreground)
             .hover(|style| style.opacity(0.85))
             .focus_visible(|style| style.border_color(palette.foreground))
+    }
+
+    fn schedule(&self, palette: Palette, cx: &Context<Self>) -> impl IntoElement + use<> {
+        let state = self.calendar.read(cx);
+        let month = state.month();
+        let selected = state.selected_date();
+        let date_label = selected
+            .map(|date| date.format("%Y-%m-%d").to_string())
+            .unwrap_or_else(|| "Not scheduled".to_string());
+        let calendar = Calendar::new("recording-calendar", &self.calendar)
+            .accessibility_label(format!("Recording date, {}", month.format("%B %Y")))
+            .flex()
+            .flex_col()
+            .gap_1()
+            .child(
+                div()
+                    .id("weekdays")
+                    .role(Role::Row)
+                    .aria_row_index(0)
+                    .flex()
+                    .children(
+                        ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+                            .into_iter()
+                            .enumerate()
+                            .map(|(column, day)| {
+                                div()
+                                    .id(("weekday", column))
+                                    .role(Role::ColumnHeader)
+                                    .aria_column_index(column)
+                                    .flex_1()
+                                    .min_w_0()
+                                    .text_center()
+                                    .text_sm()
+                                    .text_color(palette.muted)
+                                    .child(day)
+                            }),
+                    ),
+            )
+            .children(state.days().chunks(7).enumerate().map(|(row, week)| {
+                div()
+                    .id(("week", row))
+                    .role(Role::Row)
+                    .aria_row_index(row + 1)
+                    .flex()
+                    .children(week.iter().map(|&date| {
+                        CalendarDay::new(&self.calendar, date)
+                            .accessibility_label(date.format("%A, %B %-d, %Y").to_string())
+                            .flex_1()
+                            .min_w_0()
+                            .h(palette.control_height)
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .border_1()
+                            .border_color(palette.surface)
+                            .rounded(palette.radius)
+                            .text_color(if date.month() == month.month() {
+                                palette.foreground
+                            } else {
+                                palette.muted
+                            })
+                            .hover(|style| style.bg(palette.highlight))
+                            .focus_visible(|style| style.border_color(palette.accent))
+                            .styles(|styles| styles.disabled(|style| style.opacity(0.35)))
+                            .when(selected == Some(date), |day| {
+                                day.bg(palette.accent).text_color(palette.accent_foreground)
+                            })
+                            .child(date.day().to_string())
+                    }))
+            }));
+        let previous = self.calendar.clone();
+        let next = self.calendar.clone();
+        let month_controls = div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap_2()
+            .child(Self::button(
+                palette,
+                Button::new("previous-month")
+                    .accessibility_label("Previous month")
+                    .disabled(!state.can_previous_month())
+                    .on_click(move |_, window, cx| {
+                        previous.update(cx, |state, cx| state.previous_month(window, cx));
+                    })
+                    .child("‹"),
+            ))
+            .child(div().child(month.format("%B %Y").to_string()))
+            .child(Self::button(
+                palette,
+                Button::new("next-month")
+                    .accessibility_label("Next month")
+                    .disabled(!state.can_next_month())
+                    .on_click(move |_, window, cx| {
+                        next.update(cx, |state, cx| state.next_month(window, cx));
+                    })
+                    .child("›"),
+            ));
+        let preset = self
+            .preset
+            .read(cx)
+            .selected_item(cx)
+            .map(|item| item.label().clone())
+            .unwrap_or_else(|| "Choose a preset".into());
+        let plan = Table::new(
+            "recording-plan",
+            [
+                TableColumn::fixed(px(180.)),
+                TableColumn::fixed(px(130.)),
+                TableColumn::fixed(px(180.)),
+            ],
+        )
+        .accessibility_label("Recording plan")
+        .w(px(490.))
+        .caption(
+            TableCaption::new("recording-plan-caption")
+                .py_2()
+                .text_sm()
+                .text_color(palette.muted)
+                .child("The plan follows the retained form values."),
+        )
+        .header(
+            TableRow::new("recording-plan-header")
+                .bg(palette.highlight)
+                .cell(
+                    TableCell::new("plan-session-heading")
+                        .p_2()
+                        .child("Session"),
+                )
+                .cell(TableCell::new("plan-date-heading").p_2().child("Date"))
+                .cell(TableCell::new("plan-preset-heading").p_2().child("Preset")),
+        )
+        .row(
+            TableRow::new("recording-plan-session")
+                .border_b_1()
+                .border_color(palette.border)
+                .cell(
+                    TableCell::new("plan-session")
+                        .row_header(true)
+                        .p_2()
+                        .child(self.input.read(cx).value()),
+                )
+                .cell(
+                    TableCell::new("plan-date")
+                        .p_2()
+                        .child(date_label.clone().test_text(date_label)),
+                )
+                .cell(TableCell::new("plan-preset").p_2().child(preset)),
+        );
+        div()
+            .flex()
+            .flex_col()
+            .gap(palette.gap)
+            .child(month_controls)
+            .child(calendar)
+            .child(
+                div().text_sm().text_color(palette.muted).child(
+                    "Arrows move by day or week. Page Up/Down changes month. Enter selects.",
+                ),
+            )
+            .child(
+                ScrollArea::new("recording-plan-scroll", &self.schedule_scroll)
+                    .axis(ScrollbarAxis::Horizontal)
+                    .accessibility_label("Recording plan columns")
+                    .scrollbar_mode(ScrollbarMode::Always)
+                    .scrollbar_styles(|styles| {
+                        styles.thumb(|thumb| thumb.bg(palette.muted).radius(px(3.)))
+                    })
+                    .w_full()
+                    .min_w_0()
+                    .content_styles(|style| style.pb(px(16.)))
+                    .child(plan),
+            )
     }
 }
 
@@ -769,8 +960,14 @@ impl Render for Demo {
                     .flex_col()
                     .gap(palette.gap)
                     .child(help_sections),
+            )
+            .child(
+                TabPanel::new(&self.tabs, 3)
+                    .flex()
+                    .flex_col()
+                    .gap(palette.gap)
+                    .child(self.schedule(palette, cx)),
             );
-        let fields_scroll = self.fields_scroll.clone();
         let popup = DialogPopup::new()
             .w(palette.dialog_width)
             .max_h(window.viewport_size().height - px(32.))
@@ -790,33 +987,13 @@ impl Render for Demo {
                     .child("Choose the session's drawing and toolbar settings."),
             )
             .child(
-                div()
-                    .on_children_prepainted(move |_, window, _| {
-                        // Input already requests reveal when focus moves. Apply
-                        // that request to this application's scrollable form.
-                        let Some(request) = window.take_autoscroll() else {
-                            return;
-                        };
-                        let viewport = fields_scroll.bounds();
-                        let delta = if request.top() < viewport.top() {
-                            viewport.top() - request.top()
-                        } else if request.bottom() > viewport.bottom() {
-                            viewport.bottom() - request.bottom()
-                        } else {
-                            return;
-                        };
-                        let mut offset = fields_scroll.offset();
-                        offset.y = (offset.y + delta).clamp(-fields_scroll.max_offset().y, px(0.));
-                        fields_scroll.set_offset(offset);
-                        window.request_animation_frame();
+                ScrollArea::new("settings-fields", &self.fields_scroll)
+                    .accessibility_label("Session settings fields")
+                    .scrollbar_styles(|styles| {
+                        styles.thumb(|thumb| thumb.bg(palette.muted).radius(px(3.)))
                     })
-                    .id("settings-fields")
                     .min_h_0()
-                    .overflow_y_scroll()
-                    .track_scroll(&self.fields_scroll)
-                    .flex()
-                    .flex_col()
-                    .gap(palette.gap)
+                    .content_styles(|style| style.flex().flex_col().gap(palette.gap))
                     .child(name_field)
                     .child(
                         div()
@@ -1225,6 +1402,14 @@ impl Render for Demo {
                             .text_color(palette.muted)
                             .child(format!("Preset: {preset_label}")),
                     )
+                    .child(div().text_color(palette.muted).child(format!(
+                        "Recording date: {}",
+                        self.calendar
+                            .read(cx)
+                            .selected_date()
+                            .map(|date| date.format("%Y-%m-%d").to_string())
+                            .unwrap_or_else(|| "Not scheduled".to_string())
+                    )))
                     .child(
                         Tooltip::new(
                             "edit-session",

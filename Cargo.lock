@@ -2075,6 +2075,7 @@ dependencies = [
  "aho-corasick",
  "anyhow",
  "ashpd",
+ "chrono",
  "futures",
  "gpui-pre",
  "gpui-pre-macros",

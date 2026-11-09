@@ -3,10 +3,11 @@
 The [native settings example](../crates/base/examples/two_styles.rs) is a complete
 consumer of the public API. Run it in either appearance using the commands in the
 [README](../README.md#run-the-example). It combines Button, Input, Select,
-Textarea, Field, Combobox, Checkbox, Switch, RadioGroup, Slider, Progress, Toggle, and ToggleGroup
+Textarea, Field, Combobox, Calendar, Checkbox, Switch, RadioGroup, Slider, Progress, Toggle, and ToggleGroup
 with the navigation and overlay controls,
 without putting appearance in the library. The [navigation and overlay guide](navigation-overlays.md)
-describes its Preferences/Help tabs and keyboard-help popover.
+describes its tabs and keyboard-help popover. The [layout and data guide](layout-and-data.md)
+covers the Schedule table and the form's ScrollArea composition.
 
 Call `gpui_design::init(cx)` once and host window content in `gpui_design::Root`.
 Root supplies Tab traversal and contains it inside an open Dialog. Give each
@@ -19,6 +20,7 @@ control a stable element ID and an accessible label.
 | Textarea | Retained `Entity<TextareaState>` | Observe for surrounding presentation; the existing Input events report edits |
 | Field | Application label, help, requirement, and validation error | Render current metadata around an existing Input, Textarea, or Combobox query; no new input state |
 | Combobox | Retained `Entity<ComboboxState>` | Observe for rendering; `ComboboxEvent::Change` reports a different committed user choice |
+| Calendar | Retained `Entity<CalendarState>` | Observe for rendering; `CalendarEvent::Change` reports a different user-selected date |
 | Checkbox | Application field of type `CheckboxState` or `bool` | `on_change` reports the next state; store it and call `cx.notify()` |
 | Toggle | Application `bool` | `on_change` requests the next pressed value; render it back with `pressed` |
 | ToggleGroup | Retained `Entity<ToggleGroupState>` | Observe for rendering; `ToggleGroupEvent::Change` reports selected values in item order |
@@ -148,6 +150,73 @@ The example's recording preset uses this control inside the settings Dialog.
 The form responds to Input's existing reveal requests so keyboard focus can
 reach fields below its scrolling viewport. Closing and reopening the Dialog
 preserves the committed preset.
+
+## Calendar
+
+`CalendarState` retains a single optional `NaiveDate`, the focused date, and the
+visible month. `NaiveDate` is re-exported from Chrono; no second date model or
+timezone conversion is introduced. Create the state once:
+
+```rust
+let calendar = cx.new(|cx| {
+    let initial = NaiveDate::from_ymd_opt(2026, 11, 9).unwrap();
+    CalendarState::new(initial, cx)
+        .bounds(
+            NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+            NaiveDate::from_ymd_opt(2027, 12, 31).unwrap(),
+        )
+        .default_value(initial)
+});
+```
+
+Without `default_value`, selection starts empty. Default bounds cover years
+1–9999; `bounds` narrows the inclusive selectable range before mounting. The
+grid exposes six complete Monday-first weeks through `days()`. Adjacent-month
+dates remain visible; dates outside the configured bounds are disabled.
+
+Render `Calendar::new(id, &calendar)` with an accessible month/year label. Use
+ordinary identified `div().id(...).role(Role::Row)` containers for one seven-cell weekday header
+and six date rows. Weekday headings use `Role::ColumnHeader` with zero-based
+column indices. Each `CalendarDay::new(&calendar, date)` composes Button's
+activation/focus behavior and supplies its native GridCell role, selected state,
+disabled state, and row/column indices. The grid declares seven rows including
+the weekday header. Render each date returned by `days()` exactly once, in order.
+Keep each day's children non-interactive.
+
+The application owns grid geometry, weekday names, localized full-date labels,
+selected-day styles, and month navigation buttons. `CalendarDay` defaults to an
+ISO date accessibility label, supports `.accessibility_label(...)`, and accepts
+ordinary GPUI styles plus Button's `.styles(...)` for selected/disabled states.
+See `Demo::schedule` in the native example for the complete composition.
+
+| Input | Result |
+| --- | --- |
+| Tab / Shift+Tab | Enter the grid at its one enabled day stop, or leave it |
+| Left / Right | Move focus by one day |
+| Up / Down | Move focus by one week |
+| Home / End | Move to Monday / Sunday of the current week |
+| Page Up / Page Down | Move by one month, clamping month-end dates |
+| Shift+Page Up / Shift+Page Down | Move by one year |
+| Enter / Space / click | Commit the enabled date; emit Change only if it changed |
+
+Keyboard movement crosses months and clamps at selectable bounds without
+changing the committed value. A newly focused day requests native reveal, which
+a containing ScrollArea can satisfy. Month buttons call `previous_month` or
+`next_month`, and use `can_previous_month`/`can_next_month` for disabled state.
+Those methods retain an external navigation button's focus. Read `focus_handle()`
+when explicitly moving focus into the calendar; its grid slot can change as the
+visible month changes, so do not cache that handle as a permanent date identity.
+
+`set_selected_date(Some(date), window, cx)` updates selection and visible month
+without a user event, and rejects out-of-range values. Passing `None` clears
+selection while retaining navigation. `set_disabled` blocks user navigation and
+selection and removes normal Tab entry while preserving the selected date.
+
+This contract covers a single Gregorian date and bounded selection. Range or
+multiple selection, arbitrary disabled-day predicates, locale/week-start
+configuration, clocks, timezone handling, and a composed Date Picker are outside
+the current family. The example demonstrates a retained plan, not a recording
+scheduler.
 
 ## Checkbox and Switch
 

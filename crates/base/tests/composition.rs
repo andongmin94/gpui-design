@@ -12,11 +12,12 @@ use std::{
 
 use gpui::{
     AppContext as _, Entity, EntityInputHandler as _, Focusable as _, KeyDownEvent, KeyUpEvent,
-    Keystroke, Modifiers, Role, TestAppContext, VisualTestContext,
+    Keystroke, Modifiers, Role, ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext, point,
+    px,
 };
 use gpui_design::{
-    ComboboxEvent, CommandEvent, DropdownMenuEvent, RadioGroupEvent, Root, SelectEvent, TabsEvent,
-    test_support,
+    ComboboxEvent, CommandEvent, DropdownMenuEvent, NaiveDate, RadioGroupEvent, Root, SelectEvent,
+    TabsEvent, test_support,
 };
 use two_styles::{Appearance, Demo};
 
@@ -608,7 +609,7 @@ fn settings_tabs_and_popover_preserve_nested_focus(cx: &mut TestAppContext) {
     });
 
     // Removing the parent surface must also finish the retained popup lifecycle.
-    cx.simulate_keystrokes("shift-tab end tab tab");
+    cx.simulate_keystrokes("shift-tab right tab tab");
     draw(cx);
     activate_key(cx, "enter");
     cx.update(|window, cx| {
@@ -701,7 +702,7 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
         "native key-up must not execute a command twice"
     );
 
-    cx.simulate_keystrokes("tab tab end tab");
+    cx.simulate_keystrokes("tab tab right tab");
     draw(cx);
     cx.update(|window, cx| {
         let accordion = demo.read(cx).accordion.read(cx);
@@ -1309,6 +1310,122 @@ fn field_feedback_and_search_selection_work_inside_the_dialog(cx: &mut TestAppCo
         );
     });
     assert_eq!(changes.borrow().len(), 1);
+}
+
+#[gpui::test]
+fn calendar_selection_updates_a_scrollable_table_inside_the_dialog(cx: &mut TestAppContext) {
+    let (cx, demo) = harness(cx, Appearance::Compact);
+    open_dialog(cx, &demo);
+    cx.simulate_keystrokes("tab tab end tab tab tab");
+    draw(cx);
+    draw(cx);
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        assert_eq!(demo.tabs.read(cx).selected_index(), Some(3));
+        let calendar = demo.calendar.read(cx);
+        assert!(calendar.focus_handle().is_focused(window));
+        assert_eq!(
+            calendar.selected_date(),
+            NaiveDate::from_ymd_opt(2026, 11, 9)
+        );
+        let day = test_support::snapshots(window)
+            .into_iter()
+            .find(|item| item.role() == Some(Role::GridCell) && item.focused() == Some(true))
+            .unwrap();
+        assert!(day.visible(), "entering the grid reveals the focused date");
+    });
+
+    cx.simulate_keystrokes("right pagedown");
+    draw(cx);
+    draw(cx);
+    cx.update(|window, cx| {
+        let calendar = demo.read(cx).calendar.read(cx);
+        assert_eq!(
+            calendar.focused_date(),
+            NaiveDate::from_ymd_opt(2026, 12, 10).unwrap()
+        );
+        assert_eq!(
+            calendar.selected_date(),
+            NaiveDate::from_ymd_opt(2026, 11, 9)
+        );
+        let grid = test_support::find(window, &[], &"recording-calendar".into()).unwrap();
+        assert_eq!(grid.role(), Some(Role::Grid));
+        assert_eq!(grid.label(), Some("Recording date, December 2026"));
+    });
+    activate_key(cx, "enter");
+    draw(cx);
+    let fields = cx.update(|window, cx| {
+        assert_eq!(
+            demo.read(cx).calendar.read(cx).selected_date(),
+            NaiveDate::from_ymd_opt(2026, 12, 10)
+        );
+        test_support::find(window, &[], &"settings-fields".into())
+            .unwrap()
+            .bounds()
+            .center()
+    });
+    cx.simulate_event(ScrollEvent {
+        position: fields,
+        delta: ScrollDelta::Pixels(point(px(0.), px(-800.))),
+        ..Default::default()
+    });
+    draw(cx);
+    let table_viewport = cx.update(|window, cx| {
+        let table = test_support::find(window, &[], &"recording-plan".into()).unwrap();
+        assert_eq!(table.role(), Some(Role::Table));
+        assert_eq!(table.label(), Some("Recording plan"));
+        assert_eq!(
+            test_support::find(window, &[], &"plan-date-heading".into())
+                .unwrap()
+                .role(),
+            Some(Role::ColumnHeader)
+        );
+        assert_eq!(
+            test_support::find(window, &[], &"plan-session".into())
+                .unwrap()
+                .role(),
+            Some(Role::RowHeader)
+        );
+        assert!(test_support::texts(window).iter().any(|text| {
+            text.path().contains(&"plan-date".into()) && text.text() == "2026-12-10"
+        }));
+        let viewport = test_support::find(window, &[], &"recording-plan-scroll".into()).unwrap();
+        assert_eq!(viewport.role(), Some(Role::ScrollView));
+        assert!(viewport.visible());
+        assert!(demo.read(cx).schedule_scroll.max_offset().x > px(0.));
+        viewport.bounds().center()
+    });
+    cx.simulate_event(ScrollEvent {
+        position: table_viewport,
+        delta: ScrollDelta::Pixels(point(px(-120.), px(0.))),
+        ..Default::default()
+    });
+    draw(cx);
+    cx.update(|_, cx| {
+        assert!(demo.read(cx).schedule_scroll.offset().x < px(0.));
+    });
+
+    // Calendar navigation never closes its parent. Escape does, and the date
+    // survives mounting the grid and table again when the dialog reopens.
+    cx.simulate_keystrokes("escape");
+    draw(cx);
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        assert!(!demo.dialog.read(cx).is_open());
+        assert!(demo.edit_hint.read(cx).focus_handle().is_focused(window));
+    });
+    open_dialog(cx, &demo);
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        assert_eq!(demo.tabs.read(cx).selected_index(), Some(3));
+        assert_eq!(
+            demo.calendar.read(cx).selected_date(),
+            NaiveDate::from_ymd_opt(2026, 12, 10)
+        );
+        assert!(test_support::texts(window).iter().any(|text| {
+            text.path().contains(&"plan-date".into()) && text.text() == "2026-12-10"
+        }));
+    });
 }
 
 #[gpui::test]

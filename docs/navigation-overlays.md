@@ -7,7 +7,7 @@ preview reset through AlertDialog. A Collapsible holds the preview controls.
 Search commands opens a Command query and result list inside Dialog; both menus
 dispatch the same application actions. Separator provides semantic division
 between content regions, and the settings form includes retained multiline notes.
-Preferences and Help tabs demonstrate active panels; Help contains an Accordion, and its
+Preferences, Help, and Schedule tabs demonstrate active panels; Help contains an Accordion, and its
 keyboard section opens a guide in a non-modal Popover. All styles live in the
 example.
 

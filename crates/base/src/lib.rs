@@ -13,6 +13,7 @@ mod alert_dialog;
 mod animation;
 mod auto_scroll;
 mod button;
+mod calendar;
 mod checkbox;
 mod collapsible;
 mod combobox;
@@ -38,6 +39,7 @@ mod progress;
 mod radio_group;
 mod reduce_motion;
 mod root;
+mod scroll_area;
 mod scroll_bounce;
 mod scrollbar;
 mod select;
@@ -46,6 +48,7 @@ mod slider;
 mod state_style;
 mod styled;
 mod switch;
+mod table;
 mod tabs;
 mod text_boundary;
 mod theme;
@@ -60,6 +63,7 @@ pub use accordion::{
 pub use alert_dialog::AlertDialog;
 pub(crate) use auto_scroll::AutoScroll;
 pub use button::{Button, ButtonStyles};
+pub use calendar::{Calendar, CalendarDay, CalendarEvent, CalendarState, NaiveDate};
 pub use checkbox::{Checkbox, CheckboxState, CheckboxStyles};
 pub use collapsible::{
     Collapsible, CollapsibleContent, CollapsibleEvent, CollapsibleState, CollapsibleTrigger,
@@ -99,6 +103,7 @@ pub use progress::Progress;
 pub use radio_group::{RadioGroup, RadioGroupEvent, RadioGroupState, RadioItem, RadioOption};
 pub use reduce_motion::apply_system_reduce_motion;
 pub use root::Root;
+pub use scroll_area::ScrollArea;
 pub use scroll_bounce::{ScrollBounce, ScrollBounceMotion};
 pub use scrollbar::{
     Scrollbar, ScrollbarAxis, ScrollbarEntrance, ScrollbarHandle, ScrollbarMode, ScrollbarMotion,
@@ -112,6 +117,7 @@ pub use state_style::StateStyle;
 pub use styled::styled_ext_reflection_methods;
 pub use styled::{RoleOverride, StyledExt, box_shadow, h_flex, v_flex};
 pub use switch::{Switch, SwitchStyles};
+pub use table::{Table, TableCaption, TableCell, TableColumn, TableRow};
 pub use tabs::{Tab, TabItem, TabList, TabPanel, TabsEvent, TabsState};
 pub use theme::{InputColors, ScrollbarTheme, Theme, ThemeAppearance};
 pub use toggle::Toggle;
@@ -133,6 +139,7 @@ pub fn init(cx: &mut App) {
     GlobalState::init(cx);
     reduce_motion::init(cx);
     accordion::init(cx);
+    calendar::init(cx);
     dialog::init(cx);
     dropdown_menu::init(cx);
     focus_trap::init(cx);
