@@ -6,9 +6,9 @@ Its main catalogue contains **66 entries**, each listed once below. The separate
 AI Elements catalogue is outside this comparison; conversation components already
 in the main catalogue remain included.
 
-GPUI Design currently documents **30 public library families and eleven copyable
-presentation/composition recipes**, covering **41 catalogue entries** within the scopes below.
-This is not 41/66 feature parity: a family can exist with a deliberately limited
+GPUI Design currently documents **31 public library families and twelve copyable
+presentation/composition recipes**, covering **43 catalogue entries** within the scopes below.
+This is not 43/66 feature parity: a family can exist with a deliberately limited
 contract, and several shadcn entries describe combinations of other parts.
 These counts do not measure performance, accessibility conformance, or completion
 of native desktop validation.
@@ -41,6 +41,7 @@ in the [form guide](form-controls.md),
 | --- | --- | --- |
 | Accordion | Available | Fixed items, one open section, independent header navigation, and active-only panels. |
 | Alert Dialog | Available | `AlertDialog` reuses Dialog state and focus; backdrop dismissal is blocked and confirmation belongs to the application. |
+| Breadcrumb | Available | Named native Navigation, List, and ListItem structure with `aria_current(Page)` on the current item. The application supplies its path, ancestor Buttons, navigation callbacks, separators, and styling; no routing or focus controller. |
 | Button | Available | Native pointer/keyboard activation, disabled state, focus, and accessible naming; content and styles belong to the application. |
 | Checkbox | Available | Controlled checked/unchecked/mixed state; the application supplies its indicator and label presentation. |
 | Collapsible | Available | One retained disclosure, Button trigger, active-only content, and focus handling when content closes. |
@@ -88,13 +89,12 @@ consumer's palette, and are composed into the native two-style example.
 | Aspect Ratio | Pending | No documented proportion-preserving media recipe. |
 | Avatar | Pending | Image/fallback presentation and its loading-state composition are not provided. |
 | Badge | Recipe | Static named label with secondary/accent appearances. No click, toggle, or automatic live announcement. |
-| Breadcrumb | Pending | Navigation hierarchy, current-location semantics, and action wiring need a recipe. |
 | Button Group | Recipe | Connected horizontal/vertical buttons, shared border, decorative separators, and optional static text. Existing Button actions, disabled states, and individual Tab stops are preserved; no roving selection model. |
 | Card | Recipe | Named region, level-two heading, description, header action, content, and footer slots. Layout and palette belong to the application; no card focus stop or state controller. |
 | Empty | Recipe | Named static group with heading, description, optional media, and supplied actions. The command-search example clears the query and restores input focus through its existing state. No loading controller or automatic live announcement. |
 | Input Group | Recipe | Shared frame for an existing InputBase, CommandInput, or other supplied control, leading/trailing addons, horizontal/vertical arrangement, and focus/error presentation. Native editing, Field metadata, addon actions, and disabled policy remain with the supplied controls and application. No separate editor or focus controller. |
 | Item | Recipe | Named row with a title, description, and supplied trailing action. No whole-row activation, selection, media/header/footer slots, or list controller. |
-| Kbd | Pending | Keyboard shortcut text is application content without a reusable presentation recipe. |
+| Kbd | Recipe | Static named keycaps with readable-label overrides for symbols and `+`-joined combinations. No focus stop, shortcut registration, event dispatch, or automatic platform-glyph conversion. |
 | Pagination | Recipe | Controlled previous/next Buttons, current-page text, named navigation, and zero/first/last-page boundaries. No numbered page links, ellipsis, routing, or data loading. |
 | Sheet | Pending | Dialog provides modal behavior; edge placement and sheet presentation are not yet offered. |
 | Skeleton | Recipe | Static decorative placeholder with application-controlled width, height, rounding, and color. No focus stop, native role/name, shimmer, or loading state. |
@@ -133,8 +133,8 @@ popup, focus, and scrolling machinery.
    typed ordering or row selection. Preserve shared focus and activation behavior
    instead of duplicating those public foundations.
 2. Extend the source-owned recipe set alongside working flows, including
-   navigation and loading presentation. Keep palette and sizing decisions
-   outside the behavior layer.
+   media presentation and larger navigation compositions. Keep palette and sizing
+   decisions outside the behavior layer.
 3. Extend menu composition where real screens need it, starting with checked
    commands and submenus. Continue composing panes with Resizable/ScrollArea;
    virtualization and transcript anchoring remain separate work.

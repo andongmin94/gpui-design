@@ -9,13 +9,69 @@ its ordinary settings action. A Collapsible holds the preview controls.
 Search commands opens a Command query and result list inside Dialog; both menus
 dispatch the same application actions. Separator provides semantic division
 between content regions, and the settings form includes retained multiline notes.
-Preferences, Help, and Schedule tabs demonstrate active panels; Help contains an Accordion, and its
-keyboard section opens a guide in a non-modal Popover. All styles live in the
-example.
+Preferences, Help, Schedule, and Presets tabs demonstrate active panels; Help
+contains an Accordion, and its keyboard section opens a guide in a non-modal
+Popover. Breadcrumb shows that guide's location, while the application-owned
+[Kbd recipe](presentation-recipes.md#kbd) displays the existing keyboard controls.
+All styles live in the example.
 
 Call `gpui_design::init(cx)` and host the window in `gpui_design::Root`. Keep the
 state entities and their observation subscriptions in your view. The example
 shows the complete setup and application-owned styling.
+
+## Breadcrumb
+
+The family supplies three structural elements, each with ordinary `Styled` and
+`ParentElement` support:
+
+| Part | Native contract | Application responsibility |
+| --- | --- | --- |
+| `Breadcrumb::new(id)` | Navigation landmark, named `Breadcrumb` by default | Use `.accessibility_label(...)` to describe or localize the path |
+| `BreadcrumbList::new(id)` | List in supplied child order | Render items in path order and choose direction, wrapping, and spacing |
+| `BreadcrumbItem::new(id)` | ListItem; `.current(true)` adds native `aria_current(Page)` | Mark the current item and supply each location's text or action |
+
+Compose ordinary Button controls for ancestors and native text for the current
+location. The structure creates no focus stop, selected value, navigation event,
+or router. The supplied Buttons retain their usual pointer, Enter/Space, and Tab
+behavior. Each application callback chooses the destination and any focus change.
+
+```rust,ignore
+Breadcrumb::new("keyboard-guide-breadcrumb")
+    .accessibility_label("Keyboard guide location")
+    .child(
+        BreadcrumbList::new("keyboard-guide-path")
+            .flex()
+            .items_center()
+            .gap_1()
+            .child(BreadcrumbItem::new("settings-location").child(settings_button))
+            .child(BreadcrumbItem::new("help-location").child(help_button))
+            .child(
+                BreadcrumbItem::new("guide-location")
+                    .current(true)
+                    .child(gpui::text!(id = "keyboard-guide-current-text", "Keyboard guide")),
+            ),
+    )
+```
+
+`gpui::text!` provides native text semantics for the noninteractive current
+location. Plain `&str` or `SharedString` children draw text without their own
+native role; the path uses raw text for its decorative `›` separators.
+The ancestor Buttons already provide their accessible names. Separators, path
+contents, colors, typography, and layout remain application-owned.
+
+The example renders `Session settings > Help > Keyboard guide` inside the
+existing Help Popover. Session settings first closes the Popover, then focuses
+the existing Preferences tab at index zero; Tabs' automatic activation selects
+that panel. Help closes the Popover and returns focus to its trigger while
+keeping Help selected. Keyboard guide is the current, noninteractive final item.
+These callbacks use the existing Popover and Tabs state instead of a second
+navigation model.
+
+Set `.current(true)` only on the current path item. The default false value
+omits current-page metadata; it does not disable or change the behavior of
+supplied children. The native property is AccessKit's `AriaCurrent::Page` on the
+ListItem itself. That contract does not establish how a particular desktop
+screen reader announces the path.
 
 ## Tabs
 
@@ -500,6 +556,11 @@ The existing flows also exercise keyboard and pointer context-menu commands
 opening that Dialog, and a HoverCard trigger retaining its ordinary action and
 return-focus target. New primitive tests cover point placement and pointer
 preview timing at their owning layer.
+Breadcrumb's validation scope is its native navigation/list/item roles,
+current-page metadata, and the composed ancestor actions in the existing Help
+flow. That flow also checks that static key hints leave focus with the existing
+controls. These contracts do not establish native screen-reader announcements
+or the visual appearance of the path and keycaps.
 The full suite runs once on Linux; composition checks and native
 example builds also run on Windows and macOS. They do not replace
 native IME, screen reader, DPI, and visual checks on a desktop.

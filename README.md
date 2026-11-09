@@ -8,7 +8,7 @@ Headless separates control behavior from application-owned presentation; the
 examples render native GPUI windows.
 
 This is an early foundation for an independent component ecosystem. It currently
-includes 30 public library families and eleven copyable presentation recipes. An
+includes 31 public library families and twelve copyable presentation recipes. An
 executable example gives the same behavior two visual treatments. The source is
 maintained in this repository, with GPUI kept as an exactly pinned rendering
 dependency.
@@ -32,6 +32,7 @@ dependency.
 | **DatePicker** | Calendar selection inside Popover, selected-date or retained-cursor initial focus, commit-and-close, dismissal, and disabled state | Formatted trigger, calendar/month controls, and popup surface |
 | **Slider** | One numeric value, bounded steps, keyboard and pointer adjustment, disabled state, and focus | Track, fill, thumb, sizing, and state styling |
 | **Progress** | Controlled percentage or indeterminate progress, accessible name and numeric range | Track, fill, label, and any animation |
+| **Breadcrumb** | Named navigation, ordered path items, and native current-page metadata | Path labels, ancestor actions, separators, layout, and styling |
 | **Tabs** | Active panel, one tab-list stop, automatic activation, orientation-aware keys, and disabled tabs | Tab-list layout, tab styling, and panel contents |
 | **Accordion** | One collapsible section, header navigation, disabled items, and focused-panel closure | Header, indicator, panel contents, and layout |
 | **Collapsible** | One disclosure, active-only content, disabled trigger, and focus on content closure | Trigger content, indicator, region contents, and layout |
@@ -63,6 +64,7 @@ These types live in the example, outside the `gpui_design` crate exports.
 | --- | --- | --- |
 | **Card** | Named region with a heading, description, header action, body, and footer | Session summary and its controls |
 | **Badge** | Static label with secondary and accent appearances | Cursor and toolbar settings |
+| **Kbd** | Static named keycaps and `+`-joined key combinations | Existing keyboard-guide controls and the summary's Shift+F10 context-menu hint |
 | **Empty** (`EmptyState`) | Named empty state with description, optional media, and an action slot | No matching commands, with Clear search returning focus to the query |
 | **ButtonGroup** | Connected horizontal/vertical buttons with an optional text slot | Previous month, month label, and next month |
 | **InputGroup** | Shared frame around an existing input, with leading/trailing addons and horizontal/vertical layout | Required name with a default-name action, multiline notes footer, and command-search prefix |
@@ -77,9 +79,9 @@ The breadth target is the range of screens and interactions supported by
 shadcn/ui. The [component coverage map](docs/component-coverage.md) compares all
 66 entries in its current main catalogue with the actual public scope here.
 It distinguishes behavior, source-owned presentation recipes, and larger
-compositions. The 30 library families and eleven recipes each have a defined scope;
-the map records their current limits and the work still needed for comparable
-coverage.
+compositions. The 31 library families and twelve recipes cover 43 catalogue entries
+within defined scopes. The map records each entry's limits and the work still
+needed; this count does not establish full shadcn/ui feature parity.
 
 Input provides a small, readable baseline for unset text, caret, and selection
 colors. Explicit `InputEditorStyle` values take precedence. Applications own the
@@ -103,6 +105,11 @@ notes status in HoverCard; normal button activation opens settings.
 The dialog combines Preferences,
 Help, Schedule, and Presets tabs, and retains values when it is closed and reopened. Help uses an
 Accordion whose keyboard section opens a guide in a non-modal Popover.
+Breadcrumb presents `Session settings > Help > Keyboard guide` in that guide.
+Its ancestor Buttons either close the guide and select Preferences through the
+existing tab focus, or return to the Help trigger; the current item is static
+text. Kbd displays the controls' existing keys, including Shift+F10 beside the
+summary's context-menu hint, without registering shortcuts.
 A slider on the summary card drives a progress preview, using the same retained
 value for its label, thumb position, and progress fill.
 Toggle switches the progress preview to a named Spinner and a static Skeleton
@@ -178,6 +185,8 @@ engine. Resizable uses GPUI flex layout and native dragging for two retained pan
 Table uses shared GPUI column tracks and
 native table semantics. ScrollArea composes GPUI's ScrollHandle viewport with the
 retained Scrollbar implementation, without another scrolling engine.
+Breadcrumb supplies native navigation/list structure and current-page metadata;
+the consumer composes ordinary Buttons and owns their destination callbacks.
 Appearance belongs in the application. A separately distributed
 styled component catalog, installation CLI, and registry have not been added.
 
@@ -187,7 +196,7 @@ value through a callback; the application stores it and notifies its view.
 RadioGroup retains selection and option focus in an entity, accepts fixed ordered
 options with unique values, and changes selection immediately on arrow navigation.
 
-The [navigation and overlay guide](docs/navigation-overlays.md) covers Tabs,
+The [navigation and overlay guide](docs/navigation-overlays.md) covers Breadcrumb, Tabs,
 Accordion, Collapsible, Popover, DropdownMenu, ContextMenu, Command, Tooltip,
 HoverCard, and AlertDialog. Inactive panels do
 not contribute layout, focus, or accessibility nodes. Popover reuses the existing popup positioning
@@ -236,9 +245,9 @@ The GPUI snapshot family is pinned to **`=0.3.11`**. Update those pins and
 | `crates/base/src/` | The `gpui-design` library and its behavior-level tests |
 | `crates/base/tests/` | Integration tests using the public API |
 | `crates/base/examples/two_styles.rs` | Native example and application-owned styles |
-| `crates/base/examples/recipes/` | Eleven copyable presentation/composition recipes, including data tables and loading indicators |
+| `crates/base/examples/recipes/` | Twelve copyable presentation/composition recipes, including data tables, loading indicators, and keycaps |
 | `docs/form-controls.md` | Form control usage and interaction contracts |
-| `docs/navigation-overlays.md` | Tabs, Accordion, command menus, and composed focus behavior |
+| `docs/navigation-overlays.md` | Breadcrumb, Tabs, Accordion, command menus, and composed focus behavior |
 | `docs/layout-and-data.md` | Table structure, ScrollArea composition, and Resizable panes |
 | `docs/presentation-recipes.md` | Copying recipes, their slots, and application-owned styling |
 | `docs/component-coverage.md` | Current shadcn catalogue comparison, supported scope, and next priorities |

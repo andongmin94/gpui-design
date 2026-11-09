@@ -9,19 +9,19 @@ use gpui::{
     div, prelude::FluentBuilder as _, px, relative, rems, rgb,
 };
 use gpui_design::{
-    Accordion, AccordionHeader, AccordionItem, AccordionPanel, AccordionState, AlertDialog, Button,
-    Calendar, CalendarDay, CalendarState, Checkbox, CheckboxState, Collapsible, CollapsibleContent,
-    CollapsibleState, CollapsibleTrigger, Combobox, ComboboxList, ComboboxOption, ComboboxState,
-    Command, CommandEvent, CommandInput, CommandList, CommandOption, CommandState, ContextMenu,
-    DatePicker, DatePickerState, Dialog, DialogBackdrop, DialogClose, DialogDescription,
-    DialogPopup, DialogState, DialogTitle, DropdownMenu, Field, HoverCard, HoverCardState, Input,
-    InputBase, MenuEvent, MenuItem, MenuOption, MenuState, NaiveDate, Popover, PopoverState,
-    Progress, RadioGroup, RadioGroupState, RadioItem, RadioOption, Resizable, ResizableState,
-    ScrollArea, ScrollbarAxis, ScrollbarMode, SearchItem, Select, SelectItem, SelectOption,
-    SelectState, Separator, Slider, SliderState, Switch, Tab, TabItem, TabList, TabPanel, Table,
-    TableCaption, TableCell, TableColumn, TableRow, TabsState, TestTextExt as _, Textarea,
-    TextareaState, Toggle, ToggleGroup, ToggleGroupState, ToggleItem, ToggleOption, Tooltip,
-    TooltipState,
+    Accordion, AccordionHeader, AccordionItem, AccordionPanel, AccordionState, AlertDialog,
+    Breadcrumb, BreadcrumbItem, BreadcrumbList, Button, Calendar, CalendarDay, CalendarState,
+    Checkbox, CheckboxState, Collapsible, CollapsibleContent, CollapsibleState, CollapsibleTrigger,
+    Combobox, ComboboxList, ComboboxOption, ComboboxState, Command, CommandEvent, CommandInput,
+    CommandList, CommandOption, CommandState, ContextMenu, DatePicker, DatePickerState, Dialog,
+    DialogBackdrop, DialogClose, DialogDescription, DialogPopup, DialogState, DialogTitle,
+    DropdownMenu, Field, HoverCard, HoverCardState, Input, InputBase, MenuEvent, MenuItem,
+    MenuOption, MenuState, NaiveDate, Popover, PopoverState, Progress, RadioGroup, RadioGroupState,
+    RadioItem, RadioOption, Resizable, ResizableState, ScrollArea, ScrollbarAxis, ScrollbarMode,
+    SearchItem, Select, SelectItem, SelectOption, SelectState, Separator, Slider, SliderState,
+    Switch, Tab, TabItem, TabList, TabPanel, Table, TableCaption, TableCell, TableColumn, TableRow,
+    TabsState, TestTextExt as _, Textarea, TextareaState, Toggle, ToggleGroup, ToggleGroupState,
+    ToggleItem, ToggleOption, Tooltip, TooltipState,
     input::{InputAccessibility, InputEditorStyle, InputState},
 };
 
@@ -29,7 +29,7 @@ use gpui_design::{
 mod recipes;
 use recipes::{
     Alert, Badge, ButtonGroup, Card, DataTable, DataTableColumn, DataTableRow, DataTableState,
-    EmptyState, InputGroup, Item, Skeleton, Spinner,
+    EmptyState, InputGroup, Item, Kbd, KbdGroup, Skeleton, Spinner,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -1099,6 +1099,52 @@ impl Render for Demo {
                     .when(item.is_disabled(), |tab| tab.opacity(0.45))
                     .child(item.label().clone())
             }));
+        let settings_help = self.help.clone();
+        let settings_tabs = self.tabs.clone();
+        let help_parent = self.help.clone();
+        let help_path = Breadcrumb::new("keyboard-guide-path")
+            .accessibility_label("Help location")
+            .child(
+                BreadcrumbList::new("keyboard-guide-path-list")
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap_1()
+                    .child(
+                        BreadcrumbItem::new("settings-path-item").child(Self::button(
+                            palette,
+                            Button::new("help-to-settings")
+                                .accessibility_label("Session settings")
+                                .on_click(move |_, window, cx| {
+                                    settings_help.update(cx, |state, cx| state.close(window, cx));
+                                    let focus = settings_tabs.read(cx).tab_focus_handle(0).clone();
+                                    focus.focus(window, cx);
+                                })
+                                .child("Session settings"),
+                        )),
+                    )
+                    .child("›")
+                    .child(
+                        BreadcrumbItem::new("help-path-item").child(Self::button(
+                            palette,
+                            Button::new("help-to-parent")
+                                .accessibility_label("Help")
+                                .on_click(move |_, window, cx| {
+                                    help_parent.update(cx, |state, cx| state.close(window, cx));
+                                })
+                                .child("Help"),
+                        )),
+                    )
+                    .child("›")
+                    .child(
+                        BreadcrumbItem::new("keyboard-guide-current")
+                            .current(true)
+                            .child(gpui::text!(
+                                id = "keyboard-guide-current-text",
+                                "Keyboard guide"
+                            )),
+                    ),
+            );
         let help_state = self.help.clone();
         let help = Popover::new("keyboard-help", &self.help)
             .accessibility_label("Keyboard help")
@@ -1123,7 +1169,78 @@ impl Render for Demo {
                     .border_1()
                     .border_color(palette.border)
                     .rounded(palette.radius)
-                    .child("Tab moves between controls. Arrow keys choose options and tabs. Escape closes this help before the settings dialog.")
+                    .child(help_path)
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .items_center()
+                            .gap_1()
+                            .child(Kbd::new("help-next-key", "Tab", palette))
+                            .child(gpui::text!(id = "help-focus-alternative", "or"))
+                            .child(
+                                KbdGroup::new("help-previous-shortcut", palette)
+                                    .key(Kbd::new("help-previous-shift", "Shift", palette))
+                                    .key(Kbd::new("help-previous-tab", "Tab", palette)),
+                            )
+                            .child(gpui::text!(
+                                id = "help-focus-description",
+                                "Move between controls"
+                            )),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .items_center()
+                            .gap_1()
+                            .child(
+                                Kbd::new("help-left-key", "←", palette)
+                                    .accessibility_label("Arrow left"),
+                            )
+                            .child(
+                                Kbd::new("help-right-key", "→", palette)
+                                    .accessibility_label("Arrow right"),
+                            )
+                            .child(
+                                Kbd::new("help-up-key", "↑", palette)
+                                    .accessibility_label("Arrow up"),
+                            )
+                            .child(
+                                Kbd::new("help-down-key", "↓", palette)
+                                    .accessibility_label("Arrow down"),
+                            )
+                            .child(gpui::text!(
+                                id = "help-arrows-description",
+                                "Choose tabs and options"
+                            )),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .items_center()
+                            .gap_1()
+                            .child(Kbd::new("help-enter-key", "Enter", palette))
+                            .child(gpui::text!(id = "help-activation-alternative", "or"))
+                            .child(Kbd::new("help-space-key", "Space", palette))
+                            .child(gpui::text!(
+                                id = "help-activation-description",
+                                "Activate a control"
+                            )),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .items_center()
+                            .gap_1()
+                            .child(Kbd::new("help-escape-key", "Escape", palette))
+                            .child(gpui::text!(
+                                id = "help-escape-description",
+                                "Close this help first"
+                            )),
+                    )
                     .child(Self::button(
                         palette,
                         Button::new("close-help")
@@ -1695,9 +1812,32 @@ impl Render for Demo {
                                         )
                                         .child(
                                             div()
+                                                .flex()
+                                                .flex_wrap()
+                                                .items_center()
+                                                .gap_1()
                                                 .text_sm()
                                                 .text_color(palette.muted)
-                                                .child("Session actions: right-click or Shift+F10"),
+                                                .child(gpui::text!(
+                                                    id = "session-actions-shortcut-description",
+                                                    "Session actions: right-click or"
+                                                ))
+                                                .child(
+                                                    KbdGroup::new(
+                                                        "session-actions-shortcut",
+                                                        palette,
+                                                    )
+                                                    .key(Kbd::new(
+                                                        "session-actions-shift",
+                                                        "Shift",
+                                                        palette,
+                                                    ))
+                                                    .key(Kbd::new(
+                                                        "session-actions-f10",
+                                                        "F10",
+                                                        palette,
+                                                    )),
+                                                ),
                                         ),
                                 )
                                 .content(Self::menu_content(&self.context_actions, palette, cx)),

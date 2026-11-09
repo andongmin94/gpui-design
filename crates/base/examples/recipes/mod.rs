@@ -10,6 +10,7 @@ mod data_table;
 mod empty;
 mod input_group;
 mod item;
+mod kbd;
 mod pagination;
 mod skeleton;
 mod spinner;
@@ -22,6 +23,7 @@ pub(crate) use data_table::{DataTable, DataTableColumn, DataTableRow, DataTableS
 pub(crate) use empty::EmptyState;
 pub(crate) use input_group::InputGroup;
 pub(crate) use item::Item;
+pub(crate) use kbd::{Kbd, KbdGroup};
 pub(crate) use pagination::Pagination;
 pub(crate) use skeleton::Skeleton;
 pub(crate) use spinner::Spinner;

@@ -1,6 +1,6 @@
 # Presentation recipes
 
-These eleven recipes are reusable application source, used by the native
+These twelve recipes are reusable application source, used by the native
 [two-style example](../crates/base/examples/two_styles.rs). They compose GPUI
 layout with the existing controls and keep colors, spacing, and sizing in the
 consumer's `Palette`.
@@ -65,6 +65,38 @@ Badge::new("cursor-status", "Cursor visible", palette).accent(true)
 Badge adds no Tab stop, button action, pressed state, or live announcement. Its
 text must explain the state independently of color. Interactive chips should use
 an existing Button or Toggle with application styling.
+
+## Kbd
+
+[`kbd.rs`](../crates/base/examples/recipes/kbd.rs) supplies static individual
+keycaps and combinations of keys. Each Kbd uses its visible text as the default
+native Label name. Give symbolic keys a readable name explicitly:
+
+```rust,ignore
+Kbd::new("guide-up-key", "↑", palette)
+    .accessibility_label("Arrow up");
+
+KbdGroup::new("context-menu-shortcut", palette)
+    .key(Kbd::new("context-menu-shift", "Shift", palette))
+    .key(Kbd::new("context-menu-f10", "F10", palette));
+```
+
+`KbdGroup` preserves the supplied order and inserts `+` between keycaps. Its
+native Group has no repeated name; each key retains its own readable Label.
+Use a group for keys pressed together, such as Shift+Tab. Arrange independent
+Kbd elements in ordinary application layout when showing alternatives, such as
+Enter or Space, or the arrow keys.
+
+Both types implement `Styled`. The palette supplies the keycap's field color,
+border, corner radius, foreground, and font size, plus muted text for the group
+separator. Applications own key labels and any platform-specific glyph choice.
+The recipe has no focus stop, action, keybinding registration, or shortcut
+dispatch; it displays the bindings already provided by the associated control.
+
+The example's Help → Keyboard guide shows Tab, Shift+Tab, arrows, Enter/Space,
+and Escape alongside descriptions of their existing behavior. The summary
+displays Shift+F10 for its existing ContextMenu. Replacing plain hint text with
+these keycaps does not add keyboard commands or another focus target.
 
 ## Empty
 
@@ -367,3 +399,10 @@ non-focusable Skeleton, GPUI reduced-motion rendering, reset cancellation,
 restoring the percentage fill, and removing the indicators when their disclosure
 closes. The loading recipes add no test function or CI job; animation scheduling
 remains GPUI's responsibility rather than a second test controller here.
+
+The existing Help flow checks Kbd's readable symbolic key name and absence of
+new focus stops, alongside the composed Breadcrumb ancestor actions. The
+context-menu flow exercises the existing shortcut displayed by its keycaps.
+There is no separate keybinding test controller,
+palette suite, or CI job for these static key hints. Native screen-reader speech
+and desktop visual rendering remain separate validation work.

@@ -12,6 +12,7 @@ pub mod actions;
 mod alert_dialog;
 mod animation;
 mod auto_scroll;
+mod breadcrumb;
 mod button;
 mod calendar;
 mod checkbox;
@@ -67,6 +68,7 @@ pub use accordion::{
 };
 pub use alert_dialog::AlertDialog;
 pub(crate) use auto_scroll::AutoScroll;
+pub use breadcrumb::{Breadcrumb, BreadcrumbItem, BreadcrumbList};
 pub use button::{Button, ButtonStyles};
 pub use calendar::{Calendar, CalendarDay, CalendarEvent, CalendarState, NaiveDate};
 pub use checkbox::{Checkbox, CheckboxState, CheckboxStyles};

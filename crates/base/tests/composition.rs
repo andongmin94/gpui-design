@@ -524,9 +524,36 @@ fn settings_tabs_and_popover_preserve_nested_focus(cx: &mut TestAppContext) {
         assert!(test_support::snapshots(window).iter().any(|item| {
             item.role() == Some(Role::Dialog) && item.label() == Some("Keyboard help")
         }));
+        let path = test_support::find(window, &[], &"keyboard-guide-path".into()).unwrap();
+        assert_eq!(path.role(), Some(Role::Navigation));
+        assert_eq!(path.label(), Some("Help location"));
+        let arrow = test_support::find(window, &[], &"help-up-key".into()).unwrap();
+        assert_eq!(arrow.role(), Some(Role::Label));
+        assert_eq!(arrow.label(), Some("Arrow up"));
     });
 
     cx.simulate_keystrokes("tab");
+    draw(cx);
+    cx.update(|window, _| {
+        let settings = test_support::find(window, &[], &"help-to-settings".into()).unwrap();
+        assert_eq!(settings.focused(), Some(true));
+    });
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    cx.update(|window, _| {
+        let parent = test_support::find(window, &[], &"help-to-parent".into()).unwrap();
+        assert_eq!(parent.focused(), Some(true));
+    });
+    activate_key(cx, "enter");
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        assert!(!demo.help.read(cx).is_open());
+        assert_eq!(demo.tabs.read(cx).selected_index(), Some(2));
+        assert!(demo.help.read(cx).focus_handle().is_focused(window));
+    });
+    activate_key(cx, "enter");
+    // Only ancestor actions and Close help join Tab order; current text and keycaps do not.
+    cx.simulate_keystrokes("tab tab tab");
     draw(cx);
     cx.update(|window, _| {
         let close = test_support::find(window, &[], &"close-help".into()).unwrap();
@@ -608,8 +635,33 @@ fn settings_tabs_and_popover_preserve_nested_focus(cx: &mut TestAppContext) {
         assert_eq!(checkbox.focused(), Some(true));
     });
 
-    // Removing the parent surface must also finish the retained popup lifecycle.
+    // The root ancestor returns to Preferences through existing tab focus activation.
     cx.simulate_keystrokes("shift-tab right tab tab");
+    draw(cx);
+    activate_key(cx, "enter");
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    activate_key(cx, "enter");
+    cx.run_until_parked();
+    draw(cx);
+    cx.update(|window, cx| {
+        let demo = demo.read(cx);
+        assert!(!demo.help.read(cx).is_open());
+        assert!(demo.dialog.read(cx).is_open());
+        let tabs = demo.tabs.read(cx);
+        assert_eq!(tabs.selected_index(), Some(0));
+        assert!(tabs.tab_focus_handle(0).is_focused(window));
+        assert!(!demo.show_cursor);
+        assert_eq!(
+            test_support::find(window, &[], &"show-cursor".into())
+                .unwrap()
+                .checked(),
+            Some(false)
+        );
+    });
+
+    // Removing the parent surface must also finish the retained popup lifecycle.
+    cx.simulate_keystrokes("right tab tab");
     draw(cx);
     activate_key(cx, "enter");
     cx.update(|window, cx| {
