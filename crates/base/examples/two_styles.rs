@@ -22,16 +22,17 @@ use gpui_design::{
     RadioItem, RadioOption, Resizable, ResizableState, ScrollArea, ScrollbarAxis, ScrollbarMode,
     SearchItem, Select, SelectItem, SelectOption, SelectState, Separator, Slider, SliderState,
     Switch, Tab, TabItem, TabList, TabPanel, Table, TableCaption, TableCell, TableColumn, TableRow,
-    TabsState, TestTextExt as _, Textarea, TextareaState, Toggle, ToggleGroup, ToggleGroupState,
-    ToggleItem, ToggleOption, Tooltip, TooltipState,
+    TabsState, TestSupportExt as _, TestTextExt as _, Textarea, TextareaState, Toggle, ToggleGroup,
+    ToggleGroupState, ToggleItem, ToggleOption, Tooltip, TooltipState,
     input::{InputAccessibility, InputEditorStyle, InputState},
 };
 
 #[path = "recipes/mod.rs"]
 mod recipes;
 use recipes::{
-    Alert, AspectRatio, Avatar, Badge, ButtonGroup, Card, DataTable, DataTableColumn, DataTableRow,
-    DataTableState, EmptyState, InputGroup, Item, Kbd, KbdGroup, Sheet, Skeleton, Spinner,
+    Alert, AspectRatio, Avatar, Badge, ButtonGroup, Card, CodeBlock, DataTable, DataTableColumn,
+    DataTableRow, DataTableState, EmptyState, Heading, InlineCode, InputGroup, Item, Kbd, KbdGroup,
+    Marker, Paragraph, Sheet, Skeleton, Spinner,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -57,12 +58,21 @@ pub(crate) struct Palette {
     gap: Rems,
     control_height: Rems,
     font_size: Rems,
+    code_font_family: &'static str,
     radius: Pixels,
     dialog_width: Rems,
 }
 
 impl Appearance {
     fn palette(self) -> Palette {
+        // The consumer chooses the code font for its supported desktop targets.
+        let code_font_family = if cfg!(target_os = "macos") {
+            "Menlo"
+        } else if cfg!(target_os = "windows") {
+            "Consolas"
+        } else {
+            "DejaVu Sans Mono"
+        };
         match self {
             Self::Compact => Palette {
                 canvas: rgb(0x10141c).into(),
@@ -79,6 +89,7 @@ impl Appearance {
                 gap: rems(0.75),
                 control_height: rems(1.875),
                 font_size: rems(0.8125),
+                code_font_family,
                 radius: px(4.),
                 dialog_width: rems(22.),
             },
@@ -97,6 +108,7 @@ impl Appearance {
                 gap: rems(1.25),
                 control_height: rems(2.625),
                 font_size: rems(0.9375),
+                code_font_family,
                 radius: px(10.),
                 dialog_width: rems(28.),
             },
@@ -114,6 +126,8 @@ pub(crate) struct Demo {
     pub(crate) preset_preview: Entity<HoverCardState>,
     preset_artwork: Arc<Image>,
     pub(crate) fields_scroll: ScrollHandle,
+    pub(crate) configuration_scroll: ScrollHandle,
+    pub(crate) configuration_focus: FocusHandle,
     pub(crate) calendar: Entity<CalendarState>,
     pub(crate) date_picker: Entity<DatePickerState>,
     pub(crate) schedule_split: Entity<ResizableState>,
@@ -380,6 +394,8 @@ impl Demo {
                 include_bytes!("assets/preset-avatar.svg").to_vec(),
             )),
             fields_scroll: ScrollHandle::new(),
+            configuration_scroll: ScrollHandle::new(),
+            configuration_focus: cx.focus_handle().tab_stop(true),
             calendar,
             date_picker,
             schedule_split,
@@ -607,12 +623,15 @@ impl Demo {
         window: &Window,
         cx: &Context<Self>,
     ) -> impl IntoElement + use<> {
-        let date_label = self
-            .calendar
-            .read(cx)
-            .selected_date()
+        let selected_date = self.calendar.read(cx).selected_date();
+        let date_label = selected_date
             .map(|date| date.format("%Y-%m-%d").to_string())
             .unwrap_or_else(|| "Pick a date".to_string());
+        let marker_label = if selected_date.is_some() {
+            format!("Selected date · {date_label}")
+        } else {
+            "No date selected".to_string()
+        };
         let picker = DatePicker::new("recording-date", &self.date_picker)
             .accessibility_label("Choose recording date")
             .offset(px(6.))
@@ -713,6 +732,7 @@ impl Demo {
                 palette,
             ))
             .child(picker)
+            .child(Marker::new("schedule-marker", marker_label, palette))
             .child(
                 Resizable::new("schedule-panes", &self.schedule_split)
                     .w_full()
@@ -948,6 +968,12 @@ impl Demo {
                     .border_color(palette.border)
                     .rounded(palette.radius)
                     .child(help_path)
+                    .child(Heading::new(
+                        "keyboard-guide-title",
+                        "Keyboard guide",
+                        2,
+                        palette,
+                    ))
                     .child(
                         div()
                             .flex()
@@ -1029,6 +1055,143 @@ impl Demo {
                             .child("Close help"),
                     )),
             )
+            .into_any_element()
+    }
+
+    /// A read-only snapshot of the example's existing settings, serialized by
+    /// the consumer. CodeBlock receives text and has no configuration parser.
+    pub(crate) fn configuration_code(&self, cx: &gpui::App) -> SharedString {
+        let configuration = serde_json::json!({
+            "session_name": self.input.read(cx).value().as_ref(),
+            "notes": self.notes.read(cx).value().as_ref(),
+            "recording_preset": self.preset.read(cx).selected_value(cx).map(|value| value.as_ref()),
+            "drawing": {
+                "tool": self.select.read(cx).selected_item().map(|item| item.value().as_ref()),
+                "stroke": self.stroke.read(cx).selected_item().map(|item| item.value().as_ref()),
+                "show_cursor": self.show_cursor,
+            },
+            "toolbar": { "pinned": self.keep_toolbar },
+            "preview_percent": self.preview.read(cx).value(),
+        });
+        serde_json::to_string_pretty(&configuration)
+            .expect("example settings are JSON values")
+            .into()
+    }
+
+    fn render_configuration(&self, palette: Palette, cx: &Context<Self>) -> gpui::AnyElement {
+        CodeBlock::new(
+            "session-configuration",
+            self.configuration_code(cx),
+            "Session configuration",
+            &self.configuration_scroll,
+            &self.configuration_focus,
+            palette,
+        )
+        .into_any_element()
+    }
+
+    fn render_help_sections(
+        &self,
+        palette: Palette,
+        popup_max_width: Pixels,
+        cx: &Context<Self>,
+    ) -> gpui::AnyElement {
+        let help = self.render_keyboard_help(palette, popup_max_width);
+        let configuration = self.render_configuration(palette, cx);
+        let accordion_state = self.accordion.read(cx);
+        let header = |index: usize| {
+            let item = &accordion_state.items()[index];
+            AccordionHeader::new(&self.accordion, index)
+                .heading_level(3)
+                .w_full()
+                .px_2()
+                .py_1()
+                .flex()
+                .items_center()
+                .justify_between()
+                .border_1()
+                .border_color(palette.border)
+                .rounded(palette.radius)
+                .focus_visible(|style| style.border_color(palette.accent))
+                .when(item.is_disabled(), |header| header.opacity(0.45))
+                .child(item.label().clone())
+                .child(if accordion_state.open_index() == Some(index) {
+                    "−"
+                } else {
+                    "+"
+                })
+        };
+        let help_sections = Accordion::new("help-sections", &self.accordion)
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(
+                div().child(header(0)).child(
+                    AccordionPanel::new(&self.accordion, 0)
+                        .p_2()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(
+                            Paragraph::new("help-keyboard-description", palette)
+                                .text("Use the keyboard guide to explore these controls."),
+                        )
+                        .child(help),
+                ),
+            )
+            .child(div().child(header(1)))
+            .child(
+                div().child(header(2)).child(
+                    AccordionPanel::new(&self.accordion, 2)
+                        .tab_stop(true)
+                        .p_2()
+                        .rounded(palette.radius)
+                        .focus_visible(|style| style.bg(palette.highlight))
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(
+                            Paragraph::new("help-state-description", palette)
+                                .text("The application retains form values and supplies every style. Closing a panel or dialog preserves those values."),
+                        )
+                        .child(
+                            Paragraph::new("help-state-ownership", palette)
+                                .text("In this example, ")
+                                .code("DialogState")
+                                .text(" owns panel visibility, while ")
+                                .code("InputState")
+                                .text(" retains the session name. Closing Help does not create another copy of either state."),
+                        )
+                        .child(
+                            Paragraph::new("help-configuration-description", palette)
+                                .text("This read-only JSON reflects the current session settings. Copy the complete configuration or scroll to inspect it."),
+                        )
+                        .child(configuration)
+                        .child(
+                            Paragraph::new("help-source-description", palette)
+                                .text("The consumer example lives in:"),
+                        )
+                        .child(InlineCode::new(
+                            "help-source-path",
+                            "crates/base/examples/two_styles.rs",
+                            palette,
+                        )),
+                ),
+            );
+        div()
+            .id("help-content")
+            .test_support()
+            .w_full()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .gap(palette.gap)
+            .child(Heading::new("help-title", "Help", 2, palette))
+            .child(
+                Paragraph::new("help-introduction", palette)
+                    .text("Explore keyboard shortcuts and learn how this example preserves your session settings."),
+            )
+            .child(help_sections)
             .into_any_element()
     }
 
@@ -1677,56 +1840,7 @@ impl Render for Demo {
                     .when(item.is_disabled(), |tab| tab.opacity(0.45))
                     .child(item.label().clone())
             }));
-        let help = self.render_keyboard_help(palette, popup_max_width);
-        let accordion_state = self.accordion.read(cx);
-        let header = |index: usize| {
-            let item = &accordion_state.items()[index];
-            AccordionHeader::new(&self.accordion, index)
-                .heading_level(3)
-                .w_full()
-                .px_2()
-                .py_1()
-                .flex()
-                .items_center()
-                .justify_between()
-                .border_1()
-                .border_color(palette.border)
-                .rounded(palette.radius)
-                .focus_visible(|style| style.border_color(palette.accent))
-                .when(item.is_disabled(), |header| header.opacity(0.45))
-                .child(item.label().clone())
-                .child(if accordion_state.open_index() == Some(index) {
-                    "−"
-                } else {
-                    "+"
-                })
-        };
-        let help_sections = Accordion::new("help-sections", &self.accordion)
-            .flex()
-            .flex_col()
-            .gap_2()
-            .child(
-                div().child(header(0)).child(
-                    AccordionPanel::new(&self.accordion, 0)
-                        .p_2()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .child("Use the keyboard guide to explore these controls.")
-                        .child(help),
-                ),
-            )
-            .child(div().child(header(1)))
-            .child(
-                div().child(header(2)).child(
-                    AccordionPanel::new(&self.accordion, 2)
-                        .tab_stop(true)
-                        .p_2()
-                        .rounded(palette.radius)
-                        .focus_visible(|style| style.bg(palette.highlight))
-                        .child("The application retains form values and supplies every style. Closing a panel or dialog preserves those values."),
-                ),
-            );
+        let help_sections = self.render_help_sections(palette, popup_max_width, cx);
         let table_preset = self.preset.clone();
         let preset_table = DataTable::new("preset-catalogue", &self.preset_table, palette)
             .accessibility_label("Recording presets")

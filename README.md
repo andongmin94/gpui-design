@@ -8,7 +8,7 @@ Headless separates control behavior from application-owned presentation; the
 examples render native GPUI windows.
 
 This is an early foundation for an independent component ecosystem. It currently
-includes 31 public library families and fifteen copyable presentation recipes. An
+includes 31 public library families and eighteen copyable presentation recipes. An
 executable example gives the same behavior two visual treatments. The source is
 maintained in this repository, with GPUI kept as an exactly pinned rendering
 dependency.
@@ -78,12 +78,15 @@ These types live in the example, outside the `gpui_design` crate exports.
 | **Avatar** | Named circular image with explicit fallback text, using GPUI's image loader and cache | Preset artwork or initials in the existing HoverCard preview |
 | **AspectRatio** | Clipped media frame with a finite positive width/height ratio and application-owned content | A recording-frame illustration driven by the retained preset and session name |
 | **Sheet** | Right-edge modal presentation over Dialog, with a viewport-limited width, fixed header/footer, and one scrolling body | Session settings in both appearances, using the existing form and retained state |
+| **Typography** | Named headings with explicit levels, paragraphs with native inline-code text runs, and independently named code elements | Help headings, state-ownership explanations, and the example's source identifier |
+| **CodeBlock** | Read-only multiline code, an exact full-text Copy action, and bounded two-axis scrolling with keyboard access | A JSON snapshot of the retained session settings in Help |
+| **Marker** | One named date/status label between decorative separators, with wrapping text and no focus stop | The currently selected Calendar date above Schedule's notes and recording plan |
 
 The breadth target is the range of screens and interactions supported by
 shadcn/ui. The [component coverage map](docs/component-coverage.md) compares all
 66 entries in its current main catalogue with the actual public scope here.
 It distinguishes behavior, source-owned presentation recipes, and larger
-compositions. The 31 library families and fifteen recipes cover 46 catalogue entries
+compositions. The 31 library families and eighteen recipes cover 49 catalogue entries
 within defined scopes. The map records each entry's limits and the work still
 needed; this count does not establish full shadcn/ui feature parity.
 
@@ -123,6 +126,11 @@ Its ancestor Buttons either close the guide and select Preferences through the
 existing tab focus, or return to the Help trigger; the current item is static
 text. Kbd displays the controls' existing keys, including Shift+F10 beside the
 summary's context-menu hint, without registering shortcuts.
+The State ownership panel uses Typography for its explanations and CodeBlock for
+a JSON snapshot of the current session settings. Copy writes that complete
+snapshot through GPUI's clipboard API; the preview does not edit or apply it.
+CodeBlock bounds long lines and bodies with the existing ScrollArea and keeps
+code scrolling separate from the surrounding Sheet body.
 A slider on the summary card drives a progress preview, using the same retained
 value for its label, thumb position, and progress fill.
 Toggle switches the progress preview to a named Spinner and a static Skeleton
@@ -154,9 +162,11 @@ committed preset. The session-name Field connects its visible label, help text,
 and application-supplied required/error state to the native input. A text Tooltip
 on the existing Edit button explains what the settings screen changes.
 Schedule uses a DatePicker composed from Calendar and Popover, and a Table
-reflecting the retained session name, date, and recording preset. A vertical
-Resizable divides shared session notes and the plan table. The table scrolls
-horizontally and vertically as its pane changes size, while the surrounding form
+reflecting the retained session name, date, and recording preset. Marker reads the
+Calendar's selected date to label the boundary above the notes and plan. Its two
+rules are decorative, leaving one meaningful label and the existing Tab order.
+A vertical Resizable divides shared session notes and the plan table. The table
+scrolls horizontally and vertically as its pane changes size, while the surrounding form
 uses the Sheet's vertical ScrollArea. Date, notes, and pane ratio survive closing
 the Sheet.
 An informational Alert explains that the example retains preferences without
@@ -260,7 +270,7 @@ The GPUI snapshot family is pinned to **`=0.3.11`**. Update those pins and
 | `crates/base/src/` | The `gpui-design` library and its behavior-level tests |
 | `crates/base/tests/` | Integration tests using the public API |
 | `crates/base/examples/two_styles.rs` | Native example and application-owned styles |
-| `crates/base/examples/recipes/` | Fifteen copyable presentation/composition recipes, including sheets, media frames, avatars, data tables, loading indicators, and keycaps |
+| `crates/base/examples/recipes/` | Eighteen copyable presentation/composition recipes, including markers, code blocks, typography, sheets, media frames, avatars, data tables, loading indicators, and keycaps |
 | `crates/base/examples/assets/` | Embedded example artwork used by the preset preview and its image-decoding regression |
 | `docs/form-controls.md` | Form control usage and interaction contracts |
 | `docs/navigation-overlays.md` | Breadcrumb, Tabs, Accordion, command menus, and composed focus behavior |

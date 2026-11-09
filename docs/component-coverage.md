@@ -6,9 +6,9 @@ Its main catalogue contains **66 entries**, each listed once below. The separate
 AI Elements catalogue is outside this comparison; conversation components already
 in the main catalogue remain included.
 
-GPUI Design currently documents **31 public library families and fifteen copyable
-presentation/composition recipes**, covering **46 catalogue entries** within the scopes below.
-This is not 46/66 feature parity: a family can exist with a deliberately limited
+GPUI Design currently documents **31 public library families and eighteen copyable
+presentation/composition recipes**, covering **49 catalogue entries** within the scopes below.
+This is not 49/66 feature parity: a family can exist with a deliberately limited
 contract, and several shadcn entries describe combinations of other parts.
 These counts do not measure performance, accessibility conformance, or completion
 of native desktop validation.
@@ -100,7 +100,7 @@ in the consumer, and are composed into the native two-style example.
 | Skeleton | Recipe | Static decorative placeholder with application-controlled width, height, rounding, and color. No focus stop, native role/name, shimmer, or loading state. |
 | Spinner | Recipe | Named indeterminate Progress with a rotating arc, size/color styling, and GPUI App reduced-motion support. The application controls mounting; no independent task, timer, or automatic live announcement. |
 | Table | Available | Shared fixed/flexible columns, a header row, body rows, footer, caption, and native table/row/cell semantics. No spans, sorting, filtering, selection controller, or virtualization. |
-| Typography | Pending | Examples choose text styles locally; no reusable heading/body/code presentation set is provided. |
+| Typography | Recipe | Named Heading with an explicit positive level, Paragraph with native styled text runs for inline code, and independently named InlineCode with native Code semantics. Paragraph exposes one complete accessible name; its code ranges have visual styling without separate Code nodes. Palette, font choice, width, and visual size belong to the application. No Markdown parser, syntax highlighting, copy action, or editor. |
 
 ## Larger combined capabilities
 
@@ -116,11 +116,11 @@ popup, focus, and scrolling machinery.
 | Calendar | Available | Single-date selection, separate focused date, six Monday-first weeks, month/year navigation, and inclusive date bounds. Range/multiple selection, arbitrary disabled-day rules, and locale/week-start configuration are not included. |
 | Carousel | Pending | Coordinated item navigation and viewport behavior are not supplied. |
 | Chart | Pending | No chart rendering and interaction integration is provided. |
-| Code Block | Pending | Internal editing machinery does not constitute a public code-display, copy, and presentation component. |
+| Code Block | Recipe | Read-only multiline code with a full-text native Code name, a Button that copies the original string, and bounded two-axis ScrollArea overflow. The application retains its scroll/focus handles. Focused-code arrow/page/Home/End navigation and contained wheel scrolling preserve parent boundaries. No parser, syntax highlighting, editor, selection model, line numbers, or copy-feedback state. |
 | Data Table | Recipe | Fixed text columns and immutable stable-ID rows, case-insensitive filtering, one-column ascending/descending text sorting, pagination, empty-state recovery, and application row actions. Current choice is supplied by the application. No multi-row selection, numeric/date comparators, column hiding/reordering, server data, virtualization, or native sort-direction metadata. |
 | Date Picker | Available | A single Calendar date inside Popover, current selected-day focus, activation commit-and-close, dismissal, and disabled state. Trigger formatting and calendar appearance belong to the application; text parsing, ranges, multiple selection, and presets are not supplied. |
 | Drawer | Pending | Modal infrastructure exists; drawer interaction and presentation are not implemented. |
-| Marker | Pending | Conversation status notes and labeled separators have no published recipe. |
+| Marker | Recipe | Static date/status boundary with one named native Label between two decorative Separators. The text wraps within a bounded width; its content and formatting belong to the application. Schedule reads the retained Calendar selection without another date or timeline state. No focus stop, action, or automatic live announcement. |
 | Message | Pending | Message-row layout, metadata, and actions have no reusable composition. |
 | Message Scroller | Pending | Transcript anchoring and streaming/history scroll behavior are not implemented by the scrollbar support alone. |
 | Questionnaire | Pending | Individual form controls exist; multi-step question flow and response composition are missing. |
@@ -132,10 +132,13 @@ popup, focus, and scrolling machinery.
 1. Extend data-table operations only where an application needs them, including
    typed ordering or row selection. Preserve shared focus and activation behavior
    instead of duplicating those public foundations.
-2. Extend the source-owned recipe set alongside working flows, including
-   typography and larger navigation compositions. Build further media layouts
-   from Avatar and AspectRatio, keeping palette and sizing decisions outside the
-   behavior layer.
+2. Extend the source-owned recipe set alongside working flows. Message remains a
+   candidate for read-only rows with application-supplied author/time metadata,
+   body content, and existing Button actions. Define its message semantics and
+   actual consumer separately from Marker boundaries and generic Item rows.
+   Reuse Avatar and text presentation; transport, streaming, and transcript
+   anchoring remain separate capabilities. This candidate is recorded for future
+   work.
 3. Extend menu composition where real screens need it, starting with checked
    commands and submenus. Continue composing panes with Resizable/ScrollArea;
    virtualization and transcript anchoring remain separate work.

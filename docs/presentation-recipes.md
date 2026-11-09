@@ -1,6 +1,6 @@
 # Presentation recipes
 
-These fifteen recipes are reusable application source, used by the native
+These eighteen recipes are reusable application source, used by the native
 [two-style example](../crates/base/examples/two_styles.rs). They compose GPUI
 layout with the existing controls and keep colors, spacing, and sizing in the
 consumer's `Palette` or application-supplied `Styled` values.
@@ -504,6 +504,159 @@ and AlertDialog presentations.
 The example caps its deferred Select, Combobox, Calendar, and Help popup widths
 against the window as well; those surfaces do not inherit the Sheet's width cap.
 
+## Typography
+
+[`typography.rs`](../crates/base/examples/recipes/typography.rs) supplies `Heading`,
+`Paragraph`, and `InlineCode` as one presentation recipe. GPUI owns text shaping,
+layout, and painting. The application supplies the content, outline levels, font
+choice, available width, and surrounding spacing.
+
+```rust,ignore
+Heading::new("help-title", "Help", 2, palette);
+
+Paragraph::new("state-ownership", palette)
+    .text("The application retains ")
+    .code("DialogState")
+    .text(" and ")
+    .code("InputState")
+    .text(" while panels are closed.");
+
+InlineCode::new(
+    "help-source",
+    "crates/base/examples/two_styles.rs",
+    palette,
+);
+```
+
+`Heading::new` requires a positive native heading level. Its visible text also
+provides its complete accessible name. Choose the level from the content outline:
+changing it changes the semantic hierarchy independently of the default visual
+size. Every level starts at `1.25 * palette.font_size` with semibold weight.
+Use ordinary `Styled` refinements for a different visual scale, color, or spacing.
+
+`Paragraph::text` and `Paragraph::code` append their supplied text in order,
+without inserting spaces or interpreting markup. Include punctuation and spaces
+in the text segments. One native `StyledText` shapes the complete paragraph, so
+inline code remains part of the same text flow and line wrapping. The paragraph
+defaults to normal wrapping, the palette's body size and foreground, and a line
+height of 1.5 times its font size. Give its parent an available width and leave
+height automatic for long text. The recipe adds no truncation, fixed height, or
+independent scrolling; surrounding Sheet/ScrollArea content owns overflow.
+
+The paragraph exposes native Paragraph semantics and its full concatenated text
+as one accessible name. Its code ranges use the consumer's code font and
+background as native text-run styling. GPUI does not expose an accessibility role
+for each styled range, so these ranges do not create separate Code nodes.
+`InlineCode` provides a separately named native Code element when the code needs
+its own element. Use `Paragraph::code` when code belongs inside a prose sentence.
+All three types are static text and add no focus stop or keyboard action.
+
+The consumer's `palette.code_font_family` selects the requested code font. The
+example requests DejaVu Sans Mono on Linux, Consolas on Windows, and Menlo on
+macOS; applications should supply a font appropriate for their own environment.
+`Styled` controls each element's layout and text presentation. Paragraph code
+ranges retain their explicit code-font and background styling within the body
+text. Changing visible size does not change a Heading's native level or the
+text used for accessible names.
+
+Both appearances use the recipe in the Help tab: a level-two Help heading sits
+above the existing level-three Accordion headings, and the panels contain prose
+about retained application state and an independently named source identifier.
+The keyboard-help popup gains a concise heading while retaining its existing
+Breadcrumb actions and Kbd hints. Longer explanations remain inside the Sheet's
+scrolling body. Consumer builders stay in small helper functions to limit stack
+use during debug rendering.
+
+This recipe supplies text presentation and metadata. Markdown parsing, syntax
+highlighting, code copying, text editing, and a multiline Code Block composition
+remain outside its scope. It introduces no retained state or second text renderer.
+
+## Code Block
+
+[`code_block.rs`](../crates/base/examples/recipes/code_block.rs) composes read-only
+multiline code with the existing Button, GPUI clipboard, and ScrollArea:
+
+```rust,ignore
+CodeBlock::new(
+    "session-configuration",
+    configuration_json,
+    "Session configuration",
+    &configuration_scroll,
+    &configuration_focus,
+    palette,
+);
+```
+
+Retain the `ScrollHandle` and `FocusHandle` in the application. The supplied label
+is shown beside the Copy button, whose accessible name is `Copy {label}`.
+The code exposes native Code semantics and its complete original text as its
+accessible name. The viewport is a keyboard focus target; Copy remains an
+ordinary Button with its existing pointer, Enter, Space, and focus behavior.
+The recipe adds no text-input node, editor state, or selection model.
+
+The default frame is 12 rem high and fills the available width. Its header stays
+outside the bounded code viewport. `Styled` customizes the frame; keep a bounded
+height and width so the ScrollArea can contain long bodies and lines. Code uses
+the palette's code font and foreground. Native GPUI text layout displays the
+supplied lines without soft wrapping; horizontal and vertical overflow remain
+inside the same ScrollArea. The recipe neither parses code nor adds syntax
+highlighting, line numbers, or virtualized rendering.
+
+Copy sends the entire supplied string to `App::write_to_clipboard`, including
+offscreen content and an empty string. It does not trim, normalize, or replace
+spaces, line endings, or a trailing newline. LF, CRLF, and Unicode content are
+preserved in the copied payload. The visible text is shaped by GPUI; the recipe
+does not define an additional tab-stop policy or visual CRLF normalization.
+There is no separate copied-state timer or automatic announcement.
+
+When the code viewport itself has focus, unmodified arrow keys scroll on their
+respective axes, Page Up/Down scroll vertically, Home returns to the top-left,
+and End moves to the bottom-right. Offsets stay inside the content's scroll
+range. Tab and Shift-Tab retain normal traversal, Escape remains available to
+the enclosing modal, and modified keys are left to the application. Copy-button
+key events keep the Button's contract. Wheel gestures over code stay within
+that viewport even at its edges; scroll outside it to move the parent Sheet.
+
+Both appearances use CodeBlock in Help's State ownership panel, before the
+source-path identifier. The consumer serializes current retained settings as
+JSON with the existing `serde_json` dependency. This is a display and copy
+snapshot; copying does not parse or apply configuration. The example keeps its
+consumer builder separate from the main render function and reuses the existing
+Sheet, focus containment, and parent scrolling. Typography continues to handle
+prose and short inline code; CodeBlock owns the bounded multiline presentation.
+
+## Marker
+
+[`marker.rs`](../crates/base/examples/recipes/marker.rs) places a static label
+between two existing decorative Separators. Supply the text appropriate to the
+application's date or status boundary:
+
+```rust,ignore
+Marker::new("schedule-marker", "Selected date · 2026-11-09", palette);
+```
+
+The label exposes native Label semantics and uses its complete visible text as
+its accessible name. The containing layout has no role or name, and both
+Separators use `decorative(true)`, omitting their native role and orientation.
+The marker therefore contributes one meaningful label, with no duplicated
+separator semantics. It adds no focus handle, Tab stop, action, or live-region
+announcement.
+
+The frame fills the available width. The centered label uses the palette's body
+size and muted color, a line height of 1.5 times its font size, normal wrapping,
+and at most 75% of the frame width. The two horizontal rules are one pixel thick,
+use the palette's border color, and share the remaining space. Long text can grow
+vertically without truncation. `Styled` controls the frame and inherited text
+presentation; supply a bounded width and allow the label's height to grow. The
+recipe uses GPUI's existing text layout and adds no text renderer or timeline state.
+
+Both appearances place Marker between Schedule's DatePicker and its notes/plan
+panes. The consumer reads `CalendarState::selected_date()` and formats
+`Selected date · YYYY-MM-DD`, or `No date selected` when the selection is empty.
+Moving the calendar cursor without committing a selection does not change this
+boundary. Date formatting remains application-owned, and the marker does not
+start a recording or maintain a second selected date.
+
 ## Verification scope
 
 The existing composition suite runs the same recipe modules as the native
@@ -552,3 +705,32 @@ closing it while the Sheet remains open, and
 returning through the Sheet to its original trigger. These are layout and
 interaction checks in the existing GPUI test contexts; their scope does not
 establish native screen-reader, platform IME, or desktop visual validation.
+
+Typography checks cover native heading levels independently of visual size,
+complete accessible names, Paragraph and Code roles, and the absence of text
+focus stops. Layout coverage uses long text and code with both appearances at
+normal and narrow widths. The Help consumer preserves its existing hierarchy,
+ancestor actions, and keyboard traversal. The composition target is also run
+with a 1.5 MiB test-thread stack to check the example's render-stack regression.
+These are native metadata, layout, and simulated-input checks; screen-reader
+speech, platform IME behavior, and desktop visual results require separate
+validation.
+
+Code Block coverage checks empty and multiline content, Unicode, complete code
+names, preserved line endings, and exact full-text copying through GPUI's test
+clipboard. Layout checks exercise both appearances, narrow widths, long lines,
+and long bodies. The consumer flow verifies current settings in the copied JSON,
+keyboard entry and traversal, code-scroll ends, and isolation from the parent
+Sheet's scroll range. Clipboard assertions run only in the test platform and do
+not exercise the user's desktop clipboard service. The composition target also
+retains the 1.5 MiB stack check; native clipboard integration, screen-reader
+speech, IME, and desktop visual observations remain separate validation work.
+
+Marker coverage checks a single meaningful label, decorative separator omission,
+and normal focus traversal past the marker. Layout checks exercise long Korean and
+English labels, narrow widths, and both appearances. Schedule checks distinguish
+the current selected date from a moved or cancelled calendar cursor, preserve
+the existing keyboard flow, and update the boundary when the selection changes
+or clears. These are metadata, layout, and simulated-input checks; native
+screen-reader speech, IME, DPI, and desktop visual observations remain separate
+validation work.

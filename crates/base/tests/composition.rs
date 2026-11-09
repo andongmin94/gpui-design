@@ -754,6 +754,18 @@ fn settings_tabs_and_popover_preserve_nested_focus(cx: &mut TestAppContext) {
                 && item.label() == Some("Sync (unavailable)")
                 && item.disabled() == Some(true)
         }));
+        let heading = test_support::find(window, &[], &"help-title".into()).unwrap();
+        assert_eq!(heading.role(), Some(Role::Heading));
+        assert_eq!(heading.label(), Some("Help"));
+        assert_eq!(heading.focused(), None);
+        let description =
+            test_support::find(window, &[], &"help-keyboard-description".into()).unwrap();
+        assert_eq!(description.role(), Some(Role::Paragraph));
+        assert_eq!(
+            description.label(),
+            Some("Use the keyboard guide to explore these controls.")
+        );
+        assert_eq!(description.focused(), None);
     });
     assert_eq!(
         changes.borrow().as_slice(),
@@ -788,6 +800,10 @@ fn settings_tabs_and_popover_preserve_nested_focus(cx: &mut TestAppContext) {
         let arrow = test_support::find(window, &[], &"help-up-key".into()).unwrap();
         assert_eq!(arrow.role(), Some(Role::Label));
         assert_eq!(arrow.label(), Some("Arrow up"));
+        let heading = test_support::find(window, &[], &"keyboard-guide-title".into()).unwrap();
+        assert_eq!(heading.role(), Some(Role::Heading));
+        assert_eq!(heading.label(), Some("Keyboard guide"));
+        assert_eq!(heading.focused(), None);
     });
 
     cx.simulate_keystrokes("tab");
@@ -810,7 +826,7 @@ fn settings_tabs_and_popover_preserve_nested_focus(cx: &mut TestAppContext) {
         assert!(demo.help.read(cx).focus_handle().is_focused(window));
     });
     activate_key(cx, "enter");
-    // Only ancestor actions and Close help join Tab order; current text and keycaps do not.
+    // Only ancestor actions and Close help join Tab order; typography and keycaps do not.
     cx.simulate_keystrokes("tab tab tab");
     draw(cx);
     cx.update(|window, _| {
@@ -943,6 +959,397 @@ fn settings_tabs_and_popover_preserve_nested_focus(cx: &mut TestAppContext) {
         assert!(!demo.help.read(cx).is_open());
         assert!(!demo.show_cursor);
     });
+}
+
+#[gpui::test]
+fn help_typography_wraps_in_both_appearances_without_adding_focus(cx: &mut TestAppContext) {
+    const OWNERSHIP: &str = "In this example, DialogState owns panel visibility, while InputState retains the session name. Closing Help does not create another copy of either state.";
+    const SOURCE: &str = "crates/base/examples/two_styles.rs";
+
+    for appearance in [Appearance::Compact, Appearance::Settings] {
+        let (cx, demo) = harness(cx, appearance);
+        cx.simulate_resize(gpui::size(px(760.), px(780.)));
+        draw(cx);
+        open_dialog(cx, &demo);
+        cx.update(|window, cx| {
+            let help = demo.read(cx).tabs.read(cx).tab_focus_handle(2).clone();
+            help.focus(window, cx);
+        });
+        draw(cx);
+        cx.run_until_parked();
+        draw(cx);
+        cx.update(|window, cx| {
+            assert_eq!(demo.read(cx).tabs.read(cx).selected_index(), Some(2));
+            let sections = demo.read(cx).accordion.clone();
+            sections.update(cx, |state, cx| state.toggle(2, window, cx));
+        });
+        draw(cx);
+
+        let mut wide_height = None;
+        // Revisit the wide window to catch stale wrapping after a narrow layout.
+        for (width, height) in [(760., 780.), (320., 480.), (280., 480.), (760., 780.)] {
+            cx.simulate_resize(gpui::size(px(width), px(height)));
+            draw(cx);
+            draw(cx);
+            let (body, text_height) = cx.update(|window, cx| {
+                let content_id = gpui::ElementId::from("help-content");
+                let sections_id = gpui::ElementId::from("help-sections");
+                let content = test_support::find(window, &[], &content_id)
+                    .unwrap()
+                    .bounds();
+                let body_id = (gpui::ElementId::from("session-settings"), "body").into();
+                let body = test_support::find(window, &[], &body_id).unwrap().bounds();
+                assert!(content.left() >= body.left());
+                assert!(content.right() <= body.right() + px(1.));
+
+                for (id, role, label) in [
+                    ("help-title", Role::Heading, "Help"),
+                    ("help-state-ownership", Role::Paragraph, OWNERSHIP),
+                    (
+                        "help-source-description",
+                        Role::Paragraph,
+                        "The consumer example lives in:",
+                    ),
+                    ("help-source-path", Role::Code, SOURCE),
+                ] {
+                    let id = gpui::ElementId::from(id);
+                    let element = test_support::find(window, &[], &id).unwrap();
+                    assert_eq!(element.role(), Some(role));
+                    assert_eq!(element.label(), Some(label));
+                    assert_eq!(element.focused(), None);
+                    assert!(element.path().contains(&content_id));
+                    if role != Role::Heading {
+                        assert!(element.path().contains(&sections_id));
+                    }
+                    assert!(element.bounds().left() >= content.left());
+                    assert!(element.bounds().right() <= content.right() + px(1.));
+                }
+
+                let text = test_support::texts(window);
+                let ownership_id = gpui::ElementId::from("help-state-ownership");
+                let ownership = text
+                    .iter()
+                    .find(|text| text.path().contains(&ownership_id))
+                    .unwrap();
+                assert_eq!(ownership.text(), OWNERSHIP);
+                assert!(ownership.bounds().size.height > px(0.));
+                assert!(ownership.bounds().left() >= content.left());
+                assert!(ownership.bounds().right() <= content.right() + px(1.));
+                let source_id = gpui::ElementId::from("help-source-path");
+                let source = text
+                    .iter()
+                    .find(|text| text.path().contains(&source_id))
+                    .unwrap();
+                assert_eq!(source.text(), SOURCE);
+                assert!(source.bounds().right() <= content.right() + px(1.));
+
+                let demo = demo.read(cx);
+                assert!(demo.tabs.read(cx).tab_focus_handle(2).is_focused(window));
+                assert_eq!(demo.accordion.read(cx).open_index(), Some(2));
+                assert_eq!(demo.fields_scroll.offset().x, px(0.));
+                (body, ownership.bounds().size.height)
+            });
+            match wide_height {
+                None => wide_height = Some(text_height),
+                Some(wide) if width == 760. => assert_eq!(text_height, wide),
+                Some(wide) => assert!(text_height >= wide),
+            }
+
+            cx.simulate_event(ScrollEvent {
+                position: point(body.left() + px(2.), body.center().y),
+                delta: ScrollDelta::Pixels(point(px(0.), px(-10_000.))),
+                ..Default::default()
+            });
+            draw(cx);
+            cx.update(|window, cx| {
+                let source = test_support::find(window, &[], &"help-source-path".into()).unwrap();
+                assert!(source.visible());
+                assert!(source.bounds().top() >= body.top());
+                assert!(source.bounds().bottom() <= body.bottom() + px(1.));
+                let demo = demo.read(cx);
+                let scroll = &demo.fields_scroll;
+                assert_eq!(scroll.offset().x, px(0.));
+                assert!((scroll.offset().y + scroll.max_offset().y).abs() < px(1.));
+                if width < 760. {
+                    assert!(scroll.max_offset().y > px(0.));
+                }
+                assert!(demo.tabs.read(cx).tab_focus_handle(2).is_focused(window));
+            });
+        }
+
+        // The added title must also fit the narrow popup with its existing
+        // Breadcrumb actions and keycaps, including a fully reachable close button.
+        for width in [320., 280.] {
+            cx.simulate_resize(gpui::size(px(width), px(480.)));
+            cx.update(|window, cx| {
+                let sections = demo.read(cx).accordion.clone();
+                sections.update(cx, |state, cx| {
+                    if state.open_index() != Some(0) {
+                        state.toggle(0, window, cx);
+                    }
+                });
+            });
+            draw(cx);
+            cx.update(|window, cx| {
+                let help = demo.read(cx).help.read(cx).focus_handle().clone();
+                help.focus(window, cx);
+            });
+            draw(cx);
+            cx.run_until_parked();
+            draw(cx);
+            activate_key(cx, "enter");
+            cx.update(|window, cx| {
+                assert!(demo.read(cx).help.read(cx).is_open());
+                let popup = test_support::snapshots(window)
+                    .into_iter()
+                    .find(|item| {
+                        item.role() == Some(Role::Dialog) && item.label() == Some("Keyboard help")
+                    })
+                    .unwrap()
+                    .bounds();
+                let viewport = window.viewport_size();
+                assert!(popup.left() >= px(0.) && popup.top() >= px(0.));
+                assert!(popup.right() <= viewport.width + px(1.));
+                assert!(popup.bottom() <= viewport.height + px(1.));
+                for id in ["keyboard-guide-title", "close-help"] {
+                    let item = test_support::find(window, &[], &id.into()).unwrap();
+                    assert!(item.visible());
+                    assert!(item.bounds().top() >= popup.top());
+                    assert!(item.bounds().bottom() <= popup.bottom());
+                }
+            });
+            cx.simulate_keystrokes("escape");
+            draw(cx);
+        }
+        cx.simulate_keystrokes("escape");
+        draw(cx);
+    }
+}
+
+#[gpui::test]
+fn configuration_code_copies_current_values_and_contains_nested_scrolling(cx: &mut TestAppContext) {
+    let code_id = (gpui::ElementId::from("session-configuration"), "code").into();
+    let copy_id = (gpui::ElementId::from("session-configuration"), "copy").into();
+    let scroll_id = (gpui::ElementId::from("session-configuration"), "scroll").into();
+    let body_id = (gpui::ElementId::from("session-settings"), "body").into();
+    let name = "긴프로젝트_export_identifier_0123456789".repeat(4);
+    let initial_notes = "첫 번째 줄\nA quoted \"setting\" stays literal.\n\n마지막 줄\n";
+    let changed_notes = format!("{initial_notes}{}\n", "설정_configuration_".repeat(12));
+
+    // The two palettes give this nested viewport different available widths.
+    for appearance in [Appearance::Compact, Appearance::Settings] {
+        let (cx, demo) = harness(cx, appearance);
+        cx.simulate_resize(gpui::size(px(320.), px(480.)));
+        draw(cx);
+        open_dialog(cx, &demo);
+        cx.update(|window, cx| {
+            let input = demo.read(cx).input.clone();
+            input.update(cx, |state, cx| state.set_value(name.clone(), window, cx));
+            let notes = demo.read(cx).notes.clone();
+            notes.update(cx, |state, cx| state.set_value(initial_notes, window, cx));
+            let help = demo.read(cx).tabs.read(cx).tab_focus_handle(2).clone();
+            help.focus(window, cx);
+        });
+        draw(cx);
+        cx.run_until_parked();
+        draw(cx);
+        cx.update(|window, cx| {
+            let sections = demo.read(cx).accordion.clone();
+            sections.update(cx, |state, cx| state.toggle(2, window, cx));
+        });
+        draw(cx);
+        cx.update(|window, cx| {
+            let panel = demo
+                .read(cx)
+                .accordion
+                .read(cx)
+                .panel_focus_handle(2)
+                .clone();
+            panel.focus(window, cx);
+            cx.write_to_clipboard(gpui::ClipboardItem::new_string("test sentinel".into()));
+        });
+        draw(cx);
+        cx.simulate_keystrokes("tab");
+        draw(cx);
+        let first_code = cx.update(|window, cx| {
+            let copy = test_support::find(window, &[], &copy_id).unwrap();
+            assert_eq!(copy.role(), Some(Role::Button));
+            assert_eq!(copy.label(), Some("Copy Session configuration"));
+            assert_eq!(copy.focused(), Some(true));
+            assert!(copy.visible());
+            let code = demo.read(cx).configuration_code(cx);
+            let config: serde_json::Value = serde_json::from_str(code.as_ref()).unwrap();
+            assert_eq!(config["session_name"], name);
+            assert_eq!(config["notes"], initial_notes);
+            code
+        });
+        activate_key(cx, "enter");
+        cx.update(|window, cx| {
+            assert_eq!(
+                cx.read_from_clipboard().and_then(|item| item.text()),
+                Some(first_code.to_string())
+            );
+            assert_eq!(
+                test_support::find(window, &[], &copy_id).unwrap().focused(),
+                Some(true)
+            );
+            let notes = demo.read(cx).notes.clone();
+            notes.update(cx, |state, cx| {
+                state.set_value(changed_notes.clone(), window, cx)
+            });
+        });
+        draw(cx);
+        cx.run_until_parked();
+        draw(cx);
+        let current_code = cx.update(|window, cx| {
+            let code = demo.read(cx).configuration_code(cx);
+            assert_ne!(code, first_code);
+            let config: serde_json::Value = serde_json::from_str(code.as_ref()).unwrap();
+            assert_eq!(config["session_name"], name);
+            assert_eq!(config["notes"], changed_notes);
+            assert_eq!(
+                test_support::find(window, &[], &code_id).unwrap().label(),
+                Some(code.as_ref())
+            );
+            code
+        });
+        activate_key(cx, "space");
+        cx.update(|window, cx| {
+            assert_eq!(
+                cx.read_from_clipboard().and_then(|item| item.text()),
+                Some(current_code.to_string()),
+                "the copy callback must follow the newly rendered retained values"
+            );
+            assert_eq!(
+                test_support::find(window, &[], &copy_id).unwrap().focused(),
+                Some(true)
+            );
+        });
+        cx.simulate_keystrokes("tab");
+        draw(cx);
+        cx.run_until_parked();
+        draw(cx);
+
+        let mut text_height = None;
+        for width in [320., 280.] {
+            cx.simulate_resize(gpui::size(px(width), px(480.)));
+            draw(cx);
+            // Re-enter through the Copy button so native focus reveal is also
+            // exercised after the narrower prose above changes its height.
+            cx.simulate_keystrokes("shift-tab");
+            draw(cx);
+            cx.simulate_keystrokes("tab");
+            draw(cx);
+            cx.run_until_parked();
+            draw(cx);
+            let (body, code_bounds, parent_offset, maximum) = cx.update(|window, cx| {
+                let body = test_support::find(window, &[], &body_id).unwrap().bounds();
+                let code = test_support::find(window, &[], &code_id).unwrap();
+                assert_eq!(code.role(), Some(Role::Code));
+                assert_eq!(code.label(), Some(current_code.as_ref()));
+                assert_eq!(code.focused(), Some(true));
+                assert!(code.visible());
+                assert!(code.bounds().left() >= body.left());
+                assert!(code.bounds().right() <= body.right() + px(1.));
+                assert!(code.bounds().top() >= body.top() - px(1.));
+                assert!(code.bounds().bottom() <= body.bottom() + px(1.));
+                let scroll = test_support::find(window, &[], &scroll_id).unwrap();
+                assert_eq!(scroll.role(), Some(Role::ScrollView));
+                let text = test_support::texts(window)
+                    .into_iter()
+                    .find(|text| text.path().contains(&code_id))
+                    .unwrap();
+                assert_eq!(text.text(), current_code.as_ref());
+                assert!(text.bounds().size.width > code.bounds().size.width);
+                if let Some(height) = text_height {
+                    assert_eq!(text.bounds().size.height, height, "code must not soft-wrap");
+                } else {
+                    text_height = Some(text.bounds().size.height);
+                }
+                let demo = demo.read(cx);
+                assert!(demo.configuration_focus.is_focused(window));
+                assert_eq!(demo.tabs.read(cx).selected_index(), Some(2));
+                assert_eq!(demo.accordion.read(cx).open_index(), Some(2));
+                assert_eq!(demo.fields_scroll.offset().x, px(0.));
+                let maximum = demo.configuration_scroll.max_offset();
+                assert!(maximum.x > px(0.) && maximum.y > px(0.));
+                (body, code.bounds(), demo.fields_scroll.offset(), maximum)
+            });
+            cx.simulate_keystrokes("end down right pagedown");
+            draw(cx);
+            cx.update(|window, cx| {
+                let demo = demo.read(cx);
+                let offset = demo.configuration_scroll.offset();
+                assert!((offset.x + maximum.x).abs() < px(1.));
+                assert!((offset.y + maximum.y).abs() < px(1.));
+                assert_eq!(demo.fields_scroll.offset(), parent_offset);
+                assert!(demo.configuration_focus.is_focused(window));
+                assert_eq!(demo.accordion.read(cx).open_index(), Some(2));
+            });
+            cx.simulate_event(ScrollEvent {
+                position: code_bounds.center(),
+                delta: ScrollDelta::Pixels(point(px(-10_000.), px(-10_000.))),
+                ..Default::default()
+            });
+            draw(cx);
+            cx.update(|_, cx| {
+                let demo = demo.read(cx);
+                assert_eq!(demo.fields_scroll.offset(), parent_offset);
+                assert!((demo.configuration_scroll.offset().x + maximum.x).abs() < px(1.));
+                assert!((demo.configuration_scroll.offset().y + maximum.y).abs() < px(1.));
+            });
+            // The Sheet's exposed gutter remains independently scrollable.
+            for delta in [-10_000., 10_000.] {
+                cx.simulate_event(ScrollEvent {
+                    position: point(body.left() + px(2.), body.center().y),
+                    delta: ScrollDelta::Pixels(point(px(0.), px(delta))),
+                    ..Default::default()
+                });
+                draw(cx);
+                cx.update(|_, cx| {
+                    let demo = demo.read(cx);
+                    let expected = if delta < 0. {
+                        -demo.fields_scroll.max_offset().y
+                    } else {
+                        px(0.)
+                    };
+                    assert!((demo.fields_scroll.offset().y - expected).abs() < px(1.));
+                    assert_eq!(demo.fields_scroll.offset().x, px(0.));
+                    assert!((demo.configuration_scroll.offset().x + maximum.x).abs() < px(1.));
+                    assert!((demo.configuration_scroll.offset().y + maximum.y).abs() < px(1.));
+                });
+            }
+        }
+        cx.simulate_keystrokes("tab");
+        draw(cx);
+        cx.update(|window, _| {
+            assert!(
+                test_support::snapshots(window)
+                    .iter()
+                    .any(|item| { item.label() == Some("Done") && item.focused() == Some(true) })
+            );
+        });
+        cx.simulate_keystrokes("shift-tab");
+        draw(cx);
+        cx.update(|window, cx| assert!(demo.read(cx).configuration_focus.is_focused(window)));
+        cx.simulate_keystrokes("escape");
+        draw(cx);
+        cx.update(|window, cx| {
+            let demo = demo.read(cx);
+            assert!(!demo.dialog.read(cx).is_open());
+            assert!(demo.edit_hint.read(cx).focus_handle().is_focused(window));
+        });
+        open_dialog(cx, &demo);
+        cx.update(|window, cx| {
+            let demo = demo.read(cx);
+            assert_eq!(demo.input.read(cx).value().as_ref(), name.as_str());
+            assert_eq!(demo.notes.read(cx).value().as_ref(), changed_notes.as_str());
+            assert_eq!(demo.configuration_code(cx), current_code);
+            assert!(demo.input.focus_handle(cx).is_focused(window));
+            assert_eq!(demo.tabs.read(cx).selected_index(), Some(2));
+            assert_eq!(demo.accordion.read(cx).open_index(), Some(2));
+        });
+    }
 }
 
 #[gpui::test]
@@ -1848,6 +2255,8 @@ fn field_feedback_and_search_selection_work_inside_the_dialog(cx: &mut TestAppCo
 
 #[gpui::test]
 fn date_picker_and_split_panes_preserve_nested_form_state(cx: &mut TestAppContext) {
+    let marker_id = gpui::ElementId::from("schedule-marker");
+    let marker_label_id = (marker_id.clone(), "label").into();
     let (cx, demo) = harness(cx, Appearance::Compact);
     open_dialog(cx, &demo);
     cx.simulate_keystrokes("tab tab end left tab");
@@ -1865,6 +2274,28 @@ fn date_picker_and_split_panes_preserve_nested_form_state(cx: &mut TestAppContex
         assert_eq!(trigger.role(), Some(Role::Button));
         assert_eq!(trigger.expanded(), Some(false));
         assert_eq!(trigger.label(), Some("Recording date, 2026-11-09"));
+        let marker = test_support::find(window, &[], &marker_id).unwrap();
+        assert_eq!(marker.role(), None);
+        assert_eq!(marker.label(), None);
+        assert_eq!(marker.focused(), None);
+        let label = test_support::find(window, &[], &marker_label_id).unwrap();
+        assert_eq!(label.role(), Some(Role::Label));
+        assert_eq!(label.label(), Some("Selected date · 2026-11-09"));
+        assert_eq!(label.focused(), None);
+        for part in ["before", "after"] {
+            let rule = test_support::find(window, &[], &(marker_id.clone(), part).into()).unwrap();
+            assert_eq!(rule.role(), None);
+            assert_eq!(rule.label(), None);
+            assert_eq!(rule.focused(), None);
+        }
+        assert_eq!(
+            test_support::snapshots(window)
+                .iter()
+                .filter(|item| item.path().contains(&marker_id) && item.label().is_some())
+                .count(),
+            1,
+            "the date boundary supplies one semantic label"
+        );
     });
     activate_key(cx, "enter");
     cx.update(|window, cx| {
@@ -1934,6 +2365,13 @@ fn date_picker_and_split_panes_preserve_nested_form_state(cx: &mut TestAppContex
         let grid = test_support::find(window, &[], &"recording-calendar".into()).unwrap();
         assert_eq!(grid.role(), Some(Role::Grid));
         assert_eq!(grid.label(), Some("Recording date, December 2026"));
+        assert_eq!(
+            test_support::find(window, &[], &marker_label_id)
+                .unwrap()
+                .label(),
+            Some("Selected date · 2026-11-09"),
+            "moving the calendar cursor does not commit a new boundary date"
+        );
     });
     cx.simulate_keystrokes("escape");
     draw(cx);
@@ -1948,6 +2386,12 @@ fn date_picker_and_split_panes_preserve_nested_form_state(cx: &mut TestAppContex
         assert_eq!(
             demo.calendar.read(cx).selected_date(),
             NaiveDate::from_ymd_opt(2026, 11, 9)
+        );
+        assert_eq!(
+            test_support::find(window, &[], &marker_label_id)
+                .unwrap()
+                .label(),
+            Some("Selected date · 2026-11-09")
         );
     });
     activate_key(cx, "enter");
@@ -1976,6 +2420,12 @@ fn date_picker_and_split_panes_preserve_nested_form_state(cx: &mut TestAppContex
                 .unwrap()
                 .label(),
             Some("Recording date, 2026-12-10")
+        );
+        assert_eq!(
+            test_support::find(window, &[], &marker_label_id)
+                .unwrap()
+                .label(),
+            Some("Selected date · 2026-12-10")
         );
     });
     cx.simulate_keystrokes("tab");
@@ -2086,7 +2536,102 @@ fn date_picker_and_split_panes_preserve_nested_form_state(cx: &mut TestAppContex
         assert!(test_support::texts(window).iter().any(|text| {
             text.path().contains(&"plan-date".into()) && text.text() == "2026-12-10"
         }));
+        assert_eq!(
+            test_support::find(window, &[], &marker_label_id)
+                .unwrap()
+                .label(),
+            Some("Selected date · 2026-12-10")
+        );
     });
+}
+
+#[gpui::test]
+fn schedule_marker_tracks_selection_at_narrow_widths_without_adding_focus(cx: &mut TestAppContext) {
+    let marker_id = gpui::ElementId::from("schedule-marker");
+    let label_id = (marker_id.clone(), "label").into();
+    let body_id = (gpui::ElementId::from("session-settings"), "body").into();
+    for appearance in [Appearance::Compact, Appearance::Settings] {
+        let (cx, demo) = harness(cx, appearance);
+        cx.simulate_resize(gpui::size(px(320.), px(480.)));
+        draw(cx);
+        open_dialog(cx, &demo);
+        cx.update(|window, cx| {
+            let schedule = demo.read(cx).tabs.read(cx).tab_focus_handle(3).clone();
+            schedule.focus(window, cx);
+        });
+        draw(cx);
+        cx.run_until_parked();
+        draw(cx);
+        cx.update(|window, cx| {
+            let picker = demo.read(cx).date_picker.read(cx).focus_handle().clone();
+            picker.focus(window, cx);
+        });
+        draw(cx);
+        for (width, date, expected) in [
+            (320., None, "No date selected"),
+            (
+                280.,
+                NaiveDate::from_ymd_opt(2026, 12, 31),
+                "Selected date · 2026-12-31",
+            ),
+        ] {
+            cx.simulate_resize(gpui::size(px(width), px(480.)));
+            cx.update(|window, cx| {
+                let calendar = demo.read(cx).calendar.clone();
+                calendar.update(cx, |state, cx| {
+                    assert!(state.set_selected_date(date, window, cx));
+                });
+            });
+            draw(cx);
+            cx.run_until_parked();
+            draw(cx);
+            let (position, delta) = cx.update(|window, _| {
+                let body = test_support::find(window, &[], &body_id).unwrap().bounds();
+                let marker = test_support::find(window, &[], &marker_id)
+                    .unwrap()
+                    .bounds();
+                (
+                    point(body.left() + px(2.), body.center().y),
+                    body.center().y - marker.center().y,
+                )
+            });
+            cx.simulate_event(ScrollEvent {
+                position,
+                delta: ScrollDelta::Pixels(point(px(0.), delta)),
+                ..Default::default()
+            });
+            draw(cx);
+            cx.update(|window, cx| {
+                let body = test_support::find(window, &[], &body_id).unwrap().bounds();
+                let marker = test_support::find(window, &[], &marker_id).unwrap();
+                let label = test_support::find(window, &[], &label_id).unwrap();
+                assert!(marker.visible() && label.visible());
+                assert!(marker.bounds().left() >= body.left());
+                assert!(marker.bounds().right() <= body.right() + px(1.));
+                assert!(label.bounds().top() >= body.top());
+                assert!(label.bounds().bottom() <= body.bottom() + px(1.));
+                assert_eq!(label.role(), Some(Role::Label));
+                assert_eq!(label.label(), Some(expected));
+                assert_eq!(label.focused(), None);
+                let texts = test_support::texts(window);
+                let text = texts
+                    .iter()
+                    .find(|text| text.path().contains(&label_id))
+                    .unwrap();
+                assert_eq!(text.text(), expected);
+                assert!(text.visible());
+                assert!(text.bounds().left() >= marker.bounds().left());
+                assert!(text.bounds().right() <= marker.bounds().right() + px(1.));
+                let demo = demo.read(cx);
+                assert_eq!(demo.calendar.read(cx).selected_date(), date);
+                assert!(demo.date_picker.read(cx).focus_handle().is_focused(window));
+                assert_eq!(demo.fields_scroll.offset().x, px(0.));
+            });
+        }
+        cx.simulate_keystrokes("tab");
+        draw(cx);
+        cx.update(|window, cx| assert!(demo.read(cx).notes.focus_handle(cx).is_focused(window)));
+    }
 }
 
 #[gpui::test]
