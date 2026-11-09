@@ -8,7 +8,7 @@ Headless separates control behavior from application-owned presentation; the
 examples render native GPUI windows.
 
 This is an early foundation for an independent component ecosystem. It currently
-includes 30 public library families and four copyable presentation recipes. An
+includes 30 public library families and seven copyable presentation recipes. An
 executable example gives the same behavior two visual treatments. The source is
 maintained in this repository, with GPUI kept as an exactly pinned rendering
 dependency.
@@ -65,12 +65,15 @@ These types live in the example, outside the `gpui_design` crate exports.
 | **Badge** | Static label with secondary and accent appearances | Cursor and toolbar settings |
 | **Empty** (`EmptyState`) | Named empty state with description, optional media, and an action slot | No matching commands, with Clear search returning focus to the query |
 | **ButtonGroup** | Connected horizontal/vertical buttons with an optional text slot | Previous month, month label, and next month |
+| **InputGroup** | Shared frame around an existing input, with leading/trailing addons and horizontal/vertical layout | Required name with a default-name action, multiline notes footer, and command-search prefix |
+| **Item** | Named content row with a title, description, and trailing action | Current recording preset beside its existing preview/edit control |
+| **Alert** | Inline title and description, with separate destructive styling and explicit urgency | Informational schedule notice and a missing-name warning after closing invalid settings |
 
 The breadth target is the range of screens and interactions supported by
 shadcn/ui. The [component coverage map](docs/component-coverage.md) compares all
 66 entries in its current main catalogue with the actual public scope here.
 It distinguishes behavior, source-owned presentation recipes, and larger
-compositions. The 30 library families and four recipes each have a defined scope;
+compositions. The 30 library families and seven recipes each have a defined scope;
 the map records their current limits and the work still needed for comparable
 coverage.
 
@@ -108,6 +111,11 @@ values, and keywords, then dispatches the same application actions as the menu.
 Its empty state can clear the query without dispatching a command or closing the
 dialog. Card and Badge compose the summary; ButtonGroup shares the calendar
 controls' framing while preserving each Button's normal Tab stop and action.
+InputGroup frames the existing editors and addons without adding another text
+input. An empty session name offers Use default, which restores `MiniCast` and
+returns focus to that input; the action is disabled for a non-editable input.
+Closing settings with a missing name shows an inline Alert on the summary.
+Item presents the current preset beside its existing HoverCard/edit control.
 Session settings includes a retained multiline notes field and semantic separators;
 its body scrolls when the available window height cannot hold all fields.
 An editable recording-preset Combobox filters choices while retaining the last
@@ -119,7 +127,8 @@ reflecting the retained session name, date, and recording preset. A vertical
 Resizable divides shared session notes and the plan table. The table scrolls
 horizontally and vertically as its pane changes size, while the surrounding form
 uses a vertical ScrollArea. Date, notes, and pane ratio survive closing the dialog.
-The example's date bounds are 2026–2027; it does not schedule an actual recording.
+An informational Alert explains that the example retains preferences without
+scheduling an actual recording. Its date bounds are 2026–2027.
 
 ## Layers and source ownership
 
@@ -217,7 +226,7 @@ The GPUI snapshot family is pinned to **`=0.3.11`**. Update those pins and
 | `crates/base/src/` | The `gpui-design` library and its behavior-level tests |
 | `crates/base/tests/` | Integration tests using the public API |
 | `crates/base/examples/two_styles.rs` | Native example and application-owned styles |
-| `crates/base/examples/recipes/` | Copyable Card, Badge, EmptyState, and ButtonGroup presentations |
+| `crates/base/examples/recipes/` | Copyable Card, Badge, EmptyState, ButtonGroup, InputGroup, Item, and Alert presentations |
 | `docs/form-controls.md` | Form control usage and interaction contracts |
 | `docs/navigation-overlays.md` | Tabs, Accordion, command menus, and composed focus behavior |
 | `docs/layout-and-data.md` | Table structure, ScrollArea composition, and Resizable panes |

@@ -27,7 +27,7 @@ use gpui_design::{
 
 #[path = "recipes/mod.rs"]
 mod recipes;
-use recipes::{Badge, ButtonGroup, Card, EmptyState};
+use recipes::{Alert, Badge, ButtonGroup, Card, EmptyState, InputGroup, Item};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Appearance {
@@ -642,6 +642,12 @@ impl Demo {
             .flex()
             .flex_col()
             .gap(palette.gap)
+            .child(Alert::new(
+                "schedule-notice",
+                "Recording preferences",
+                "This example keeps your date and notes. It does not start or schedule a recording.",
+                palette,
+            ))
             .child(picker)
             .child(
                 Resizable::new("schedule-panes", &self.schedule_split)
@@ -708,15 +714,27 @@ impl Render for Demo {
             .semantic_owner::<Input>(self.input.entity_id())
             .focused(self.input.focus_handle(cx).is_focused(window))
             .h(palette.control_height)
-            .px_3()
             .w_full()
-            .border_1()
-            .border_color(palette.border)
-            .rounded(palette.radius)
-            .bg(palette.field)
-            .styles(|styles| styles.focused(|style| style.border_color(palette.accent)))
-            .when(name_invalid, |field| field.border_color(palette.error))
             .child(Input::new(&self.input));
+        let field = InputGroup::new("session-name-group", field, palette)
+            .focused(self.input.focus_handle(cx).is_focused(window))
+            .invalid(name_invalid)
+            .when(name_invalid, |group| {
+                let input = self.input.clone();
+                group.trailing(Self::button(
+                    palette,
+                    Button::new("use-default-session-name")
+                        .accessibility_label("Use default name")
+                        .disabled(!input.read(cx).is_editable())
+                        .on_click(move |_, window, cx| {
+                            input.update(cx, |state, cx| {
+                                state.set_value("MiniCast", window, cx);
+                                state.focus(window, cx);
+                            });
+                        })
+                        .child("Use default"),
+                ))
+            });
         let name_field = Field::new("session-name-field", &self.input, "Session name")
             .description("Choose a name to recognize this session.")
             .required(true)
@@ -737,14 +755,17 @@ impl Render for Demo {
             .focused(self.notes.focus_handle(cx).is_focused(window))
             .h(px(84.))
             .w_full()
-            .px_3()
-            .py_2()
-            .border_1()
-            .border_color(palette.border)
-            .rounded(palette.radius)
-            .bg(palette.field)
-            .styles(|styles| styles.focused(|style| style.border_color(palette.accent)))
             .child(Textarea::new(&self.notes));
+        let notes = InputGroup::new("session-notes-group", notes, palette)
+            .axis(Axis::Vertical)
+            .py_2()
+            .focused(self.notes.focus_handle(cx).is_focused(window))
+            .trailing(
+                div()
+                    .text_sm()
+                    .text_color(palette.muted)
+                    .child("Enter for a new line · Tab to continue"),
+            );
         let notes_field = Field::new("session-notes-field", &self.notes, "Session notes")
             .description("Optional notes stay with this session.")
             .styles(|styles| styles.description(|style| style.text_sm().text_color(palette.muted)))
@@ -839,7 +860,7 @@ impl Render for Demo {
                     .on_click(move |_, window, cx| {
                         preset_dialog.update(cx, |state, cx| state.open(window, cx));
                     })
-                    .child(format!("Preset: {preset_label}"))
+                    .child("Edit")
             })
             .content(
                 div()
@@ -1452,19 +1473,17 @@ impl Render for Demo {
                     .flex_col()
                     .gap_2()
                     .child(
-                        CommandInput::new("command-query", &self.commands)
-                            .accessibility_label("Search commands")
-                            .placeholder("Search actions or type 설정")
-                            .h(palette.control_height)
-                            .px_3()
-                            .w_full()
-                            .border_1()
-                            .border_color(palette.border)
-                            .rounded(palette.radius)
-                            .bg(palette.field)
-                            .styles(|styles| {
-                                styles.focused(|style| style.border_color(palette.accent))
-                            }),
+                        InputGroup::new(
+                            "command-query-group",
+                            CommandInput::new("command-query", &self.commands)
+                                .accessibility_label("Search commands")
+                                .placeholder("Search actions or type 설정")
+                                .h(palette.control_height)
+                                .w_full(),
+                            palette,
+                        )
+                        .focused(command_state.focus_handle().is_focused(window))
+                        .leading(div().text_color(palette.muted).child("Find")),
                     )
                     .child(
                         Separator::new("command-separator")
@@ -1613,7 +1632,11 @@ impl Render for Demo {
                                 .accent(self.show_cursor),
                             ),
                         )
-                        .child(preset_preview)
+                        .child(
+                            Item::new("recording-preset-item", "Recording preset", palette)
+                                .description(preset_label)
+                                .action(preset_preview),
+                        )
                         .child(div().text_color(palette.muted).child(format!(
                                 "Recording date: {}",
                                 self.calendar
@@ -1621,7 +1644,19 @@ impl Render for Demo {
                                     .selected_date()
                                     .map(|date| date.format("%Y-%m-%d").to_string())
                                     .unwrap_or_else(|| "Not scheduled".to_string())
-                            ))),
+                            )))
+                        .when(name_invalid && !self.dialog.read(cx).is_open(), |content| {
+                            content.child(
+                                Alert::new(
+                                    "session-name-alert",
+                                    "Session name is missing",
+                                    "Open Edit session and enter a name or use the default name.",
+                                    palette,
+                                )
+                                .destructive(true)
+                                .urgent(true),
+                            )
+                        }),
                 )
                 .footer(
                     div()

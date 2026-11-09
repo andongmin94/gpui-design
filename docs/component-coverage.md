@@ -6,9 +6,9 @@ Its main catalogue contains **66 entries**, each listed once below. The separate
 AI Elements catalogue is outside this comparison; conversation components already
 in the main catalogue remain included.
 
-GPUI Design currently documents **30 public library families and four copyable
-presentation recipes**, covering **34 catalogue entries** within the scopes below.
-This is not 34/66 feature parity: a family can exist with a deliberately limited
+GPUI Design currently documents **30 public library families and seven copyable
+presentation recipes**, covering **37 catalogue entries** within the scopes below.
+This is not 37/66 feature parity: a family can exist with a deliberately limited
 contract, and several shadcn entries describe combinations of other parts.
 These counts do not measure performance, accessibility conformance, or completion
 of native desktop validation.
@@ -79,12 +79,12 @@ in the [form guide](form-controls.md),
 These entries primarily need reusable source compositions with consistent visual
 defaults and appropriate semantics. Existing GPUI layout and controls should do
 the work; adding a new state controller for each visual name is unnecessary.
-The four published recipes live in `crates/base/examples/recipes`, use the
+The seven published recipes live in `crates/base/examples/recipes`, use the
 consumer's palette, and are composed into the native two-style example.
 
 | Catalogue entry | Status | Current scope or gap |
 | --- | --- | --- |
-| Alert | Pending | Inline message/status presentation and semantic guidance have not been packaged. |
+| Alert | Recipe | Inline title/description, default informational Note semantics, explicit urgent Alert semantics, and independent destructive styling. No notification queue, dismissal state, or live-region delivery controller. |
 | Aspect Ratio | Pending | No documented proportion-preserving media recipe. |
 | Avatar | Pending | Image/fallback presentation and its loading-state composition are not provided. |
 | Badge | Recipe | Static named label with secondary/accent appearances. No click, toggle, or automatic live announcement. |
@@ -92,8 +92,8 @@ consumer's palette, and are composed into the native two-style example.
 | Button Group | Recipe | Connected horizontal/vertical buttons, shared border, decorative separators, and optional static text. Existing Button actions, disabled states, and individual Tab stops are preserved; no roving selection model. |
 | Card | Recipe | Named region, level-two heading, description, header action, content, and footer slots. Layout and palette belong to the application; no card focus stop or state controller. |
 | Empty | Recipe | Named static group with heading, description, optional media, and supplied actions. The command-search example clears the query and restores input focus through its existing state. No loading controller or automatic live announcement. |
-| Input Group | Pending | Input and Button exist; addons, inline actions, and shared framing need a recipe. |
-| Item | Pending | No reusable content/action row composition. |
+| Input Group | Recipe | Shared frame for an existing InputBase, CommandInput, or other supplied control, leading/trailing addons, horizontal/vertical arrangement, and focus/error presentation. Native editing, Field metadata, addon actions, and disabled policy remain with the supplied controls and application. No separate editor or focus controller. |
+| Item | Recipe | Named row with a title, description, and supplied trailing action. No whole-row activation, selection, media/header/footer slots, or list controller. |
 | Kbd | Pending | Keyboard shortcut text is application content without a reusable presentation recipe. |
 | Pagination | Pending | Page controls and current-page presentation have not been composed into a supported recipe. |
 | Sheet | Pending | Dialog provides modal behavior; edge placement and sheet presentation are not yet offered. |
@@ -131,9 +131,9 @@ popup, focus, and scrolling machinery.
 
 1. Add deliberate application-owned data operations over Table. Preserve shared
    focus and selection behavior instead of duplicating those public foundations.
-2. Extend the source-owned recipe set alongside working flows, next covering
-   field framing, content/action rows, and inline messages. Keep palette and
-   sizing decisions outside the behavior layer.
+2. Extend the source-owned recipe set alongside working flows, including
+   navigation and loading presentation. Keep palette and sizing decisions
+   outside the behavior layer.
 3. Extend menu composition where real screens need it, starting with checked
    commands and submenus. Continue composing panes with Resizable/ScrollArea;
    virtualization and transcript anchoring remain separate work.

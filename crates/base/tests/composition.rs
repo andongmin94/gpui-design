@@ -1278,6 +1278,56 @@ fn field_feedback_and_search_selection_work_inside_the_dialog(cx: &mut TestAppCo
                 .visible()
         );
     });
+    cx.simulate_keystrokes("escape");
+    draw(cx);
+    cx.update(|window, cx| {
+        assert!(!demo.read(cx).dialog.read(cx).is_open());
+        let alert = test_support::find(window, &[], &"session-name-alert".into()).unwrap();
+        assert_eq!(alert.role(), Some(Role::Alert));
+        assert_eq!(alert.label(), Some("Session name is missing"));
+        assert!(
+            demo.read(cx)
+                .preset_preview
+                .read(cx)
+                .focus_handle()
+                .is_focused(window)
+        );
+    });
+    open_dialog(cx, &demo);
+    cx.update(|window, cx| {
+        assert!(test_support::find(window, &[], &"session-name-alert".into()).is_none());
+        demo.read(cx)
+            .input
+            .clone()
+            .update(cx, |state, cx| state.set_readonly(true, cx));
+    });
+    draw(cx);
+    cx.update(|window, cx| {
+        let action = test_support::find(window, &[], &"use-default-session-name".into()).unwrap();
+        assert_eq!(action.disabled(), Some(true));
+        assert!(demo.read(cx).input.read(cx).value().is_empty());
+        demo.read(cx)
+            .input
+            .clone()
+            .update(cx, |state, cx| state.set_readonly(false, cx));
+    });
+    draw(cx);
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    cx.update(|window, _| {
+        let action = test_support::find(window, &[], &"use-default-session-name".into()).unwrap();
+        assert_eq!(action.label(), Some("Use default name"));
+        assert_eq!(action.focused(), Some(true));
+    });
+    activate_key(cx, "enter");
+    cx.update(|window, cx| {
+        let input = demo.read(cx).input.read(cx);
+        assert_eq!(input.value(), "MiniCast");
+        assert!(!input.accessibility().unwrap().is_invalid());
+        assert!(demo.read(cx).input.focus_handle(cx).is_focused(window));
+        assert!(test_support::find(window, &[], &"use-default-session-name".into()).is_none());
+    });
+    cx.simulate_keystrokes(select_all);
     cx.simulate_input("Workshop");
     draw(cx);
     cx.update(|window, cx| {
@@ -1396,6 +1446,7 @@ fn field_feedback_and_search_selection_work_inside_the_dialog(cx: &mut TestAppCo
             demo.preset.read(cx).input().read(cx).value(),
             "Presentation"
         );
+        assert!(test_support::find(window, &[], &"session-name-alert".into()).is_none());
     });
     open_dialog(cx, &demo);
     cx.update(|_, cx| {
@@ -1424,6 +1475,9 @@ fn date_picker_and_split_panes_preserve_nested_form_state(cx: &mut TestAppContex
         assert!(demo.date_picker.read(cx).focus_handle().is_focused(window));
         assert!(!demo.date_picker.read(cx).is_open(cx));
         assert!(test_support::find(window, &[], &"recording-calendar".into()).is_none());
+        let notice = test_support::find(window, &[], &"schedule-notice".into()).unwrap();
+        assert_eq!(notice.role(), Some(Role::Note));
+        assert_eq!(notice.label(), Some("Recording preferences"));
         let trigger = test_support::find(window, &[], &"recording-date".into()).unwrap();
         assert_eq!(trigger.role(), Some(Role::Button));
         assert_eq!(trigger.expanded(), Some(false));
