@@ -136,22 +136,13 @@ impl Button {
         self
     }
 
-    fn focus_handle_and_reveal(&self, window: &mut Window, cx: &mut App) -> (FocusHandle, bool) {
-        // Retain the implicit handle and the last rendered focus together. A
-        // supplied handle uses the same edge tracking without allocating a
-        // second focus handle. Ordinary redraws must not undo manual scrolling.
-        window
-            .use_keyed_state(self.id.clone(), cx, |_, _| (None::<FocusHandle>, false))
-            .update(cx, |(implicit, was_focused), cx| {
-                let handle = self
-                    .provided_focus_handle
-                    .clone()
-                    .unwrap_or_else(|| implicit.get_or_insert_with(|| cx.focus_handle()).clone());
-                let focused = self.focusable && handle.is_focused(window);
-                let reveal = focused && !*was_focused;
-                *was_focused = focused;
-                (handle, reveal)
-            })
+    fn focus_handle(&self, window: &mut Window, cx: &mut App) -> FocusHandle {
+        self.provided_focus_handle.clone().unwrap_or_else(|| {
+            window
+                .use_keyed_state(self.id.clone(), cx, |_, cx| cx.focus_handle())
+                .read(cx)
+                .clone()
+        })
     }
 
     fn resolved_style(&self) -> StyleRefinement {
@@ -222,7 +213,7 @@ impl StatefulInteractiveElement for Button {}
 
 impl RenderOnce for Button {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let (focus_handle, reveal) = self.focus_handle_and_reveal(window, cx);
+        let focus_handle = self.focus_handle(window, cx);
         let disabled = self.disabled;
         let style = self.resolved_style();
         let on_click = self.on_click;
@@ -275,13 +266,20 @@ impl RenderOnce for Button {
                 },
             )
             .children(self.children)
-            .when(reveal, |this| {
-                // ElementExt uses an unpainted absolute canvas, so the request
-                // has this button's bounds and adds no layout or focus node.
+            .when(self.focusable, |this| {
+                // Observe focus at prepaint, when this button has actual bounds.
+                // One native element-state bit needs no extra entity or observer.
+                // Ordinary redraws must not undo manual scrolling.
                 crate::ElementExt::on_prepaint(this, move |bounds, window, _| {
-                    if focus_handle.is_focused(window) {
-                        window.request_autoscroll(bounds);
-                    }
+                    window.with_global_id("button-focus-reveal".into(), |id, window| {
+                        window.with_element_state(id, |was_focused: Option<bool>, window| {
+                            let focused = focus_handle.is_focused(window);
+                            if focused && was_focused != Some(true) {
+                                window.request_autoscroll(bounds);
+                            }
+                            ((), focused)
+                        });
+                    });
                 })
             })
             .refine_style(&style)
