@@ -2635,6 +2635,274 @@ fn schedule_marker_tracks_selection_at_narrow_widths_without_adding_focus(cx: &m
 }
 
 #[gpui::test]
+fn schedule_message_reuses_notes_and_preserves_metadata_focus_and_parent_scroll(
+    cx: &mut TestAppContext,
+) {
+    let message_id = gpui::ElementId::from("session-note-message");
+    let author_id = (message_id.clone(), "author").into();
+    let time_id = (message_id.clone(), "time").into();
+    let text_id = (message_id.clone(), "body").into();
+    let viewport_id = (gpui::ElementId::from("session-settings"), "body").into();
+    let restored = format!(
+        "첫 번째 줄\n{}\n\n{}\n마지막 줄\n",
+        "긴 한국어 본문과 English message text. ".repeat(8),
+        "unbroken메시지".repeat(24),
+    );
+
+    // The two palettes have different padding; both must keep a long message
+    // inside the existing sheet viewport at narrow widths.
+    for appearance in [Appearance::Compact, Appearance::Settings] {
+        let (cx, demo) = harness(cx, appearance);
+        cx.simulate_resize(gpui::size(px(320.), px(480.)));
+        draw(cx);
+        open_dialog(cx, &demo);
+        cx.update(|window, cx| {
+            let notes = demo.read(cx).notes.clone();
+            notes.update(cx, |state, cx| {
+                state.set_value(restored.clone(), window, cx)
+            });
+            let schedule = demo.read(cx).tabs.read(cx).tab_focus_handle(3).clone();
+            schedule.focus(window, cx);
+        });
+        draw(cx);
+        cx.run_until_parked();
+        draw(cx);
+        for width in [320., 280.] {
+            cx.simulate_resize(gpui::size(px(width), px(480.)));
+            draw(cx);
+            draw(cx);
+            let viewport = cx.update(|window, _| {
+                test_support::find(window, &[], &viewport_id)
+                    .unwrap()
+                    .bounds()
+            });
+            cx.simulate_event(ScrollEvent {
+                position: point(viewport.left() + px(2.), viewport.center().y),
+                delta: ScrollDelta::Pixels(point(px(-10_000.), px(-10_000.))),
+                ..Default::default()
+            });
+            draw(cx);
+            let message_position = cx.update(|window, cx| {
+                let message = test_support::find(window, &[], &message_id).unwrap();
+                assert_eq!(message.role(), Some(Role::Comment));
+                assert_eq!(
+                    message.label(),
+                    None,
+                    "the frame does not repeat its content"
+                );
+                assert_eq!(message.focused(), None);
+                assert!(message.bounds().left() >= viewport.left());
+                assert!(message.bounds().right() <= viewport.right() + px(1.));
+                for (id, role, expected) in [
+                    (&author_id, Role::Label, "You"),
+                    (&time_id, Role::Label, "Edit time not recorded"),
+                    (&text_id, Role::Paragraph, restored.as_str()),
+                ] {
+                    let part = test_support::find(window, &[], id).unwrap();
+                    assert_eq!(part.role(), Some(role));
+                    assert_eq!(part.label(), Some(expected));
+                    assert_eq!(part.focused(), None);
+                    assert!(part.bounds().left() >= message.bounds().left());
+                    assert!(part.bounds().right() <= message.bounds().right() + px(1.));
+                }
+                assert!(test_support::snapshots(window).iter().all(|part| {
+                    !part.path().contains(&message_id) || part.role() != Some(Role::ScrollView)
+                }));
+                let text = test_support::texts(window)
+                    .into_iter()
+                    .find(|text| text.path().contains(&text_id))
+                    .unwrap();
+                assert_eq!(text.text(), restored);
+                assert!(text.bounds().right() <= message.bounds().right() + px(1.));
+                let action = test_support::find(window, &[], &"edit-session-note".into()).unwrap();
+                assert_eq!(action.role(), Some(Role::Button));
+                assert_eq!(action.label(), Some("Edit session note"));
+                assert!(action.visible());
+                let demo = demo.read(cx);
+                assert_eq!(demo.notes_edited_at, None, "restoration is not a user edit");
+                assert_eq!(demo.fields_scroll.max_offset().x, px(0.));
+                assert_eq!(demo.fields_scroll.offset().x, px(0.));
+                assert!(
+                    (demo.fields_scroll.offset().y + demo.fields_scroll.max_offset().y).abs()
+                        < px(1.)
+                );
+                let text = test_support::find(window, &[], &text_id).unwrap().bounds();
+                point(
+                    text.center().x,
+                    (text.bottom().min(viewport.bottom())) - px(8.),
+                )
+            });
+            let end = cx.update(|_, cx| demo.read(cx).fields_scroll.offset().y);
+            // A wheel over the message belongs to the parent ScrollArea; the
+            // read-only body adds neither a scroll boundary nor a focus stop.
+            cx.simulate_event(ScrollEvent {
+                position: message_position,
+                delta: ScrollDelta::Pixels(point(px(0.), px(80.))),
+                ..Default::default()
+            });
+            draw(cx);
+            cx.update(|_, cx| assert!(demo.read(cx).fields_scroll.offset().y > end));
+        }
+
+        if matches!(appearance, Appearance::Compact) {
+            cx.simulate_keystrokes("escape");
+            draw(cx);
+            continue;
+        }
+
+        // Exercise the editing and action flow once after both layout checks.
+        // An edit in Preferences is the same retained note shown in Schedule.
+        cx.update(|window, cx| {
+            let preferences = demo.read(cx).tabs.read(cx).tab_focus_handle(0).clone();
+            preferences.focus(window, cx);
+        });
+        draw(cx);
+        cx.run_until_parked();
+        draw(cx);
+        cx.update(|window, cx| demo.read(cx).notes.focus_handle(cx).focus(window, cx));
+        draw(cx);
+        let select_all = if cfg!(target_os = "macos") {
+            "cmd-a"
+        } else {
+            "ctrl-a"
+        };
+        cx.simulate_keystrokes(select_all);
+        let edited = "Preferences에서 수정한 메모\nThe same body appears in Schedule.\n";
+        cx.simulate_input(edited);
+        draw(cx);
+        let edited_at = cx.update(|_, cx| demo.read(cx).notes_edited_at.unwrap());
+        cx.update(|window, cx| {
+            let schedule = demo.read(cx).tabs.read(cx).tab_focus_handle(3).clone();
+            schedule.focus(window, cx);
+        });
+        draw(cx);
+        cx.run_until_parked();
+        draw(cx);
+        cx.update(|window, cx| {
+            assert_eq!(demo.read(cx).notes.read(cx).value(), edited);
+            assert_eq!(
+                test_support::find(window, &[], &text_id).unwrap().label(),
+                Some(edited)
+            );
+            let expected = format!("Edited {}", edited_at.format("%Y-%m-%d %H:%M:%S UTC"));
+            assert_eq!(
+                test_support::find(window, &[], &time_id).unwrap().label(),
+                Some(expected.as_str())
+            );
+            demo.read(cx).notes.focus_handle(cx).focus(window, cx);
+        });
+        draw(cx);
+        cx.simulate_keystrokes("home right end");
+        cx.update(|window, cx| {
+            let calendar = demo.read(cx).calendar.clone();
+            calendar.update(cx, |state, cx| {
+                assert!(state.set_selected_date(NaiveDate::from_ymd_opt(2026, 12, 24), window, cx));
+            });
+        });
+        draw(cx);
+        cx.update(|_, cx| {
+            assert_eq!(
+                demo.read(cx).notes_edited_at,
+                Some(edited_at),
+                "caret, focus, and date changes are not note edits"
+            );
+        });
+
+        cx.simulate_keystrokes("tab");
+        draw(cx);
+        cx.update(|window, cx| {
+            assert!(
+                demo.read(cx)
+                    .schedule_split
+                    .read(cx)
+                    .focus_handle()
+                    .is_focused(window)
+            )
+        });
+        cx.simulate_keystrokes("tab");
+        draw(cx);
+        draw(cx);
+        cx.update(|window, _| {
+            let action = test_support::find(window, &[], &"edit-session-note".into()).unwrap();
+            assert_eq!(action.focused(), Some(true));
+            assert!(action.visible());
+        });
+        cx.simulate_keystrokes("tab");
+        draw(cx);
+        cx.update(|window, _| {
+            assert!(
+                test_support::snapshots(window)
+                    .iter()
+                    .any(|part| { part.label() == Some("Done") && part.focused() == Some(true) })
+            );
+        });
+        cx.simulate_keystrokes("shift-tab");
+        draw(cx);
+        for key in ["enter", "space"] {
+            activate_key(cx, key);
+            draw(cx);
+            cx.update(|window, cx| {
+                assert!(demo.read(cx).notes.focus_handle(cx).is_focused(window));
+                assert!(
+                    test_support::find(window, &[], &"schedule-notes".into())
+                        .unwrap()
+                        .visible()
+                );
+                assert_eq!(demo.read(cx).notes_edited_at, Some(edited_at));
+            });
+            if key == "enter" {
+                cx.simulate_keystrokes("tab tab");
+                draw(cx);
+            }
+        }
+
+        cx.simulate_keystrokes(select_all);
+        cx.simulate_keystrokes("backspace");
+        draw(cx);
+        cx.update(|window, cx| {
+            assert!(demo.read(cx).notes.read(cx).value().is_empty());
+            assert!(demo.read(cx).notes.focus_handle(cx).is_focused(window));
+            assert!(test_support::find(window, &[], &message_id).is_none());
+            assert!(test_support::find(window, &[], &"edit-session-note".into()).is_none());
+        });
+        cx.simulate_input("다시 작성한 메모\nRetained when the sheet reopens.");
+        draw(cx);
+        let (body, time) = cx.update(|_, cx| {
+            let demo = demo.read(cx);
+            (demo.notes.read(cx).value(), demo.notes_edited_at)
+        });
+        assert!(time.is_some());
+        cx.simulate_keystrokes("escape");
+        draw(cx);
+        cx.update(|window, cx| {
+            assert!(!demo.read(cx).dialog.read(cx).is_open());
+            assert!(
+                demo.read(cx)
+                    .edit_hint
+                    .read(cx)
+                    .focus_handle()
+                    .is_focused(window)
+            );
+        });
+        open_dialog(cx, &demo);
+        cx.update(|window, cx| {
+            let demo = demo.read(cx);
+            assert_eq!(demo.tabs.read(cx).selected_index(), Some(3));
+            assert_eq!(demo.notes.read(cx).value(), body);
+            assert_eq!(demo.notes_edited_at, time);
+            assert_eq!(
+                demo.calendar.read(cx).selected_date(),
+                NaiveDate::from_ymd_opt(2026, 12, 24)
+            );
+            assert_eq!(
+                test_support::find(window, &[], &text_id).unwrap().label(),
+                Some(body.as_ref())
+            );
+        });
+    }
+}
+
+#[gpui::test]
 fn preset_table_filters_sorts_pages_and_applies_stable_rows(cx: &mut TestAppContext) {
     let (cx, demo) = harness(cx, Appearance::Settings);
     open_dialog(cx, &demo);

@@ -24,7 +24,7 @@ use gpui_design::{
     Switch, Tab, TabItem, TabList, TabPanel, Table, TableCaption, TableCell, TableColumn, TableRow,
     TabsState, TestSupportExt as _, TestTextExt as _, Textarea, TextareaState, Toggle, ToggleGroup,
     ToggleGroupState, ToggleItem, ToggleOption, Tooltip, TooltipState,
-    input::{InputAccessibility, InputEditorStyle, InputState},
+    input::{InputAccessibility, InputEditorStyle, InputEvent, InputState},
 };
 
 #[path = "recipes/mod.rs"]
@@ -32,7 +32,7 @@ mod recipes;
 use recipes::{
     Alert, AspectRatio, Avatar, Badge, ButtonGroup, Card, CodeBlock, DataTable, DataTableColumn,
     DataTableRow, DataTableState, EmptyState, Heading, InlineCode, InputGroup, Item, Kbd, KbdGroup,
-    Marker, Paragraph, Sheet, Skeleton, Spinner,
+    Marker, Message, Paragraph, Sheet, Skeleton, Spinner,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -120,6 +120,7 @@ pub(crate) struct Demo {
     appearance: Appearance,
     pub(crate) input: Entity<InputState>,
     pub(crate) notes: Entity<TextareaState>,
+    pub(crate) notes_edited_at: Option<chrono::DateTime<chrono::Utc>>,
     pub(crate) preset: Entity<ComboboxState>,
     pub(crate) preset_table: Entity<DataTableState>,
     pub(crate) edit_hint: Entity<TooltipState>,
@@ -346,6 +347,12 @@ impl Demo {
         let subscriptions = vec![
             cx.observe(&input, |_, _, cx| cx.notify()),
             cx.observe(&notes, |_, _, cx| cx.notify()),
+            cx.subscribe(&notes, |this, _, event, cx| {
+                if matches!(event, InputEvent::Change) {
+                    this.notes_edited_at = Some(std::time::SystemTime::now().into());
+                    cx.notify();
+                }
+            }),
             cx.observe(&preset, |_, _, cx| cx.notify()),
             cx.observe(&preset_table, |_, _, cx| cx.notify()),
             cx.observe(&edit_hint, |_, _, cx| cx.notify()),
@@ -385,6 +392,7 @@ impl Demo {
             appearance,
             input,
             notes,
+            notes_edited_at: None,
             preset,
             preset_table,
             edit_hint,
@@ -763,9 +771,41 @@ impl Demo {
                             .child(plan),
                     ),
             )
+            .child(self.render_note_message(palette, cx))
     }
 
     // Build independent surfaces separately to limit stack use in debug builds.
+    fn render_note_message(&self, palette: Palette, cx: &Context<Self>) -> gpui::AnyElement {
+        let body = self.notes.read(cx).value();
+        if body.is_empty() {
+            return EmptyState::new(
+                "session-note-empty",
+                "No session note",
+                "Write a note above to review it here.",
+                palette,
+            )
+            .w_full()
+            .min_w_0()
+            .into_any_element();
+        }
+        let time = self
+            .notes_edited_at
+            .map(|time| format!("Edited {}", time.format("%Y-%m-%d %H:%M:%S UTC")))
+            .unwrap_or_else(|| "Edit time not recorded".to_string());
+        let notes = self.notes.clone();
+        Message::new("session-note-message", "You", time, body, palette)
+            .action(Self::button(
+                palette,
+                Button::new("edit-session-note")
+                    .accessibility_label("Edit session note")
+                    .on_click(move |_, window, cx| {
+                        notes.focus_handle(cx).focus(window, cx);
+                    })
+                    .child("Edit note"),
+            ))
+            .into_any_element()
+    }
+
     fn render_preset_preview(&self, palette: Palette, cx: &Context<Self>) -> gpui::AnyElement {
         let preset_state = self.preset.read(cx);
         let preset_label = preset_state

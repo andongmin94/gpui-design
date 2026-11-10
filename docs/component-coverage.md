@@ -6,9 +6,9 @@ Its main catalogue contains **66 entries**, each listed once below. The separate
 AI Elements catalogue is outside this comparison; conversation components already
 in the main catalogue remain included.
 
-GPUI Design currently documents **31 public library families and eighteen copyable
-presentation/composition recipes**, covering **49 catalogue entries** within the scopes below.
-This is not 49/66 feature parity: a family can exist with a deliberately limited
+GPUI Design currently documents **31 public library families and nineteen copyable
+presentation/composition recipes**, covering **50 catalogue entries** within the scopes below.
+This is not 50/66 feature parity: a family can exist with a deliberately limited
 contract, and several shadcn entries describe combinations of other parts.
 These counts do not measure performance, accessibility conformance, or completion
 of native desktop validation.
@@ -121,7 +121,7 @@ popup, focus, and scrolling machinery.
 | Date Picker | Available | A single Calendar date inside Popover, current selected-day focus, activation commit-and-close, dismissal, and disabled state. Trigger formatting and calendar appearance belong to the application; text parsing, ranges, multiple selection, and presets are not supplied. |
 | Drawer | Pending | Modal infrastructure exists; drawer interaction and presentation are not implemented. |
 | Marker | Recipe | Static date/status boundary with one named native Label between two decorative Separators. The text wraps within a bounded width; its content and formatting belong to the application. Schedule reads the retained Calendar selection without another date or timeline state. No focus stop, action, or automatic live announcement. |
-| Message | Pending | Message-row layout, metadata, and actions have no reusable composition. |
+| Message | Recipe | Read-only native Comment with application-supplied author/time Labels, a wrapping Paragraph body, and an optional existing action. Schedule presents the retained session note and its local edit time, with a Button returning focus to the shared Textarea. No message focus stop, delivery state, transport, history, streaming, or automatic live announcement. |
 | Message Scroller | Pending | Transcript anchoring and streaming/history scroll behavior are not implemented by the scrollbar support alone. |
 | Questionnaire | Pending | Individual form controls exist; multi-step question flow and response composition are missing. |
 | Sidebar | Pending | A navigation shell with disclosure and layout behavior is not yet provided. |
@@ -132,11 +132,10 @@ popup, focus, and scrolling machinery.
 1. Extend data-table operations only where an application needs them, including
    typed ordering or row selection. Preserve shared focus and activation behavior
    instead of duplicating those public foundations.
-2. Extend the source-owned recipe set alongside working flows. Message remains a
-   candidate for read-only rows with application-supplied author/time metadata,
-   body content, and existing Button actions. Define its message semantics and
-   actual consumer separately from Marker boundaries and generic Item rows.
-   Reuse Avatar and text presentation; transport, streaming, and transcript
+2. Extend the source-owned recipe set alongside working flows. Attachment is a
+   candidate for read-only file metadata and existing Button actions alongside
+   Message. Define a real consumer and the ownership of file access before
+   implementing it; uploads, transport, progress tracking, and transcript
    anchoring remain separate capabilities. This candidate is recorded for future
    work.
 3. Extend menu composition where real screens need it, starting with checked

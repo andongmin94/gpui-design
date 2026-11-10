@@ -1,6 +1,6 @@
 # Presentation recipes
 
-These eighteen recipes are reusable application source, used by the native
+These nineteen recipes are reusable application source, used by the native
 [two-style example](../crates/base/examples/two_styles.rs). They compose GPUI
 layout with the existing controls and keep colors, spacing, and sizing in the
 consumer's `Palette` or application-supplied `Styled` values.
@@ -31,6 +31,7 @@ alongside the desired recipe:
 | --- | --- |
 | Pagination | ButtonGroup |
 | DataTable | InputGroup, EmptyState, Pagination, and ButtonGroup |
+| Message | Typography (`Paragraph`) |
 
 ## Card
 
@@ -657,6 +658,63 @@ Moving the calendar cursor without committing a selection does not change this
 boundary. Date formatting remains application-owned, and the marker does not
 start a recording or maintain a second selected date.
 
+## Message
+
+[`message.rs`](../crates/base/examples/recipes/message.rs) presents one read-only
+message with application-supplied author, time metadata, and body text. It composes
+existing GPUI layout and Typography's Paragraph; optional actions are supplied
+controls with their own behavior:
+
+```rust,ignore
+Message::new(
+    "session-note-message",
+    "You",
+    "Edited 2026-11-10 09:30:00 UTC",
+    current_note,
+    palette,
+)
+.action(edit_note_button)
+```
+
+The root has native Comment semantics and no repeated accessible name. Author
+and time are separately named Labels in reading order, followed by the Paragraph
+whose full text is its accessible name. Time is a caller-formatted string: the
+recipe does not parse dates, choose a timezone, infer delivery status, or add a
+live announcement. The metadata and body add no focus stop. The application owns
+stable IDs and the meaning of the supplied author, time, and text.
+
+The frame fills its bounded parent and grows vertically. Stacked author/time
+metadata and body wrap using GPUI's text layout, including long Korean or English
+content; explicit body line breaks are retained. There is no body truncation,
+fixed content height, or internal scroll controller. Put long messages in the
+application's existing ScrollArea. `Styled` changes the frame and inherited
+metadata presentation; Paragraph retains its palette style. Allow height to grow
+and give supplied actions a layout that fits the available width. Actions sit
+below the body and do not compete with its width. `.action(...)` accepts one
+element, so the application can supply an existing Button or a container of
+controls. Buttons retain their own
+accessible names, enabled state, pointer/Enter/Space activation, and ordinary
+Tab/Shift+Tab traversal. The message has no whole-row activation or selection
+state, and does not manage focus when the application removes an action.
+
+Message identifies authored content and its provenance. Marker labels a boundary
+between content, and Item groups a generic title, description, and trailing
+control. Button supplies the action behavior in all these compositions; Message
+adds no alternate button, input, or focus model. Avatar is independent and is not
+required to repeat an author already named in the metadata.
+
+Both appearances use Message below Schedule's existing notes/plan panes. The body
+reads the same retained Textarea state, and the application records the latest
+local `InputEvent::Change` time in UTC. Edit note focuses that existing input;
+editing it updates the read-only presentation. Programmatic `set_value` does not
+emit that edit event; content without recorded edit metadata displays
+`Edit time not recorded`. Focusing the input or changing the recording date does
+not update the edit timestamp. When the note is empty, the
+consumer shows the existing EmptyState instead of inventing a message. The local
+edit timestamp is not a send or delivery receipt. Closing settings retains the
+note and its metadata; there is no second note value, transcript, transport,
+streaming renderer, or timeline state.
+
 ## Verification scope
 
 The existing composition suite runs the same recipe modules as the native
@@ -734,3 +792,14 @@ the existing keyboard flow, and update the boundary when the selection changes
 or clears. These are metadata, layout, and simulated-input checks; native
 screen-reader speech, IME, DPI, and desktop visual observations remain separate
 validation work.
+
+Message coverage checks the Comment/Label/Paragraph hierarchy, each supplied
+text's accessible name appearing once, explicit line breaks, long Korean and
+English content, and vertical growth at narrow widths in both appearances.
+Action checks cover absence/presence, native Button naming, Tab/Shift+Tab,
+Enter/Space and pointer activation, body updates, disabling, and removal without
+an added message focus stop. The Schedule consumer checks the shared note value,
+local edit metadata, empty-state transitions, Edit note focus, and existing
+Sheet scrolling and dismissal. These are headless metadata, layout, and input
+checks; native screen-reader speech and desktop visual validation remain
+separate.

@@ -8,7 +8,7 @@ Headless separates control behavior from application-owned presentation; the
 examples render native GPUI windows.
 
 This is an early foundation for an independent component ecosystem. It currently
-includes 31 public library families and eighteen copyable presentation recipes. An
+includes 31 public library families and nineteen copyable presentation recipes. An
 executable example gives the same behavior two visual treatments. The source is
 maintained in this repository, with GPUI kept as an exactly pinned rendering
 dependency.
@@ -81,12 +81,13 @@ These types live in the example, outside the `gpui_design` crate exports.
 | **Typography** | Named headings with explicit levels, paragraphs with native inline-code text runs, and independently named code elements | Help headings, state-ownership explanations, and the example's source identifier |
 | **CodeBlock** | Read-only multiline code, an exact full-text Copy action, and bounded two-axis scrolling with keyboard access | A JSON snapshot of the retained session settings in Help |
 | **Marker** | One named date/status label between decorative separators, with wrapping text and no focus stop | The currently selected Calendar date above Schedule's notes and recording plan |
+| **Message** | Read-only comment with author/time metadata, a wrapping paragraph, and optional existing actions | Schedule's current session note, with Edit note returning to the shared Textarea |
 
 The breadth target is the range of screens and interactions supported by
 shadcn/ui. The [component coverage map](docs/component-coverage.md) compares all
 66 entries in its current main catalogue with the actual public scope here.
 It distinguishes behavior, source-owned presentation recipes, and larger
-compositions. The 31 library families and eighteen recipes cover 49 catalogue entries
+compositions. The 31 library families and nineteen recipes cover 50 catalogue entries
 within defined scopes. The map records each entry's limits and the work still
 needed; this count does not establish full shadcn/ui feature parity.
 
@@ -169,6 +170,11 @@ A vertical Resizable divides shared session notes and the plan table. The table
 scrolls horizontally and vertically as its pane changes size, while the surrounding form
 uses the Sheet's vertical ScrollArea. Date, notes, and pane ratio survive closing
 the Sheet.
+Below the panes, Message presents the same session note as read-only content from
+You, with the last local edit time supplied by the application. Edit note focuses
+the existing Textarea. Empty notes show EmptyState instead of an empty message.
+The timestamp describes local editing; the example does not send or deliver notes
+and keeps no separate message history or copy of the note.
 An informational Alert explains that the example retains preferences without
 scheduling an actual recording. Its date bounds are 2026–2027.
 
@@ -270,7 +276,7 @@ The GPUI snapshot family is pinned to **`=0.3.11`**. Update those pins and
 | `crates/base/src/` | The `gpui-design` library and its behavior-level tests |
 | `crates/base/tests/` | Integration tests using the public API |
 | `crates/base/examples/two_styles.rs` | Native example and application-owned styles |
-| `crates/base/examples/recipes/` | Eighteen copyable presentation/composition recipes, including markers, code blocks, typography, sheets, media frames, avatars, data tables, loading indicators, and keycaps |
+| `crates/base/examples/recipes/` | Nineteen copyable presentation/composition recipes, including messages, markers, code blocks, typography, sheets, media frames, avatars, data tables, loading indicators, and keycaps |
 | `crates/base/examples/assets/` | Embedded example artwork used by the preset preview and its image-decoding regression |
 | `docs/form-controls.md` | Form control usage and interaction contracts |
 | `docs/navigation-overlays.md` | Breadcrumb, Tabs, Accordion, command menus, and composed focus behavior |
