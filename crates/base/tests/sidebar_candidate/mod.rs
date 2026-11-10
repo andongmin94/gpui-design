@@ -6,10 +6,11 @@
 use std::{cell::RefCell, rc::Rc};
 
 use gpui::{
-    AppContext as _, Context, Element as _, ElementId, Entity, FocusHandle, InteractiveElement as _,
-    IntoElement, KeyDownEvent, KeyUpEvent, Keystroke, Modifiers, ParentElement as _, Pixels, Render,
-    RenderOnce, Role, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription,
-    TestAppContext, VisualTestContext, Window, accesskit, div, px, size,
+    AppContext as _, Context, Element as _, ElementId, Entity, FocusHandle,
+    InteractiveElement as _, IntoElement, KeyDownEvent, KeyUpEvent, Keystroke, Modifiers,
+    ParentElement as _, Pixels, Render, RenderOnce, Role, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Subscription, TestAppContext, VisualTestContext,
+    Window, accesskit, div, px, size,
 };
 use gpui_design::{Button, Root, TabItem, TabsEvent, TabsState, TestSupportExt as _, test_support};
 
@@ -22,7 +23,10 @@ use candidate::sidebar::Sidebar;
 use super::super::{Appearance, Palette};
 
 fn palettes() -> [Palette; 2] {
-    [Appearance::Compact.palette(), Appearance::Settings.palette()]
+    [
+        Appearance::Compact.palette(),
+        Appearance::Settings.palette(),
+    ]
 }
 
 type Changes = Rc<RefCell<Vec<SharedString>>>;
@@ -242,7 +246,10 @@ fn sidebar_candidate_uses_button_focus_and_explicit_activation(cx: &mut TestAppC
     cx.update(|_, cx| assert_eq!(sample.read(cx).state.read(cx).selected_index(), Some(0)));
     assert_eq!(
         *changes.borrow(),
-        [SharedString::from("help"), SharedString::from("preferences")]
+        [
+            SharedString::from("help"),
+            SharedString::from("preferences")
+        ]
     );
     let help_position = cx.update(|window, _| {
         test_support::find(window, &[], &entry_id(2))
