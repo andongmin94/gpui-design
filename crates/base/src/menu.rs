@@ -4,7 +4,7 @@ use gpui::{
     AnyElement, App, AppContext as _, Context, Entity, EventEmitter, FocusHandle,
     InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, ParentElement, Pixels, Point,
     RenderOnce, Role, SharedString, StatefulInteractiveElement as _, StyleRefinement, Styled,
-    Subscription, Window, div, prelude::FluentBuilder as _,
+    Subscription, Toggled, Window, div, prelude::FluentBuilder as _,
 };
 
 use crate::{
@@ -365,6 +365,7 @@ pub(crate) fn menu_content(
 pub struct MenuOption {
     state: Entity<MenuState>,
     index: usize,
+    checked: Option<bool>,
     style: StyleRefinement,
     children: Vec<AnyElement>,
 }
@@ -374,9 +375,22 @@ impl MenuOption {
         Self {
             state: state.clone(),
             index,
+            checked: None,
             style: StyleRefinement::default(),
             children: Vec::new(),
         }
+    }
+
+    /// Presents this command as a checkbox menu item with an application-owned value.
+    ///
+    /// Without this method the option is an ordinary menu item with no checked
+    /// metadata. The value is rendered only; activation still closes the menu,
+    /// restores focus, and emits [`MenuEvent::Action`]. Update application state
+    /// in that handler and render the new value back here. This adds no item
+    /// focus stop and does not change the menu's highlighted cursor.
+    pub fn checked(mut self, checked: bool) -> Self {
+        self.checked = Some(checked);
+        self
     }
 }
 
@@ -408,8 +422,19 @@ impl RenderOnce for MenuOption {
         div()
             .id(("menu-option", index))
             .test_support()
-            .role(Role::MenuItem)
+            .role(if self.checked.is_some() {
+                Role::MenuItemCheckBox
+            } else {
+                Role::MenuItem
+            })
             .aria_label(label)
+            .when_some(self.checked, |this, checked| {
+                this.aria_toggled(if checked {
+                    Toggled::True
+                } else {
+                    Toggled::False
+                })
+            })
             .when(highlighted, |this| this.aria_active_descendant())
             .when(!disabled, |this| {
                 this.on_hover(move |hovered, window, cx| {

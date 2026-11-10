@@ -592,6 +592,8 @@ mod tests {
     fn accessibility_exposes_expanded_button_and_menu_commands_without_selection(
         cx: &mut TestAppContext,
     ) {
+        use gpui::{Element as _, accesskit, prelude::FluentBuilder as _};
+
         let (cx, view) = harness(cx, items());
         cx.update(|window, _| {
             let trigger = crate::test_support::find(window, &[], &"menu-trigger".into()).unwrap();
@@ -615,7 +617,41 @@ mod tests {
                 assert_eq!(option.role(), Some(Role::MenuItem));
                 assert_eq!(option.label(), Some(item.label().as_ref()));
                 assert_eq!(option.selected(), None);
+                assert_eq!(option.checked(), None);
+                assert_eq!(option.focused(), None);
                 assert_eq!(option.disabled(), item.is_disabled().then_some(true));
+            }
+            for (index, disabled) in [(0, true), (1, false)] {
+                for checked in [None, Some(false), Some(true)] {
+                    let element = MenuOption::new(&menu, index)
+                        .when_some(checked, |option, checked| option.checked(checked))
+                        .render(window, cx)
+                        .into_element();
+                    let role = if checked.is_some() {
+                        Role::MenuItemCheckBox
+                    } else {
+                        Role::MenuItem
+                    };
+                    assert_eq!(element.a11y_role(), Some(role));
+                    let mut node = accesskit::Node::new(role);
+                    element.write_a11y_info(&mut node);
+                    assert_eq!(
+                        node.label(),
+                        Some(menu.read(cx).items()[index].label().as_ref())
+                    );
+                    assert_eq!(
+                        node.toggled(),
+                        checked.map(|checked| if checked {
+                            accesskit::Toggled::True
+                        } else {
+                            accesskit::Toggled::False
+                        })
+                    );
+                    assert_eq!(node.is_disabled(), disabled);
+                    assert_eq!(node.is_selected(), None);
+                    assert!(!node.supports_action(accesskit::Action::Focus));
+                    assert_eq!(node.supports_action(accesskit::Action::Click), !disabled);
+                }
             }
             let dialogs = crate::test_support::snapshots(window)
                 .into_iter()

@@ -298,6 +298,30 @@ command and `items()` for labels and disabled state. The menu retains no selecte
 value: commands represent actions and may execute repeatedly. Interactive form
 controls belong outside the menu's command content.
 
+### Checked commands
+
+Use `MenuOption::checked(bool)` to render an application-controlled checkbox
+command. Omitting the builder keeps a plain `MenuItem`; `.checked(false)` exposes
+an unchecked `MenuItemCheckBox`, while `.checked(true)` exposes a checked one.
+The application supplies the visible indicator and checked value on each render.
+
+```rust
+MenuOption::new(&menu, index)
+    .checked(show_cursor)
+    .child("Show cursor")
+```
+
+Checked commands use the same navigation, disabled behavior, and
+`MenuEvent::Action(value)` as plain commands. Activation closes the menu and
+restores focus before delivering the event. The application handles that action
+and renders its next boolean; MenuState neither stores nor automatically toggles
+the checked value. Changing the supplied value does not dispatch an action.
+The example's Show cursor and Keep toolbar visible commands share the retained
+application booleans used by its Checkbox and Switch. Both DropdownMenu and
+ContextMenu render those values through the same menu-content composition.
+
+### Shared interaction and lifecycle
+
 | Input | Behavior |
 | --- | --- |
 | Trigger click / Enter / Space / Down | Open at the first enabled command |
@@ -328,11 +352,12 @@ the highlighted option supplies its active descendant. A containing Dialog still
 bounds Tab traversal, and external pointer presses retain their normal action.
 
 Keep the menu host mounted while closed. The same host-removal focus contract as
-Popover applies. This version provides plain commands; submenus, checked menu
-items, and radio menu groups are not included.
+Popover applies. This version provides plain and boolean checked commands;
+submenus, mixed checked values, and radio menu groups are not included.
 
 Native metadata includes a Button trigger with expanded/disabled state, a Menu
-scope, named MenuItem commands, and the active descendant. It does not emit a
+scope, named MenuItem commands or MenuItemCheckBox commands with their supplied
+checked state, and the active descendant. It does not emit a
 native has-popup property or a trigger-to-menu controls relationship. These
 contracts describe the implemented behavior, not a claim of full accessibility
 pattern conformance or completed screen-reader validation.
@@ -385,10 +410,10 @@ leave. If removing the whole target, move focus to a surviving control as part o
 that application update. Retained popup state is dismissed on detachment.
 
 Native metadata includes a named target, expanded/disabled state, the Shift-F10
-shortcut and ShowContextMenu action, plus the shared Menu/MenuItem semantics.
-This scope covers fixed plain commands on a noninteractive target. Interactive
-descendant targets, submenus, checked/radio commands, and touch long-press are
-not included.
+shortcut and ShowContextMenu action, plus the shared Menu, MenuItem, and
+MenuItemCheckBox semantics. This scope covers fixed plain and boolean checked
+commands on a noninteractive target. Interactive descendant targets, submenus,
+mixed checked values, radio groups, and touch long-press are not included.
 
 ## Command
 
@@ -579,7 +604,9 @@ They also cover the tooltip trigger, Field label/feedback, and searchable preset
 selection inside Dialog, including query cancellation and retained selection.
 The existing flows also exercise keyboard and pointer context-menu commands
 opening that Dialog, and a HoverCard trigger retaining its ordinary action and
-return-focus target. New primitive tests cover point placement and pointer
+return-focus target. Checked commands use those same flows to verify current
+application values across both menu hosts and unchanged action/focus behavior.
+Primitive tests cover point placement and pointer
 preview timing at their owning layer.
 Breadcrumb's validation scope is its native navigation/list/item roles,
 current-page metadata, and the composed ancestor actions in the existing Help

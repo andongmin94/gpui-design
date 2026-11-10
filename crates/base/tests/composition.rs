@@ -2101,6 +2101,20 @@ fn settings_trace_discloses_current_values_with_retained_focus_and_parent_scroll
 fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) {
     let (cx, demo) = harness(cx, Appearance::Compact);
     let commands = Rc::new(RefCell::new(Vec::new()));
+    let assert_menu_checks = |cx: &mut VisualTestContext, cursor: bool, toolbar: bool| {
+        cx.update(|window, _| {
+            let items = test_support::snapshots(window);
+            for (label, checked) in [("Show cursor", cursor), ("Keep toolbar visible", toolbar)] {
+                let item = items
+                    .iter()
+                    .find(|item| {
+                        item.role() == Some(Role::MenuItemCheckBox) && item.label() == Some(label)
+                    })
+                    .unwrap();
+                assert_eq!(item.checked(), Some(checked));
+            }
+        });
+    };
     cx.update(|_, cx| {
         let menu = demo.read(cx).actions.clone();
         let commands = commands.clone();
@@ -2128,6 +2142,7 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
                 && item.disabled() == Some(true)
         }));
     });
+    assert_menu_checks(cx, true, false);
     cx.simulate_keystrokes("down");
     draw(cx);
     cx.update(|_, cx| {
@@ -2141,8 +2156,9 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
         assert!(demo.actions.read(cx).focus_handle().is_focused(window));
     });
 
-    cx.simulate_keystrokes("down t t");
+    cx.simulate_keystrokes("down k");
     draw(cx);
+    assert_menu_checks(cx, false, false);
     cx.update(|_, cx| {
         assert_eq!(demo.read(cx).actions.read(cx).highlighted_index(), Some(3));
     });
@@ -2157,6 +2173,18 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
         assert!(!demo.actions.read(cx).is_open(cx));
         assert!(demo.dialog.read(cx).is_open());
         assert!(demo.input.focus_handle(cx).is_focused(window));
+        assert_eq!(
+            test_support::find(window, &[], &"show-cursor".into())
+                .unwrap()
+                .checked(),
+            Some(false)
+        );
+        assert_eq!(
+            test_support::find(window, &[], &"keep-toolbar".into())
+                .unwrap()
+                .checked(),
+            Some(true)
+        );
     });
     assert_eq!(
         commands.borrow().as_slice(),
@@ -2257,14 +2285,14 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
     // Pointer activation follows the same application callback as keyboard activation.
     activate_key(cx, "enter");
     let cursor_point = cx.update(|window, _| {
-        test_support::snapshots(window)
+        let cursor = test_support::snapshots(window)
             .into_iter()
             .find(|item| {
-                item.role() == Some(Role::MenuItem) && item.label() == Some("Toggle cursor")
+                item.role() == Some(Role::MenuItemCheckBox) && item.label() == Some("Show cursor")
             })
-            .unwrap()
-            .bounds()
-            .center()
+            .unwrap();
+        assert_eq!(cursor.checked(), Some(false));
+        cursor.bounds().center()
     });
     cx.simulate_click(cursor_point, Modifiers::default());
     draw(cx);
@@ -2500,6 +2528,7 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
             item.role() == Some(Role::Menu) && item.label() == Some("Session summary actions")
         }));
     });
+    assert_menu_checks(cx, true, true);
     cx.simulate_keystrokes("down");
     activate_key(cx, "enter");
     cx.update(|window, cx| {
@@ -2522,6 +2551,7 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
     cx.simulate_mouse_down(summary, MouseButton::Right, Modifiers::default());
     cx.simulate_mouse_up(summary, MouseButton::Right, Modifiers::default());
     draw(cx);
+    assert_menu_checks(cx, false, true);
     cx.simulate_keystrokes("e");
     activate_key(cx, "enter");
     cx.update(|window, cx| {
@@ -2557,7 +2587,7 @@ fn command_search_opens_a_retained_multiline_form(cx: &mut TestAppContext) {
         })
         .detach();
     });
-    cx.simulate_keystrokes("tab down s");
+    cx.simulate_keystrokes("tab down s s");
     draw(cx);
     activate_key(cx, "enter");
     cx.update(|window, cx| {
@@ -2695,11 +2725,13 @@ fn command_search_opens_a_retained_multiline_form(cx: &mut TestAppContext) {
         assert!(demo.actions.read(cx).focus_handle().is_focused(window));
         assert_eq!(demo.notes.read(cx).value(), "first line\n두 번째 줄");
     });
-    cx.simulate_keystrokes("down s");
+    cx.simulate_keystrokes("down s s");
     draw(cx);
     activate_key(cx, "enter");
     cx.update(|_, cx| {
-        assert_eq!(demo.read(cx).commands.read(cx).input().read(cx).value(), "");
+        let demo = demo.read(cx);
+        assert!(demo.command_dialog.read(cx).is_open());
+        assert_eq!(demo.commands.read(cx).input().read(cx).value(), "");
     });
     cx.simulate_keystrokes("escape");
     draw(cx);

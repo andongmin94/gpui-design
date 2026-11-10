@@ -41,8 +41,8 @@ dependency.
 | **Tooltip** | Plain text description on Button hover/focus, delayed hover, Escape dismissal, and native tooltip positioning | Button and tooltip text-surface styling |
 | **HoverCard** | Delayed rich preview on hover, trigger-to-card pointer travel, focus preview without moving focus, and dismissal | Button action, preview content, surface, and placement |
 | **Popover** | Non-modal open/close state, anchored placement, focus, outside dismissal, and Escape | Trigger, popup contents, and surface styling |
-| **DropdownMenu** | Command activation, enabled-item navigation, single-character search, dismissal, and focus | Trigger, menu surface, and command rendering |
-| **ContextMenu** | Secondary-click or keyboard opening, pointer-position placement, and the shared menu's navigation, dismissal, and focus | Focusable target, menu surface, and command rendering |
+| **DropdownMenu** | Plain or boolean checked command semantics, activation, enabled-item navigation, single-character search, dismissal, and focus | Trigger, menu surface, command rendering, and controlled checked values |
+| **ContextMenu** | Secondary-click or keyboard opening, pointer-position placement, and the shared menu's plain/checked commands, navigation, dismissal, and focus | Focusable target, menu surface, command rendering, and controlled checked values |
 | **Command** | Text search, enabled-result navigation, pointer/Enter action dispatch, and highlighted-result scrolling | Query frame, result rows, empty state, and optional Dialog composition |
 | **Dialog** | Open/close state, modal focus, initial focus, dismissal, and focus restoration | Backdrop, popup, title, description, and close control |
 | **AlertDialog** | Dialog's modal lifecycle with alert semantics and blocked backdrop dismissal | Decision text, cancellation control, and explicit application confirmation |
@@ -113,7 +113,10 @@ different section navigation. Its styles live in application code, outside the
 behavior layer. A Session actions menu and
 the summary's ContextMenu open the settings Sheet or toggle application values.
 The two hosts use separate MenuState entities with shared command definitions and
-the same application callback. Right-click the summary or focus it and press
+the same application callback. Show cursor and Keep toolbar visible are checked
+menu commands whose indicators and native checked values read the same application
+booleans as the settings Checkbox and Switch. Activation closes the menu before
+the application updates those booleans. Right-click the summary or focus it and press
 Shift-F10. Hovering or focusing the preset button previews the preset, date, and
 notes status in HoverCard; normal button activation opens settings.
 That preview uses Avatar for the bundled Balanced artwork and explicit fallback
@@ -228,6 +231,8 @@ that layer: Toggle and Collapsible triggers compose Button, ToggleGroup composes
 Toggle, and AlertDialog composes Dialog. DropdownMenu and ContextMenu share
 MenuState, MenuItem, MenuOption, and MenuEvent. Their common menu behavior composes
 Popover; only the trigger interaction and requested placement differ.
+`MenuOption::checked(bool)` projects an application-owned boolean into native
+checkbox-menu semantics without adding another selection store.
 Command reuses Input for its query and can be hosted in Dialog. Combobox reuses
 Command's filtering, result cursor, scrolling, and activation, with one committed
 value and a suggestion surface positioned by Popup. Textarea renders the existing

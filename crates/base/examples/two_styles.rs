@@ -310,8 +310,8 @@ impl Demo {
         let menu_items = [
             MenuItem::new("edit", "Edit session"),
             MenuItem::new("share", "Share (unavailable)").disabled(true),
-            MenuItem::new("cursor", "Toggle cursor"),
-            MenuItem::new("toolbar", "Toggle toolbar pin"),
+            MenuItem::new("cursor", "Show cursor"),
+            MenuItem::new("toolbar", "Keep toolbar visible"),
             MenuItem::new("reset", "Reset preview"),
             MenuItem::new("commands", "Search commands"),
         ];
@@ -486,6 +486,7 @@ impl Demo {
     }
 
     fn menu_content(
+        &self,
         menu: &Entity<MenuState>,
         palette: Palette,
         cx: &Context<Self>,
@@ -500,16 +501,29 @@ impl Demo {
             .bg(palette.surface)
             .text_color(palette.foreground)
             .children(state.items().iter().enumerate().map(|(index, item)| {
+                let checked = match item.value().as_ref() {
+                    "cursor" => Some(self.show_cursor),
+                    "toolbar" => Some(self.keep_toolbar),
+                    _ => None,
+                };
                 MenuOption::new(menu, index)
+                    .when_some(checked, |option, checked| option.checked(checked))
                     .h(palette.control_height)
                     .px_3()
                     .flex()
                     .items_center()
+                    .gap_2()
                     .rounded(palette.radius)
                     .when(state.highlighted_index() == Some(index), |option| {
                         option.bg(palette.highlight)
                     })
                     .when(item.is_disabled(), |option| option.opacity(0.45))
+                    .child(
+                        div()
+                            .w_4()
+                            .flex_shrink_0()
+                            .when(checked == Some(true), |indicator| indicator.child("✓")),
+                    )
                     .child(item.label().clone())
             }))
     }
@@ -2130,7 +2144,7 @@ impl Render for Demo {
                         .child("Session actions ▾"),
                 )
             })
-            .content(Self::menu_content(&self.actions, palette, cx));
+            .content(self.menu_content(&self.actions, palette, cx));
 
         let preview_options = self.render_preview_options(palette, cx);
         let formatting = self.formatting.read(cx);
@@ -2235,7 +2249,7 @@ impl Render for Demo {
                                                 ),
                                         ),
                                 )
-                                .content(Self::menu_content(&self.context_actions, palette, cx)),
+                                .content(self.menu_content(&self.context_actions, palette, cx)),
                         )
                         .child(
                             div().flex().child(

@@ -29,12 +29,14 @@ pub(crate) fn init(cx: &mut App) {
 /// disabled state, dismissal, and return focus use the same MenuState and
 /// Popover lifecycle as DropdownMenu.
 ///
-/// Supply non-interactive target content and ordinary [`crate::MenuOption`]
+/// Supply non-interactive target content and [`crate::MenuOption`]
 /// children in collection order. `target_label` names the focusable region;
 /// `accessibility_label` names its menu. Styles and interactive style builders
 /// apply to the target. Keep this component mounted while closed and use a
-/// distinct MenuState for each mounted target. Touch long-press, submenus, and
-/// checked/radio commands are not provided.
+/// distinct MenuState for each mounted target. Options can expose an
+/// application-controlled boolean through [`crate::MenuOption::checked`].
+/// Touch long-press, submenus, mixed checked values, and radio groups are not
+/// provided.
 #[derive(IntoElement)]
 pub struct ContextMenu {
     id: ElementId,

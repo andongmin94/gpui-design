@@ -47,10 +47,10 @@ in the [form guide](form-controls.md),
 | Collapsible | Available | One retained disclosure, Button trigger, active-only content, and focus handling when content closes. |
 | Combobox | Available | Editable search over fixed options, one committed selection, keyboard/pointer commit, and draft cancellation on dismissal. Free-form values, async sources, multiple selection, and groups are not included. |
 | Command | Available | Fixed command items, text filtering, keyboard/pointer actions, and composition with Dialog. Async sources, fuzzy ranking, and groups are not included. |
-| Context Menu | Available | Secondary-click placement, Shift-F10/Menu-key opening, a focusable target, and shared Menu command navigation, dismissal, and focus restoration. Target content is noninteractive; submenus, checked/radio commands, and touch long-press are not supplied. |
+| Context Menu | Available | Secondary-click placement, Shift-F10/Menu-key opening, a focusable target, and shared plain/boolean checked Menu command navigation, dismissal, and focus restoration. Checked values belong to the application. Target content is noninteractive; submenus, mixed checked values, radio groups, and touch long-press are not supplied. |
 | Dialog | Available | Modal open/close, initial focus, containment, dismissal, and return focus; the application supplies its surface and contents. |
 | Direction | Pending | A consistent RTL layout and navigation policy has not been established. Text rendering alone does not establish this support. |
-| Dropdown Menu | Available | A Button entry point to the shared Menu state, fixed plain commands, enabled-item navigation, single-character search, and dismissal. Submenus and checked/radio menu items are not included. |
+| Dropdown Menu | Available | A Button entry point to the shared Menu state, fixed plain or application-controlled boolean checked commands, enabled-item navigation, single-character search, and dismissal. Activation closes before emitting the shared action event. Submenus, mixed checked values, and radio menu groups are not included. |
 | Field | Available | Label focus, help/error descriptions, and required/invalid metadata for existing Input/Textarea-based controls, including a Combobox query. Validation remains application-owned; arbitrary control types are not yet covered. |
 | Hover Card | Available | Noninteractive rich preview on delayed hover or trigger focus, delayed closing across trigger/card pointer travel, dismissal, disabled state, and retained-state unmount cleanup. Opening and dismissal preserve existing focus; interactive preview controls and touch long-press are not supplied. |
 | Input | Available | Single-line editing, selection, clipboard, focus, and the native input interface through the retained editing engine. |
@@ -135,8 +135,8 @@ popup, focus, and scrolling machinery.
 2. Extend the remaining source-owned recipes alongside working flows. Keep
    layout, navigation destinations, and data with the application, composing
    shared state and controls with explicit keyboard contracts.
-3. Extend menu composition where real screens need it, starting with checked
-   commands and submenus. Continue composing panes with Resizable/ScrollArea;
+3. Extend menu composition where real screens need submenus or radio groups.
+   Continue composing panes with Resizable/ScrollArea;
    virtualization and transcript anchoring remain separate work.
 4. Build the larger conversation and data compositions on these shared parts.
    Track their actual supported scope here rather than counting aliases or
