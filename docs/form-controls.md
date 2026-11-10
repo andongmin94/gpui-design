@@ -470,6 +470,10 @@ For independent options that can be pressed together, create
 `ToggleItem::new(value, label)` entries with unique values. Mark unavailable items
 with `.disabled(true)` and optionally set `.default_values([values])`. Defaults
 must identify enabled items. Selection starts empty when no defaults are supplied.
+Use `.single_selection()` for optional exclusive choice. Activating another option
+replaces the previous value; activating the pressed option clears selection.
+Single-selection defaults may contain at most one distinct value, regardless of
+the order of `.single_selection()` and `.default_values(...)`.
 
 Render `ToggleGroup::new(id, &state).accessibility_label(...)` and one
 `ToggleOption::new(&state, index)` for each item. Each option composes Toggle.
@@ -483,13 +487,14 @@ The group has one Tab stop, at its last focused enabled option or initially its
 first enabled option. Horizontal Left/Right or vertical Up/Down move between
 enabled options and wrap. Home/End reach the first/last enabled option. The other
 axis propagates. Moving focus never changes the selected set; click, Enter, and
-Space independently toggle the focused option. Tab leaves the group.
+Space toggle the focused option according to the selection mode. Tab leaves the group.
 
 `set_disabled(disabled, window, cx)` disables the whole group while preserving
-selection. `option_focus_handle(index)` exposes stable option focus. This version
-supports multiple selection; RadioGroup supplies exclusive choice. The example
-uses Toggle for unknown progress and ToggleGroup for independent bold/italic
-summary-text styling.
+selection. `option_focus_handle(index)` exposes stable option focus. RadioGroup
+provides exclusive choice with immediate selection during arrow navigation;
+ToggleGroup keeps focus movement independent of selection in either mode.
+The session example uses independent bold/italic summary-text styling, and the
+catalogue uses single selection for optional Center/End document alignment.
 
 ## InputOtp
 

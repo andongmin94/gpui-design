@@ -3,13 +3,14 @@
 use gpui::{
     AppContext as _, Context, Entity, FocusHandle, FontWeight, InteractiveElement as _,
     IntoElement, ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _,
-    Styled as _, Subscription, Window, div, px, rgb,
+    Styled as _, Subscription, Window, div, prelude::FluentBuilder as _, px, rgb,
 };
 use gpui_design::{
-    Button, CheckboxState, Direction, DirectionProvider, MenuEvent, MenuItem, MenuOption,
-    MenuState, MenuSubmenu, Menubar, MenubarItem, MenubarMenu, MenubarState, NavigationMenu,
+    Accordion, AccordionHeader, AccordionItem, AccordionPanel, AccordionState, Button,
+    CheckboxState, Direction, DirectionProvider, MenuEvent, MenuItem, MenuOption, MenuState,
+    MenuSubmenu, Menubar, MenubarItem, MenubarMenu, MenubarState, NavigationMenu,
     NavigationMenuEntry, NavigationMenuEvent, NavigationMenuItem, NavigationMenuLink,
-    NavigationMenuState,
+    NavigationMenuState, ToggleGroup, ToggleGroupState, ToggleItem, ToggleOption,
 };
 
 pub(crate) struct NavigationCatalogue {
@@ -18,6 +19,8 @@ pub(crate) struct NavigationCatalogue {
     file: Entity<MenuState>,
     view: Entity<MenuState>,
     export: Entity<MenuState>,
+    alignment: Entity<ToggleGroupState>,
+    help: Entity<AccordionState>,
     guide_focus: FocusHandle,
     reference_focus: FocusHandle,
     direction: Direction,
@@ -88,9 +91,32 @@ impl NavigationCatalogue {
                 cx,
             )
         });
+        let alignment = cx.new(|cx| {
+            ToggleGroupState::new(
+                [
+                    ToggleItem::new("center", "Center"),
+                    ToggleItem::new("end", "End"),
+                ],
+                cx,
+            )
+            .single_selection()
+        });
+        let help = cx.new(|cx| {
+            AccordionState::new(
+                [
+                    AccordionItem::new("alignment", "How does reading alignment work?"),
+                    AccordionItem::new("commands", "How do command menus work?"),
+                ],
+                cx,
+            )
+            .multiple(true)
+            .default_open(["alignment"])
+        });
         let mut subscriptions = vec![
             cx.observe(&bar, |_, _, cx| cx.notify()),
             cx.observe(&navigation, |_, _, cx| cx.notify()),
+            cx.observe(&alignment, |_, _, cx| cx.notify()),
+            cx.observe(&help, |_, _, cx| cx.notify()),
             cx.subscribe(&navigation, |this: &mut Self, _, event, cx| {
                 let NavigationMenuEvent::Navigate(value) = event;
                 this.page = value.clone();
@@ -122,6 +148,8 @@ impl NavigationCatalogue {
             file,
             view,
             export,
+            alignment,
+            help,
             guide_focus,
             reference_focus,
             direction: Direction::Ltr,
@@ -186,6 +214,9 @@ impl NavigationCatalogue {
             } else {
                 0x172033
             }))
+            .button(|button| {
+                button.focus_visible(|style| style.bg(rgb(0x93c5fd)).text_color(rgb(0x0b1220)))
+            })
             .child(label)
     }
 }
@@ -209,6 +240,7 @@ fn trigger(button: Button, label: &'static str, open: bool) -> Button {
         .py_2()
         .rounded_md()
         .bg(rgb(if open { 0x334155 } else { 0x172033 }))
+        .focus_visible(|style| style.bg(rgb(0x93c5fd)).text_color(rgb(0x0b1220)))
         .child(label)
 }
 
@@ -217,6 +249,27 @@ impl Render for NavigationCatalogue {
         let open_menu = self.bar.read(cx).open_index(cx);
         let open_navigation = self.navigation.read(cx).open_index(cx);
         let export_highlighted = self.file.read(cx).highlighted_index() == Some(2);
+        let alignment = self.alignment.read(cx);
+        let alignment_controls = self
+            .direction
+            .row(
+                ToggleGroup::new("reading-alignment", &self.alignment)
+                    .accessibility_label("Reading alignment"),
+            )
+            .gap_2()
+            .children(alignment.items().iter().enumerate().map(|(index, item)| {
+                ToggleOption::new(&self.alignment, index)
+                    .px_3()
+                    .py_2()
+                    .rounded_md()
+                    .bg(rgb(if alignment.is_pressed(index) {
+                        0x1d4ed8
+                    } else {
+                        0x172033
+                    }))
+                    .focus_visible(|style| style.bg(rgb(0x93c5fd)).text_color(rgb(0x0b1220)))
+                    .child(item.label().clone())
+            }));
         let menu =
             self.direction
                 .row(Menubar::new(&self.bar).accessibility_label("Document commands"))
@@ -365,12 +418,58 @@ impl Render for NavigationCatalogue {
                 "This local page changes when a navigation link is activated. Command menus above control independent document preferences."
             }
         };
+        let help = self.help.read(cx);
+        let help_sections = Accordion::new("navigation-help", &self.help)
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .children(help.items().iter().enumerate().map(|(index, item)| {
+                div()
+                    .flex()
+                    .flex_col()
+                    .rounded_md()
+                    .border_1()
+                    .border_color(rgb(0x334155))
+                    .child(
+                        AccordionHeader::new(&self.help, index)
+                            .w_full()
+                            .px_3()
+                            .py_2()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .bg(rgb(0x172033))
+                            .focus_visible(|style| {
+                                style.bg(rgb(0x93c5fd)).text_color(rgb(0x0b1220))
+                            })
+                            .child(item.label().clone())
+                            .child(if help.is_open(index) { "−" } else { "+" }),
+                    )
+                    .child(
+                        AccordionPanel::new(&self.help, index)
+                            .tab_stop(true)
+                            .px_3()
+                            .py_2()
+                            .text_sm()
+                            .text_color(rgb(0x94a3b8))
+                            .focus_visible(|style| {
+                                style.bg(rgb(0x334155)).text_color(rgb(0xe2e8f0))
+                            })
+                            .child(if index == 0 {
+                                "Choose Center or End to align the page preview. Only one option stays pressed; press it again to return to Start. Arrow keys move focus without changing the alignment."
+                            } else {
+                                "File contains document actions and an Export submenu. View changes the grid, selected layers and theme. Escape closes one menu level and returns focus to its trigger."
+                            }),
+                    )
+            }));
         DirectionProvider::new(self.direction).w_full().child(
             div().w_full().flex().flex_col().gap_4().p_4().rounded_lg()
                 .border_1().border_color(rgb(0x334155)).bg(rgb(0x0f172a))
                 .child(div().flex().justify_between().items_center().gap_3()
                     .child(div().text_lg().font_weight(FontWeight::BOLD).child("Commands and navigation"))
                     .child(Button::new("navigation-direction").px_3().py_2().rounded_md().bg(rgb(0x334155))
+                        .focus_visible(|style| style.bg(rgb(0x93c5fd)).text_color(rgb(0x0b1220)))
                         .child(if self.direction.is_rtl() { "Direction: RTL" } else { "Direction: LTR" })
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.direction = if this.direction.is_rtl() { Direction::Ltr } else { Direction::Rtl }; cx.notify();
@@ -382,9 +481,19 @@ impl Render for NavigationCatalogue {
                     self.last_command, if self.show_grid { "shown" } else { "hidden" }, self.selection, self.theme)))
                 .child(div().h(px(1.)).bg(rgb(0x334155)))
                 .child(navigation)
+                .child(div().text_sm().text_color(rgb(0x94a3b8))
+                    .child("Reading alignment: choose Center or End. Press the selected option again to return to Start."))
+                .child(alignment_controls)
                 .child(div().p_4().rounded_md().bg(rgb(0x172033)).flex().flex_col().gap_2()
+                    .when(alignment.is_pressed(0), |this| this.text_center())
+                    .when(alignment.is_pressed(1), |this| {
+                        if self.direction.is_rtl() { this.text_left() } else { this.text_right() }
+                    })
                     .child(div().font_weight(FontWeight::BOLD).child(format!("Page: {}", self.page)))
-                    .child(description)),
+                    .child(description))
+                .child(div().text_sm().text_color(rgb(0x94a3b8))
+                    .child("Navigation help · Both answers can stay open."))
+                .child(help_sections),
         )
     }
 }

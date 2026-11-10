@@ -14,13 +14,17 @@ sidebar presentations. The source is maintained in this repository, with GPUI
 kept as an exactly pinned rendering
 dependency.
 
+The [completion criteria and current work](docs/component-coverage.md#completion-criteria-and-current-work)
+track behavior, accessibility, visual defaults, source distribution, and native
+validation. Catalogue coverage alone is not a claim of shadcn/ui-level completeness.
+
 ## Current scope
 
 | Control | Behavior supplied by the library | Application-owned presentation |
 | --- | --- | --- |
 | **Button** | Pointer and keyboard activation, disabled state, focus, accessible name and role, and optional current-page metadata | Content, spacing, shape, and state styling |
 | **Toggle** | Controlled pressed state over Button's activation, focus, and disabled behavior | Content and pressed-state styling |
-| **ToggleGroup** | Multiple pressed values, one Tab stop, orientation-aware navigation, and disabled items | Group layout and Toggle option styling |
+| **ToggleGroup** | Multiple or optional single pressed value, one Tab stop, orientation-aware navigation, and disabled items | Group layout and Toggle option styling |
 | **Checkbox** | Controlled unchecked/checked/mixed state, activation, disabled state, and focus | Indicator, label, layout, and state styling |
 | **Switch** | Controlled on/off state, activation, disabled state, and focus | Track, thumb, label, and state styling |
 | **RadioGroup** | Single selection, one Tab stop, arrow navigation, disabled options, and focus | Group layout and option rendering |
@@ -36,7 +40,7 @@ dependency.
 | **Progress** | Controlled percentage or indeterminate progress, accessible name and numeric range | Track, fill, label, and any animation |
 | **Breadcrumb** | Named navigation, ordered path items, and native current-page metadata | Path labels, ancestor actions, separators, layout, and styling |
 | **Tabs** | Active panel, one tab-list stop, automatic activation, orientation-aware keys, and disabled tabs | Tab-list layout, tab styling, and panel contents |
-| **Accordion** | One collapsible section, header navigation, disabled items, and focused-panel closure | Header, indicator, panel contents, and layout |
+| **Accordion** | Single or multiple open sections, header navigation, disabled items, and focused-panel closure | Header, indicator, panel contents, and layout |
 | **Collapsible** | One disclosure, active-only content, disabled trigger, and focus on content closure | Trigger content, indicator, region contents, and layout |
 | **Tooltip** | Plain text description on Button hover/focus, delayed hover, Escape dismissal, and native tooltip positioning | Button and tooltip text-surface styling |
 | **HoverCard** | Delayed rich preview on hover, trigger-to-card pointer travel, focus preview without moving focus, and dismissal | Button action, preview content, surface, and placement |
@@ -318,10 +322,31 @@ cd gpui-design
 cargo run -p gpui-design --example two_styles --locked -- compact
 cargo run -p gpui-design --example two_styles --locked -- settings
 cargo run -p gpui-design --example catalogue --locked
+cargo run -p gpui-design --example starter --locked
 ```
 
 `compact` is the default when no appearance argument is supplied. Both commands
 run the same session-settings interaction with application-owned styling.
+
+Start with [`starter.rs`](crates/base/examples/starter.rs) for a small complete
+application. It uses only public APIs: `init`, `Root`, a retained `InputState`,
+`Field`, and `Button`. The application keeps its observation and event subscriptions,
+owns the colors and layout, and handles both Enter and button activation. Copy
+its startup and view into a consumer before adding the larger compositions.
+
+In an existing Rust application, depend on the checked-out source and matching
+GPUI snapshots, replacing the path with your checkout:
+
+```toml
+[dependencies]
+gpui-design = { path = "../gpui-design/crates/base" }
+gpui = { package = "gpui-pre", version = "=0.3.11" }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.11", features = ["font-kit", "x11", "wayland", "runtime_shaders"] }
+```
+
+Use the repository's pinned Rust toolchain and native prerequisites above. Copy
+the desired presentation recipes into the application using their
+[dependency and token instructions](docs/presentation-recipes.md#copy-into-an-application).
 
 The GPUI snapshot family is pinned to **`=0.3.11`**. Update those pins and
 `Cargo.lock` together when changing the rendering dependency.
@@ -332,8 +357,9 @@ The GPUI snapshot family is pinned to **`=0.3.11`**. Update those pins and
 | --- | --- |
 | `crates/base/src/` | The `gpui-design` library and its behavior-level tests |
 | `crates/base/tests/` | Integration tests using the public API |
+| `crates/base/examples/starter.rs` | Small complete application using only public APIs |
 | `crates/base/examples/two_styles.rs` | Native example and application-owned styles |
-| `crates/base/examples/recipes/` | Twenty-two copyable presentation/composition recipes, including sidebar navigation, traces, attachments, messages, markers, code blocks, typography, sheets, media frames, avatars, data tables, loading indicators, and keycaps |
+| `crates/base/examples/recipes/` | Twenty-three catalogue recipes and Chart's supporting presentation; copyable application-owned source |
 | `crates/base/examples/assets/` | Embedded example artwork used by the preset preview and its image-decoding regression |
 | `docs/form-controls.md` | Form control usage and interaction contracts |
 | `docs/navigation-overlays.md` | Breadcrumb, Tabs, Accordion, command menus, and composed focus behavior |
@@ -343,7 +369,8 @@ The GPUI snapshot family is pinned to **`=0.3.11`**. Update those pins and
 | `Cargo.toml` / `Cargo.lock` | Workspace and matching dependency set |
 
 Initialize the library with `gpui_design::init(cx)` and host application content
-in `gpui_design::Root`. Use the native example as the complete startup reference.
+in `gpui_design::Root`. Use the starter as the small startup reference and the
+other native examples for larger compositions.
 Consumer applications can work directly with this source and supply their own
 presentation while reusing the behavior layer.
 
@@ -360,7 +387,7 @@ cargo build -p gpui-design --examples --locked
 
 The [Verify workflow](https://github.com/andongmin94/gpui-design/actions/workflows/verify.yml)
 uses one matrix for Linux, Windows, and macOS. Platform-independent checks run
-once; each platform still compiles its native dependencies and both examples.
+once; each platform still compiles its native dependencies and all examples.
 
 | Check | Linux | Windows | macOS |
 | --- | --- | --- | --- |
@@ -368,7 +395,7 @@ once; each platform still compiles its native dependencies and both examples.
 | Full behavior and integration suite | Yes | — | — |
 | Real consumer composition flows | Included above | Yes | Yes |
 | Isolated recipe tests | Included above | — | — |
-| Both native example builds | Yes | Yes | Yes |
+| All native example builds | Yes | Yes | Yes |
 
 Composition tests use representative session and catalogue flows instead of
 duplicating every scenario for each palette. Add tests for distinct behavior and
@@ -399,7 +426,7 @@ The form layer adapts the upstream Checkbox and Switch roots without their
 decorative parts, and adds retained selection and roving focus to RadioGroup.
 Tabs adds retained active panels and keyboard navigation. Popover reuses the
 positioning primitive with a retained non-modal focus and dismissal lifecycle.
-Accordion adds single-open state and header navigation. The shared Menu core
+Accordion adds single/multiple-open state and header navigation. The shared Menu core
 composes Popover with command dispatch and a keyboard/pointer cursor;
 DropdownMenu and ContextMenu provide button and secondary-click entry points.
 Slider adapts the upstream pointer interaction to a single linear value with

@@ -168,8 +168,11 @@ Navigation/Button/Region semantics rather than the TabList/Tab/TabPanel roles.
 
 `AccordionState` owns a fixed, ordered collection of `AccordionItem::new(value,
 label)` entries. Values must be unique. The initial state is fully collapsed;
-`.default_open(value)` opens one enabled entry. An unknown or disabled default is
-a configuration error and panics. Mark unavailable entries with `.disabled(true)`.
+`.default_open([value])` opens an enabled entry. Use
+`.multiple(true).default_open(["general", "details"])` to allow several open
+panels. Defaults must identify enabled items; more than one distinct default in
+single-open mode is a configuration error and panics. Mark unavailable entries
+with `.disabled(true)`.
 
 Render `Accordion::new(id, &state)` around the headers and panels, then pair each
 `AccordionHeader::new(&state, index)` with its `AccordionPanel::new(&state, index)`
@@ -179,11 +182,11 @@ a focus scope and keyboard handling, without choosing a layout or appearance.
 The header contains a native heading and a button. Its children and styles apply
 to the button; use `.heading_level(level)` to change the heading level from 3.
 Place only non-interactive content inside the header. The application draws the
-indicator and may use `open_index()` to distinguish open and closed headers.
+indicator and uses `is_open(index)` to distinguish open and closed headers.
 
 | Input on a header | Behavior |
 | --- | --- |
-| Click / Enter / Space | Open this panel, closing the previous one; collapse if already open |
+| Click / Enter / Space | Toggle this panel; single-open mode also closes the previous panel |
 | Up / Down | Focus the previous / next enabled header, wrapping at either end |
 | Home / End | Focus the first / last enabled header |
 | Tab / Shift-Tab | Follow normal document order through enabled headers and open content |
@@ -193,11 +196,14 @@ stop. Navigation actions only apply when a header itself has focus, so an Input
 inside a panel retains its own Home/End and arrow behavior. Disabled headers do
 not activate or participate in keyboard focus traversal.
 
-State methods include `items`, `open_index`, `open_item`, `trigger_focus_handle`,
+State methods include `items`, `is_open`, `open_values`, `trigger_focus_handle`,
 `panel_focus_handle`, `toggle(index, window, cx)`, and `close(window, cx)`. Subscribe
-to `AccordionEvent::Change(Some(value))` when a section opens and `Change(None)`
-when all sections close. A no-op does not emit another event. Observe the state
-to redraw the consumer.
+to `AccordionEvent::Change(values)` for the open values in original item order;
+an empty vector means all panels are closed. `close` closes every open panel. A
+no-op does not emit another event. Observe the state to redraw the consumer.
+The catalogue's Navigation help mounts two independent answers with
+`.multiple(true)`, so opening the command explanation preserves the alignment
+answer. The session Help keeps the default single-open contract.
 
 Closing a panel removes its layout, focus stops, and accessibility nodes. Keep
 form values and child entities in the application view if they must survive

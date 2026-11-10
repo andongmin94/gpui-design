@@ -42,7 +42,7 @@ in the [form guide](form-controls.md),
 
 | Catalogue entry | Status | Current scope or gap |
 | --- | --- | --- |
-| Accordion | Available | Fixed items, one open section, independent header navigation, and active-only panels. |
+| Accordion | Available | Fixed items, single/multiple open sections, independent header navigation, and active-only panels. |
 | Alert Dialog | Available | `AlertDialog` reuses Dialog state and focus; backdrop dismissal is blocked and confirmation belongs to the application. |
 | Breadcrumb | Available | Named native Navigation, List, and ListItem structure with `aria_current(Page)` on the current item. The application supplies its path, ancestor Buttons, navigation callbacks, separators, and styling; no routing or focus controller. |
 | Button | Available | Native pointer/keyboard activation, disabled state, focus, accessible naming, and explicit current-page metadata independent of selected styling; content and styles belong to the application. |
@@ -75,7 +75,7 @@ in the [form guide](form-controls.md),
 | Textarea | Available | Public multiline renderer over the existing `TextareaState` editing engine; no second editor implementation. |
 | Toast | Available | Retained notification lifetime and explicit/timeout dismissal; hover, contained focus and inactive windows pause remaining time. Showing never takes focus; explicit focused dismissal restores prior focus. Applications own message, actions and stacking; no queue service. |
 | Toggle | Available | Controlled pressed state composed from Button's activation and focus behavior. |
-| Toggle Group | Available | Fixed multiple-selection items and roving focus; moving focus does not change the pressed values. |
+| Toggle Group | Available | Fixed items with multiple or optional single selection and roving focus; moving focus does not change the pressed values. |
 | Tooltip | Available | Plain text descriptions for a Button, delayed pointer hover, immediate keyboard focus, Escape dismissal, and native GPUI tooltip positioning. Rich content and touch long-press behavior are not included. |
 
 ## Presentation and composition recipes
@@ -130,22 +130,54 @@ popup, focus, and scrolling machinery.
 | Sidebar | Recipe | Named navigation with ordinary Buttons, per-entry Tab traversal, explicit pointer/Enter/Space selection, and native current-page metadata over a dedicated retained TabsState. Settings renders only the selected named Region and stacks the Sidebar above it below 640 px; Compact keeps its separate tabbed presentation. No roving arrow selection, routing, collapse, nested groups, or reuse of a state previously bound by TabList. |
 | Trace | Recipe | Application-supplied summary, named read-only Paragraph details, and an optional existing action over retained Collapsible state. Shared Button activation, expanded/disabled metadata, active-only content, and focus on closure are preserved. Help presents current form values rather than recorded operations. No execution history, streaming, parser, separate disclosure state, or scroll controller. |
 
-## Completion boundary
+## Completion criteria and current work
 
-The 66-entry catalogue pass is complete at the documented scopes. Use
+The target is shadcn/ui-level usability across behavior, accessibility, visual
+defaults, and source distribution on native GPUI. The 66-entry catalogue counts
+scope coverage only. It is not a completion percentage or a release-readiness
+claim. `Available`, `Recipe`, and `Mapped` above do not mean parity is complete.
+
+Work is tracked here and in Git, without a separate progress report. A capability
+is complete when its documented consumer contract is implemented, exercised in a
+native example, covered at the appropriate existing test layer, and accurately
+documented. Platform observations are recorded separately from automated checks.
+
+| Priority | Work | Exit condition | Current state |
+| --- | --- | --- | --- |
+| 1 | Existing correctness and core interaction gaps | Fix observed failures; support single-selection ToggleGroup and multiple-open Accordion; verify native values, keyboard/pointer activation, disabled state, and focus on closure | Implemented with focused tests and catalogue consumers |
+| 2 | Remaining common component contracts | Audit the official component examples against each scope above; implement manual Tabs activation, popup side/alignment, range inputs/date selection, and the remaining consumer-required selection/table/navigation capabilities with focused tests and examples | Open; these are additional contracts, not new component names |
+| 3 | Visual defaults and accessibility | Consistent visible keyboard focus, disabled/hover/selected/error states, reusable application-owned tokens, narrow-window layout, and usable light/dark presentations | Catalogue focus states implemented; wider native visual review pending |
+| 4 | Source distribution and developer experience | A small complete starter, compilable public examples, explicit supported API boundary, and a source-copy workflow that resolves recipe dependencies and tokens | Public-API starter and doctest gate implemented; source-copy workflow open |
+| 5 | Release validation | Existing formatting, lint, full behavior suite and native example builds pass; representative native IME, screen-reader, DPI, and visual flows have platform-specific observations | Not complete |
+
+The first change set addresses priority 1, missing catalogue focus presentation,
+and the starter/documentation entry point. It does not close the overall goal.
+The current Windows checkpoint passed 673 behavior/integration tests and 16
+doctests (two existing doctests remain ignored). Formatting, Clippy and the three
+default-feature example builds passed. Native observation covered the starter's
+initial input focus, editing, disabled-to-enabled button, Tab focus indication,
+and Enter activation, plus the catalogue's initial layout. Further catalogue
+pointer checks were interrupted by concurrent desktop input. These observations
+do not establish Korean/CJK IME, screen-reader delivery, DPI or other-platform
+validation.
+The official [Accordion multiple example](https://ui.shadcn.com/docs/components/base/accordion#multiple),
+[Toggle Group usage](https://ui.shadcn.com/docs/components/base/toggle-group#usage),
+[Slider range](https://ui.shadcn.com/docs/components/base/slider#range),
+[Calendar](https://ui.shadcn.com/docs/components/base/calendar), and
+[Combobox](https://ui.shadcn.com/docs/components/base/combobox) provide concrete
+behavior references. The [introduction](https://ui.shadcn.com/docs) and
+[theming guide](https://ui.shadcn.com/docs/theming) also make visual defaults and
+source reuse part of the target. Browser-specific APIs require an explicit native
+equivalent rather than an extra alias.
+
+Use
 `cargo run -p gpui-design --example two_styles --locked -- settings` for the
 session controls and `cargo run -p gpui-design --example catalogue --locked` for
 navigation, OTP/Drawer/Toast, media/chart, and conversation/questionnaire flows.
 
-Further work should deepen capabilities required by actual consuming screens,
-not inflate the entry count. Known family limits are stated in the rows above:
-for example multi-select/async Combobox, range Calendar, richer table operations,
-and chart variants are additional feature work rather than new component names.
-A registry/installer is a separate distribution capability.
-
-Behavior is verified at its owning layer, with representative native consumer
-compositions in the existing CI platform split. Native IME, screen-reader,
-visual, DPI, and performance observations remain separate from automated checks.
+Native IME, screen-reader, visual, DPI, and performance observations remain
+separate from automated checks. No unperformed platform validation is considered
+complete, and no performance claim is made without measurements.
 
 ## Reference distinctions
 

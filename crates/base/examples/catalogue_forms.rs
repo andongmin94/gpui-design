@@ -1,8 +1,8 @@
 //! A wholly local session-code flow using the retained form and modal primitives.
 
 use gpui::{
-    AppContext as _, Context, Entity, FocusHandle, IntoElement, ParentElement as _, Render,
-    ScrollHandle, SharedString, Styled as _, Subscription, Window, div,
+    AppContext as _, Context, Entity, FocusHandle, InteractiveElement as _, IntoElement,
+    ParentElement as _, Render, ScrollHandle, SharedString, Styled as _, Subscription, Window, div,
     prelude::FluentBuilder as _, px, rgb,
 };
 use gpui_design::{
@@ -115,7 +115,7 @@ impl Render for CatalogueForms {
                             } else {
                                 rgb(0x64748b)
                             })
-                            .bg(if slot.selected {
+                            .bg(if slot.active || slot.selected {
                                 rgb(0x284568)
                             } else {
                                 rgb(0x172033)
@@ -133,6 +133,9 @@ impl Render for CatalogueForms {
                     .py_2()
                     .bg(rgb(0x255c90))
                     .rounded_md()
+                    .hover(|style| style.bg(rgb(0x306fa9)))
+                    .focus_visible(|style| style.bg(rgb(0x93c5fd)).text_color(rgb(0x0b1220)))
+                    .styles(|styles| styles.disabled(|style| style.opacity(0.45)))
                     .child("Review session")
                     .on_click(cx.listener(|this, _, window, cx| this.review(window, cx))),
             )
@@ -154,8 +157,19 @@ impl Render for CatalogueForms {
                     .rounded_md()
                     .child(div().flex_1().child(status))
                     .child(
-                        ToastClose::new("dismiss-session-notification", &self.toast)
-                            .trigger(|button| button.px_2().py_1().child("Dismiss")),
+                        ToastClose::new("dismiss-session-notification", &self.toast).trigger(
+                            |button| {
+                                button
+                                    .px_2()
+                                    .py_1()
+                                    .rounded_md()
+                                    .hover(|style| style.bg(rgb(0x334155)))
+                                    .focus_visible(|style| {
+                                        style.bg(rgb(0x93c5fd)).text_color(rgb(0x0b1220))
+                                    })
+                                    .child("Dismiss")
+                            },
+                        ),
                     ),
             )
             .child(
@@ -196,10 +210,17 @@ impl Render for CatalogueForms {
                             .justify_end()
                             .gap_2()
                             .p_4()
-                            .child(
-                                DialogClose::new(&dialog)
-                                    .trigger(|button| button.px_3().py_2().child("Cancel")),
-                            )
+                            .child(DialogClose::new(&dialog).trigger(|button| {
+                                button
+                                    .px_3()
+                                    .py_2()
+                                    .rounded_md()
+                                    .hover(|style| style.bg(rgb(0x334155)))
+                                    .focus_visible(|style| {
+                                        style.bg(rgb(0x93c5fd)).text_color(rgb(0x0b1220))
+                                    })
+                                    .child("Cancel")
+                            }))
                             .child(
                                 Button::new("confirm-session")
                                     .track_focus(&self.confirm_focus)
@@ -207,6 +228,10 @@ impl Render for CatalogueForms {
                                     .py_2()
                                     .bg(rgb(0x255c90))
                                     .rounded_md()
+                                    .hover(|style| style.bg(rgb(0x306fa9)))
+                                    .focus_visible(|style| {
+                                        style.bg(rgb(0x93c5fd)).text_color(rgb(0x0b1220))
+                                    })
                                     .child("Confirm")
                                     .on_click(cx.listener(|this, _, window, cx| {
                                         this.confirm(window, cx);

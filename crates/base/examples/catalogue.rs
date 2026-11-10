@@ -11,8 +11,8 @@ use catalogue_data::DataCatalogue;
 use catalogue_forms::CatalogueForms;
 use catalogue_navigation::NavigationCatalogue;
 use gpui::{
-    AppContext as _, Context, Entity, FontWeight, IntoElement, ParentElement as _, Render,
-    ScrollHandle, Styled as _, Subscription, Window, div, px, rgb,
+    AppContext as _, Context, Entity, FontWeight, InteractiveElement as _, IntoElement,
+    ParentElement as _, Render, ScrollHandle, Styled as _, Subscription, Window, div, px, rgb,
 };
 use gpui_design::{ScrollArea, Tab, TabItem, TabList, TabPanel, TabsState};
 
@@ -72,6 +72,8 @@ impl Render for Catalogue {
                     } else {
                         0x172033
                     }))
+                    .hover(|style| style.bg(rgb(0x334155)))
+                    .focus_visible(|style| style.bg(rgb(0x93c5fd)).text_color(rgb(0x0b1220)))
                     .child(item.label().clone())
             })
             .collect::<Vec<_>>();
@@ -93,7 +95,7 @@ impl Render for Catalogue {
 
 #[cfg(not(test))]
 fn main() {
-    use gpui::{WindowBounds, WindowOptions, size};
+    use gpui::{TitlebarOptions, WindowBounds, WindowOptions, size};
     use gpui_design::Root;
     gpui_platform::application().run(|cx| {
         gpui_design::init(cx);
@@ -105,6 +107,10 @@ fn main() {
         .detach();
         cx.open_window(
             WindowOptions {
+                titlebar: Some(TitlebarOptions {
+                    title: Some("GPUI Design · Catalogue".into()),
+                    ..Default::default()
+                }),
                 window_bounds: Some(WindowBounds::centered(size(px(980.), px(840.)), cx)),
                 ..WindowOptions::default()
             },

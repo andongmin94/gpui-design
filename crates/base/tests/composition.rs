@@ -1164,7 +1164,7 @@ fn help_typography_wraps_in_both_appearances_without_adding_focus(cx: &mut TestA
 
                 let demo = demo.read(cx);
                 assert!(demo.tabs.read(cx).tab_focus_handle(2).is_focused(window));
-                assert_eq!(demo.accordion.read(cx).open_index(), Some(2));
+                assert!(demo.accordion.read(cx).is_open(2));
                 assert_eq!(demo.fields_scroll.offset().x, px(0.));
                 (body, ownership.bounds().size.height)
             });
@@ -1203,7 +1203,7 @@ fn help_typography_wraps_in_both_appearances_without_adding_focus(cx: &mut TestA
             cx.update(|window, cx| {
                 let sections = demo.read(cx).accordion.clone();
                 sections.update(cx, |state, cx| {
-                    if state.open_index() != Some(0) {
+                    if !state.is_open(0) {
                         state.toggle(0, window, cx);
                     }
                 });
@@ -1388,7 +1388,7 @@ fn configuration_code_copies_current_values_and_contains_nested_scrolling(cx: &m
                 let demo = demo.read(cx);
                 assert!(demo.configuration_focus.is_focused(window));
                 assert_eq!(demo.tabs.read(cx).selected_index(), Some(2));
-                assert_eq!(demo.accordion.read(cx).open_index(), Some(2));
+                assert!(demo.accordion.read(cx).is_open(2));
                 assert_eq!(demo.fields_scroll.offset().x, px(0.));
                 let maximum = demo.configuration_scroll.max_offset();
                 assert!(maximum.x > px(0.) && maximum.y > px(0.));
@@ -1403,7 +1403,7 @@ fn configuration_code_copies_current_values_and_contains_nested_scrolling(cx: &m
                 assert!((offset.y + maximum.y).abs() < px(1.));
                 assert_eq!(demo.fields_scroll.offset(), parent_offset);
                 assert!(demo.configuration_focus.is_focused(window));
-                assert_eq!(demo.accordion.read(cx).open_index(), Some(2));
+                assert!(demo.accordion.read(cx).is_open(2));
             });
             cx.simulate_event(ScrollEvent {
                 position: code_bounds.center(),
@@ -1473,7 +1473,7 @@ fn configuration_code_copies_current_values_and_contains_nested_scrolling(cx: &m
             assert_eq!(demo.configuration_code(cx), current_code);
             assert!(demo.input.focus_handle(cx).is_focused(window));
             assert_eq!(demo.tabs.read(cx).selected_index(), Some(2));
-            assert_eq!(demo.accordion.read(cx).open_index(), Some(2));
+            assert!(demo.accordion.read(cx).is_open(2));
         });
     }
 }
@@ -1742,7 +1742,7 @@ fn configuration_attachment_tracks_utf8_content_and_keyboard_inspection(cx: &mut
             assert_eq!(demo.notes.read(cx).value(), notes);
             assert_eq!(demo.configuration_code(cx), current);
             assert_eq!(demo.tabs.read(cx).selected_index(), Some(2));
-            assert_eq!(demo.accordion.read(cx).open_index(), Some(2));
+            assert!(demo.accordion.read(cx).is_open(2));
             assert_metadata(window, current.as_ref());
         });
     }
@@ -2091,7 +2091,7 @@ fn settings_trace_discloses_current_values_with_retained_focus_and_parent_scroll
             assert_eq!(demo.notes.read(cx).value(), replacement_notes);
             assert_eq!(demo.calendar.read(cx).selected_date(), None);
             assert_eq!(demo.tabs.read(cx).selected_index(), Some(2));
-            assert_eq!(demo.accordion.read(cx).open_index(), Some(2));
+            assert!(demo.accordion.read(cx).is_open(2));
             assert_eq!(
                 test_support::find(window, &[], &body_id).unwrap().label(),
                 Some(replacement.as_str())
@@ -2199,7 +2199,7 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
     draw(cx);
     cx.update(|window, cx| {
         let accordion = demo.read(cx).accordion.read(cx);
-        assert_eq!(accordion.open_index(), Some(0));
+        assert!(accordion.is_open(0));
         assert!(accordion.trigger_focus_handle(0).is_focused(window));
     });
     cx.simulate_keystrokes("down");
@@ -2207,15 +2207,11 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
     cx.update(|window, cx| {
         let accordion = demo.read(cx).accordion.read(cx);
         assert!(accordion.trigger_focus_handle(2).is_focused(window));
-        assert_eq!(
-            accordion.open_index(),
-            Some(0),
-            "arrows only move header focus"
-        );
+        assert!(accordion.is_open(0), "arrows only move header focus");
     });
     activate_key(cx, "enter");
     cx.update(|window, cx| {
-        assert_eq!(demo.read(cx).accordion.read(cx).open_index(), Some(2));
+        assert!(demo.read(cx).accordion.read(cx).is_open(2));
         assert!(test_support::find(window, &[], &"keyboard-help".into()).is_none());
     });
     cx.simulate_keystrokes("tab");
@@ -2233,7 +2229,7 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
     cx.simulate_keystrokes("shift-tab");
     draw(cx);
     activate_key(cx, "space");
-    cx.update(|_, cx| assert_eq!(demo.read(cx).accordion.read(cx).open_index(), None));
+    cx.update(|_, cx| assert!(demo.read(cx).accordion.read(cx).open_values().is_empty()));
 
     cx.simulate_keystrokes("home");
     draw(cx);
@@ -2253,7 +2249,7 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
     draw(cx);
     cx.update(|window, cx| {
         let demo = demo.read(cx);
-        assert_eq!(demo.accordion.read(cx).open_index(), None);
+        assert!(demo.accordion.read(cx).open_values().is_empty());
         assert!(!demo.help.read(cx).is_open());
         assert!(
             demo.accordion
@@ -2267,7 +2263,7 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
     activate_key(cx, "enter");
     cx.update(|window, cx| {
         let demo = demo.read(cx);
-        assert_eq!(demo.accordion.read(cx).open_index(), Some(0));
+        assert!(demo.accordion.read(cx).is_open(0));
         assert!(!demo.help.read(cx).is_open());
         assert!(test_support::find(window, &[], &"keyboard-help".into()).is_some());
         assert!(!demo.show_cursor);

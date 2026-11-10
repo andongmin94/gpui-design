@@ -326,7 +326,7 @@ impl Demo {
                 ],
                 cx,
             )
-            .default_open("keyboard")
+            .default_open(["keyboard"])
         });
         let preview = cx.new(|cx| SliderState::new(0.0..=100.0, 5.0, cx).default_value(40.0));
         let preview_options = cx.new(CollapsibleState::new);
@@ -1204,7 +1204,7 @@ impl Demo {
                 .focus_visible(|style| style.border_color(palette.accent))
                 .when(item.is_disabled(), |header| header.opacity(0.45))
                 .child(item.label().clone())
-                .child(if accordion_state.open_index() == Some(index) {
+                .child(if accordion_state.is_open(index) {
                     "−"
                 } else {
                     "+"
@@ -2363,7 +2363,7 @@ impl Render for Demo {
 
 #[cfg(not(test))]
 fn main() {
-    use gpui::{WindowBounds, WindowOptions, size};
+    use gpui::{TitlebarOptions, WindowBounds, WindowOptions, size};
     use gpui_design::Root;
 
     let appearance = match std::env::args().nth(1).as_deref() {
@@ -2384,6 +2384,10 @@ fn main() {
         .detach();
         cx.open_window(
             WindowOptions {
+                titlebar: Some(TitlebarOptions {
+                    title: Some("GPUI Design · Session settings".into()),
+                    ..Default::default()
+                }),
                 window_bounds: Some(WindowBounds::centered(size(px(760.), px(780.)), cx)),
                 ..WindowOptions::default()
             },
