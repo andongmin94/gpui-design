@@ -55,7 +55,7 @@ pub(crate) const RECIPES: &[Recipe] = &[
     recipe!("marker", marker, [Marker], []),
     recipe!("message", message, [Message], ["typography"]),
     recipe!("pagination", pagination, [Pagination], ["button-group"]),
-    recipe!("sheet", sheet, [Sheet], []),
+    recipe!("sheet", sheet, [Sheet, SheetSide], []),
     recipe!("sidebar", sidebar, [Sidebar], []),
     recipe!("skeleton", skeleton, [Skeleton], []),
     recipe!("spinner", spinner, [Spinner], []),

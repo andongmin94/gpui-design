@@ -28,6 +28,7 @@ pub struct Button {
     selected: bool,
     current: bool,
     disabled: bool,
+    focus_when_disabled: bool,
     children: SmallVec<[AnyElement; 2]>,
     on_click: Option<ClickHandler>,
     accessibility_label: Option<SharedString>,
@@ -49,6 +50,7 @@ impl Button {
             selected: false,
             current: false,
             disabled: false,
+            focus_when_disabled: false,
             children: SmallVec::new(),
             on_click: None,
             accessibility_label: None,
@@ -67,6 +69,13 @@ impl Button {
     /// focus moves away, so keyboard traversal can continue in either direction.
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
+        self
+    }
+
+    // Composite grids keep unavailable cells keyboard-discoverable while
+    // preserving disabled activation, styling, and accessibility metadata.
+    pub(crate) fn focus_when_disabled(mut self, focusable: bool) -> Self {
+        self.focus_when_disabled = focusable;
         self
     }
 
@@ -255,13 +264,14 @@ impl RenderOnce for Button {
             // Keep the current focus in the dispatch tree when activation
             // disables this button, so Tab can still leave it in either direction.
             .when(
-                self.focusable && (!disabled || focus_handle.is_focused(window)),
+                self.focusable
+                    && (!disabled || self.focus_when_disabled || focus_handle.is_focused(window)),
                 |this| {
                     this.track_focus(
                         &focus_handle
                             .clone()
                             .tab_index(self.tab_index)
-                            .tab_stop(self.tab_stop && !disabled),
+                            .tab_stop(self.tab_stop && (!disabled || self.focus_when_disabled)),
                     )
                 },
             )

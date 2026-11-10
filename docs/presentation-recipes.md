@@ -514,10 +514,11 @@ does not add controls to HoverCard's noninteractive content.
 ## Sheet
 
 [`sheet.rs`](../crates/base/examples/recipes/sheet.rs) presents existing Dialog
-content in a full-height panel at the right edge of the window:
+content at a chosen window edge, defaulting to a full-height right panel:
 
 ```rust,ignore
 Sheet::new("session-settings", &dialog, &fields_scroll, "Session settings", palette)
+    .side(SheetSide::Right)
     .description("Choose the session's drawing and toolbar settings.")
     .child(form_fields)
     .footer(
@@ -544,11 +545,18 @@ reopening, native reveal of the initial focus target can adjust its offset.
 The consumer must keep the header and footer's combined content within the
 viewport height. Long form content belongs in the scrolling body.
 
-`Styled` customizes the popup surface. Use `.w(...)` to change its preferred width
-and retain the default maximum width, height, and flex layout to preserve the
-Sheet's sizing contract. This recipe covers right-edge presentation; other edges,
-drag gestures, and transition animation are outside its current scope. It does
-not implement Drawer interaction.
+Use `.side(SheetSide::Left | Right | Top | Bottom)` to choose an edge. Left/right
+fill the height and use `palette.dialog_width` as preferred width; top/bottom fill
+the width and use that token as preferred height. Both dimensions are capped at
+the viewport. `Styled` overrides apply after edge defaults, so `.w(...)` changes a
+vertical panel's preferred width and `.h(...)` a horizontal panel's height,
+regardless of builder order. Retain the viewport caps and flex layout. All sides
+keep the same fixed header/footer and scrolling body. Drag gestures and transition
+animation are outside this recipe; Drawer owns its drag interaction.
+
+The catalogue's Forms section opens the current session help from all four edges
+using one retained DialogState and ScrollHandle. Closing restores the chosen
+trigger. The help text and session values stay application-owned.
 
 The application supplies footer controls, including any `DialogClose` and its
 disabled state. Keyboard interaction stays with the supplied controls and

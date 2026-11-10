@@ -1,17 +1,20 @@
 //! Selection behavior and composable, unstyled trigger/listbox parts.
 //! Modified for GPUI Design: retained option navigation and focus lifecycle.
 
+use std::time::Duration;
+
 use gpui::{
     AccessibleAction, AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter,
-    FocusHandle, InteractiveElement, Interactivity, IntoElement, KeyBinding, MouseButton,
-    ParentElement, RenderOnce, Role, SharedString, StatefulInteractiveElement, StyleRefinement,
-    Styled, Subscription, Window, div, prelude::FluentBuilder as _,
+    FocusHandle, InteractiveElement, Interactivity, IntoElement, KeyBinding, KeyDownEvent,
+    MouseButton, ParentElement, RenderOnce, Role, SharedString, StatefulInteractiveElement,
+    StyleRefinement, Styled, Subscription, Window, div, prelude::FluentBuilder as _,
 };
+use web_time::Instant;
 
 use crate::{
     Popup, StyledExt as _, TestSupportExt as _,
     a11y_disabled::A11yDisabledExt as _,
-    actions::{Cancel, Confirm, SelectDown, SelectUp},
+    actions::{Cancel, Confirm, SelectDown, SelectFirst, SelectLast, SelectUp},
     global_state::{DeferredPopover, GlobalState},
 };
 
@@ -22,6 +25,8 @@ pub(crate) fn init(cx: &mut App) {
         KeyBinding::new("space", Confirm { secondary: false }, Some(CONTEXT)),
         KeyBinding::new("up", SelectUp, Some(CONTEXT)),
         KeyBinding::new("down", SelectDown, Some(CONTEXT)),
+        KeyBinding::new("home", SelectFirst, Some(CONTEXT)),
+        KeyBinding::new("end", SelectLast, Some(CONTEXT)),
         KeyBinding::new("enter", Confirm { secondary: false }, Some(CONTEXT)),
         KeyBinding::new("escape", Cancel, Some(CONTEXT)),
     ]);
@@ -73,7 +78,10 @@ pub enum SelectEvent {
 /// The first release accepts a fixed, ordered collection. Arrow keys wrap and
 /// skip disabled items; opening highlights the committed item or first enabled
 /// item. Enter/Space commits, Escape discards the pending cursor and restores
-/// trigger focus. The application owns option presentation, not this behavior.
+/// trigger focus. Home/End highlight an enabled edge while open. Typing searches
+/// labels by a case-insensitive prefix, committing while closed and only moving
+/// the cursor while open. Repeated letters cycle; a one-second pause resets the
+/// prefix. The application owns option presentation, not this behavior.
 pub struct SelectState {
     items: Vec<SelectItem>,
     selected: Option<usize>,
@@ -85,6 +93,8 @@ pub struct SelectState {
     content_focus: FocusHandle,
     deferred_context: Option<DeferredPopover>,
     dismiss_subscription: Option<Subscription>,
+    search: String,
+    searched_at: Option<Instant>,
 }
 
 impl SelectState {
@@ -107,6 +117,8 @@ impl SelectState {
             content_focus: cx.focus_handle(),
             deferred_context: None,
             dismiss_subscription: None,
+            search: String::new(),
+            searched_at: None,
         }
     }
 
@@ -132,6 +144,41 @@ impl SelectState {
 
     pub fn selected_item(&self) -> Option<&SelectItem> {
         self.selected.map(|ix| &self.items[ix])
+    }
+
+    /// Sets or clears the committed value without emitting Change.
+    ///
+    /// Unknown or disabled options are rejected without changing the value,
+    /// pending cursor, popup or focus. An accepted update closes the popup using
+    /// its normal focus lifecycle and clears the typeahead prefix. Returns
+    /// whether the value was accepted, including an unchanged value. Application
+    /// updates remain available when the control itself is disabled.
+    pub fn set_selected_value(
+        &mut self,
+        value: Option<&str>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let selected = match value {
+            Some(value) => {
+                let Some(index) = self
+                    .items
+                    .iter()
+                    .position(|item| item.value.as_ref() == value && !item.disabled)
+                else {
+                    return false;
+                };
+                Some(index)
+            }
+            None => None,
+        };
+        self.close(window, cx);
+        self.selected = selected;
+        self.search.clear();
+        self.searched_at = None;
+        cx.notify();
+        window.refresh();
+        true
     }
 
     pub fn is_open(&self) -> bool {
@@ -173,6 +220,8 @@ impl SelectState {
             return;
         }
         self.open = true;
+        self.search.clear();
+        self.searched_at = None;
         self.deferred_context = Some(GlobalState::register_deferred_popover(cx));
         self.dismiss_subscription =
             Some(
@@ -220,6 +269,8 @@ impl SelectState {
         self.highlighted = None;
         self.deferred_context = None;
         self.dismiss_subscription = None;
+        self.search.clear();
+        self.searched_at = None;
         cx.notify();
         window.refresh();
     }
@@ -256,6 +307,87 @@ impl SelectState {
         self.highlighted = Some(ix);
         cx.notify();
         window.refresh();
+    }
+
+    fn edge(&mut self, last: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.open {
+            cx.propagate();
+            return;
+        }
+        let index = if last {
+            self.items.iter().rposition(|item| !item.disabled)
+        } else {
+            self.items.iter().position(|item| !item.disabled)
+        };
+        if let Some(index) = index {
+            self.highlight(index, window, cx);
+        }
+    }
+
+    fn typeahead(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.disabled
+            || event.prefer_character_input
+            || (!self.focus.is_focused(window) && !self.content_focus.is_focused(window))
+        {
+            return;
+        }
+        let modifiers = event.keystroke.modifiers;
+        if modifiers.control || modifiers.alt || modifiers.platform || modifiers.function {
+            return;
+        }
+        let text = event
+            .keystroke
+            .key_char
+            .as_deref()
+            .unwrap_or(&event.keystroke.key);
+        let mut characters = text.chars();
+        let Some(character) = characters.next() else {
+            return;
+        };
+        if characters.next().is_some() || character.is_control() || character.is_whitespace() {
+            return;
+        }
+        let now = cx.background_executor().now();
+        if self
+            .searched_at
+            .is_none_or(|at| now.duration_since(at) >= Duration::from_secs(1))
+        {
+            self.search.clear();
+        }
+        self.search.extend(character.to_lowercase());
+        self.searched_at = Some(now);
+        let first = self.search.chars().next().unwrap();
+        let repeated = self.search.chars().all(|character| character == first);
+        let prefix = if repeated {
+            first.to_string()
+        } else {
+            self.search.clone()
+        };
+        let current = if self.open {
+            self.highlighted
+        } else {
+            self.selected
+        };
+        let count = self.items.len();
+        let start = current.unwrap_or(0);
+        let index = (0..count)
+            .map(|distance| (start + distance) % count)
+            .filter(|index| !repeated || current != Some(*index))
+            .find(|&index| {
+                !self.items[index].disabled
+                    && self.items[index].label.to_lowercase().starts_with(&prefix)
+            });
+        if let Some(index) = index {
+            if self.open {
+                self.highlight(index, window, cx);
+            } else if self.selected != Some(index) {
+                self.selected = Some(index);
+                cx.emit(SelectEvent::Change(self.items[index].value.clone()));
+                cx.notify();
+                window.refresh();
+            }
+        }
+        cx.stop_propagation();
     }
 
     fn commit(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
@@ -354,6 +486,9 @@ impl RenderOnce for Select {
         let accessible_state = self.state.clone();
         let up_state = self.state.clone();
         let down_state = self.state.clone();
+        let first_state = self.state.clone();
+        let last_state = self.state.clone();
+        let typeahead_state = self.state.clone();
         let confirm_state = self.state.clone();
         let cancel_state = self.state.clone();
         let outside_state = self.state.clone();
@@ -423,6 +558,15 @@ impl RenderOnce for Select {
             })
             .on_action(move |_: &SelectDown, window, cx| {
                 down_state.update(cx, |state, cx| state.move_cursor(true, window, cx));
+            })
+            .on_action(move |_: &SelectFirst, window, cx| {
+                first_state.update(cx, |state, cx| state.edge(false, window, cx));
+            })
+            .on_action(move |_: &SelectLast, window, cx| {
+                last_state.update(cx, |state, cx| state.edge(true, window, cx));
+            })
+            .on_key_down(move |event, window, cx| {
+                typeahead_state.update(cx, |state, cx| state.typeahead(event, window, cx));
             })
             .on_action(move |_: &Confirm, window, cx| {
                 confirm_state.update(cx, |state, cx| state.confirm(window, cx));
@@ -522,9 +666,13 @@ impl RenderOnce for SelectOption {
 
 #[cfg(test)]
 mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
     use super::*;
     use crate::Root;
-    use gpui::{AppContext as _, Modifiers, MouseButton, Render, TestAppContext, px};
+    use gpui::{
+        AppContext as _, KeyUpEvent, Keystroke, Modifiers, MouseButton, Render, TestAppContext, px,
+    };
 
     struct Harness {
         select: Entity<SelectState>,
@@ -533,7 +681,7 @@ mod tests {
     }
 
     impl Render for Harness {
-        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
             div().size_full().when(self.shown, |this| {
                 this.child(
                     Select::new("select", &self.select)
@@ -545,13 +693,217 @@ mod tests {
                                 .child("Choose"),
                         )
                         .content(
-                            div().w(px(180.)).child(
-                                SelectOption::new(&self.select, 0).h(px(32.)).child("First"),
+                            div().w(px(180.)).children(
+                                self.select.read(cx).items().iter().enumerate().map(
+                                    |(index, item)| {
+                                        SelectOption::new(&self.select, index)
+                                            .h(px(32.))
+                                            .child(item.label().clone())
+                                    },
+                                ),
                             ),
                         ),
                 )
             })
         }
+    }
+
+    #[gpui::test]
+    fn edge_keys_and_typeahead_keep_pending_and_committed_selection_distinct(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(crate::init);
+        let changes = Rc::new(RefCell::new(Vec::new()));
+        let recorded = changes.clone();
+        let (root, cx) = cx.add_window_view(|window, cx| {
+            let view = cx.new(|cx| {
+                let select = cx.new(|cx| {
+                    SelectState::new(
+                        [
+                            SelectItem::new("unavailable-first", "Apricot").disabled(true),
+                            SelectItem::new("apple", "Apple"),
+                            SelectItem::new("avocado", "Avocado"),
+                            SelectItem::new("banana", "Banana"),
+                            SelectItem::new("blueberry", "Blueberry"),
+                            SelectItem::new("unavailable-match", "Blackberry").disabled(true),
+                            SelectItem::new("eclair", "Éclair"),
+                            SelectItem::new("unavailable-last", "Zucchini").disabled(true),
+                        ],
+                        cx,
+                    )
+                    .default_value("banana")
+                });
+                cx.subscribe(&select, move |_, _, event: &SelectEvent, _| {
+                    let SelectEvent::Change(value) = event;
+                    recorded.borrow_mut().push(value.clone());
+                })
+                .detach();
+                let observation = cx.observe(&select, |_, _, cx| cx.notify());
+                Harness {
+                    select,
+                    shown: true,
+                    _observation: observation,
+                }
+            });
+            Root::new(view, window, cx)
+        });
+        let view = root
+            .read_with(cx, |root, _| root.view().clone())
+            .downcast::<Harness>()
+            .unwrap();
+        cx.update(|window, cx| {
+            window.activate_window();
+            view.read(cx)
+                .select
+                .read(cx)
+                .focus_handle()
+                .clone()
+                .focus(window, cx);
+            window.draw(cx).clear(cx);
+        });
+
+        // Closed Home/End do not open or change a select. Typing selects in
+        // place; repeated letters cycle and a longer prefix narrows the match.
+        cx.simulate_keystrokes("home end a a");
+        cx.update(|window, cx| {
+            let state = view.read(cx).select.read(cx);
+            assert!(!state.is_open());
+            assert_eq!(state.selected_index(), Some(2));
+            assert!(state.focus_handle().is_focused(window));
+        });
+        cx.executor().advance_clock(Duration::from_secs(1));
+        cx.simulate_keystrokes("b l");
+        cx.update(|_, cx| {
+            assert_eq!(view.read(cx).select.read(cx).selected_index(), Some(4));
+        });
+        assert_eq!(
+            *changes.borrow(),
+            ["apple", "avocado", "banana", "blueberry"]
+                .map(SharedString::from)
+                .to_vec()
+        );
+
+        cx.simulate_keystrokes("down home");
+        cx.update(|window, cx| {
+            window.draw(cx).clear(cx);
+            let state = view.read(cx).select.read(cx);
+            assert!(state.is_open());
+            assert_eq!(state.highlighted_index(), Some(1));
+            assert_eq!(state.selected_index(), Some(4));
+            assert!(state.content_focus_handle().is_focused(window));
+        });
+        cx.simulate_keystrokes("end");
+        cx.update(|_, cx| {
+            let state = view.read(cx).select.read(cx);
+            assert_eq!(state.highlighted_index(), Some(6));
+            assert_eq!(state.selected_index(), Some(4));
+        });
+        cx.simulate_keystrokes("a a");
+        cx.update(|_, cx| {
+            assert_eq!(view.read(cx).select.read(cx).highlighted_index(), Some(2));
+        });
+        assert_eq!(changes.borrow().len(), 4);
+        cx.simulate_keystrokes("escape down b l enter");
+        cx.update(|window, cx| {
+            window.draw(cx).clear(cx);
+            let state = view.read(cx).select.read(cx);
+            assert!(!state.is_open());
+            assert_eq!(state.selected_index(), Some(4));
+            assert!(state.focus_handle().is_focused(window));
+        });
+        assert_eq!(changes.borrow().len(), 4, "unchanged commits emit no event");
+
+        // Native character preference, shortcuts, disabled controls, and
+        // events outside the select's own focus scopes never change its value.
+        cx.simulate_keystrokes("ctrl-a alt-a");
+        let keystroke = Keystroke {
+            key: "a".into(),
+            key_char: Some("a".into()),
+            modifiers: Modifiers::default(),
+        };
+        cx.simulate_event(KeyDownEvent {
+            keystroke: keystroke.clone(),
+            is_held: false,
+            prefer_character_input: true,
+        });
+        cx.simulate_event(KeyUpEvent { keystroke });
+        cx.update(|window, cx| {
+            let select = view.read(cx).select.clone();
+            assert_eq!(select.read(cx).selected_index(), Some(4));
+            select.update(cx, |state, cx| state.set_disabled(true, window, cx));
+            window.draw(cx).clear(cx);
+        });
+        cx.simulate_keystrokes("a home end");
+        cx.update(|window, cx| {
+            let select = view.read(cx).select.clone();
+            assert_eq!(select.read(cx).selected_index(), Some(4));
+            select.update(cx, |state, cx| state.set_disabled(false, window, cx));
+            window.blur(cx);
+            let event = KeyDownEvent {
+                keystroke: Keystroke {
+                    key: "a".into(),
+                    key_char: Some("a".into()),
+                    modifiers: Modifiers::default(),
+                },
+                is_held: false,
+                prefer_character_input: false,
+            };
+            select.update(cx, |state, cx| state.typeahead(&event, window, cx));
+            assert_eq!(select.read(cx).selected_index(), Some(4));
+            select.read(cx).focus_handle().clone().focus(window, cx);
+        });
+        cx.executor().advance_clock(Duration::from_secs(1));
+        let keystroke = Keystroke {
+            key: "É".into(),
+            key_char: Some("É".into()),
+            modifiers: Modifiers::default(),
+        };
+        cx.simulate_event(KeyDownEvent {
+            keystroke: keystroke.clone(),
+            is_held: false,
+            prefer_character_input: false,
+        });
+        cx.simulate_event(KeyUpEvent { keystroke });
+        cx.update(|_, cx| {
+            assert_eq!(view.read(cx).select.read(cx).selected_index(), Some(6));
+        });
+        assert_eq!(changes.borrow().last().unwrap().as_ref(), "eclair");
+
+        // Application resets validate before disturbing a pending cursor, then
+        // close with the same focus policy and never report a user change.
+        cx.simulate_keystrokes("down home");
+        cx.update(|window, cx| {
+            let select = view.read(cx).select.clone();
+            select.update(cx, |state, cx| {
+                for value in ["missing", "unavailable-first"] {
+                    assert!(!state.set_selected_value(Some(value), window, cx));
+                    assert_eq!(state.selected_index(), Some(6));
+                    assert_eq!(state.highlighted_index(), Some(1));
+                    assert!(state.is_open());
+                    assert!(state.content_focus_handle().is_focused(window));
+                }
+                assert!(state.set_selected_value(Some("banana"), window, cx));
+                assert_eq!(state.selected_index(), Some(3));
+                assert!(!state.is_open());
+                assert!(state.focus_handle().is_focused(window));
+                state.open(window, cx);
+                assert!(state.set_selected_value(None, window, cx));
+                assert_eq!(state.selected_index(), None);
+                assert!(!state.is_open());
+                assert!(state.focus_handle().is_focused(window));
+                state.set_disabled(true, window, cx);
+                assert!(state.set_selected_value(Some("apple"), window, cx));
+                assert_eq!(state.selected_index(), Some(1));
+                window.blur(cx);
+                assert!(state.set_selected_value(None, window, cx));
+                assert!(window.focused(cx).is_none());
+            });
+        });
+        assert_eq!(
+            changes.borrow().len(),
+            5,
+            "application updates emit no Change"
+        );
     }
 
     #[gpui::test]

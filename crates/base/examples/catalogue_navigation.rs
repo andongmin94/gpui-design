@@ -249,7 +249,9 @@ impl NavigationCatalogue {
                 0x172033
             }))
             .button(|button| {
-                button.focus_visible(|style| style.bg(rgb(0x93c5fd)).text_color(rgb(0x0b1220)))
+                button
+                    .accessibility_label(label)
+                    .focus_visible(|style| style.bg(rgb(0x93c5fd)).text_color(rgb(0x0b1220)))
             })
             .child(label)
     }
@@ -280,6 +282,11 @@ fn trigger(button: Button, label: &'static str, open: bool) -> Button {
 
 impl Render for NavigationCatalogue {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let direction_label = if self.direction.is_rtl() {
+            "Direction: RTL"
+        } else {
+            "Direction: LTR"
+        };
         let open_menu = self.bar.read(cx).open_index(cx);
         let open_navigation = self.navigation.read(cx).open_index(cx);
         let export_highlighted = self.file.read(cx).highlighted_index() == Some(2);
@@ -523,8 +530,9 @@ impl Render for NavigationCatalogue {
                 .child(div().flex().justify_between().items_center().gap_3()
                     .child(div().text_lg().font_weight(FontWeight::BOLD).child("Commands and navigation"))
                     .child(Button::new("navigation-direction").px_3().py_2().rounded_md().bg(rgb(0x334155))
+                        .accessibility_label(direction_label)
                         .focus_visible(|style| style.bg(rgb(0x93c5fd)).text_color(rgb(0x0b1220)))
-                        .child(if self.direction.is_rtl() { "Direction: RTL" } else { "Direction: LTR" })
+                        .child(direction_label)
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.direction = if this.direction.is_rtl() { Direction::Ltr } else { Direction::Rtl }; cx.notify();
                         }))))
@@ -541,7 +549,7 @@ impl Render for NavigationCatalogue {
                     .align(Align::Start)
                     .offset(px(8.))
                     .trigger(|button| {
-                        trigger(button, "Keyboard reference", self.quick_help.read(cx).is_open())
+                        trigger(button.accessibility_label("Keyboard reference"), "Keyboard reference", self.quick_help.read(cx).is_open())
                     })
                     .content(panel().w(px(280.)).p_3().gap_3()
                         .child(div().id("navigation-keyboard-heading").role(Role::Heading).aria_level(3)
@@ -549,6 +557,7 @@ impl Render for NavigationCatalogue {
                             .font_weight(FontWeight::BOLD).child("Navigate with the keyboard"))
                         .child(div().text_sm().child("Tab reaches each control. Arrow keys move between menu entries; Down opens a menu. Enter or Space activates the focused item, and Escape closes the current surface."))
                         .child(Button::new("close-navigation-keyboard-reference")
+                            .accessibility_label("Got it")
                             .track_focus(&self.quick_help_close).px_3().py_2().rounded_md()
                             .bg(rgb(0x334155))
                             .focus_visible(|style| style.bg(rgb(0x93c5fd)).text_color(rgb(0x0b1220)))

@@ -41,7 +41,8 @@ pub struct DatePickerState {
 }
 
 impl DatePickerState {
-    /// Uses an existing Calendar state, including its bounds and initial value.
+    /// Uses an existing Calendar state, including its week start, disabled-date
+    /// predicate, bounds, and initial value.
     pub fn new(
         calendar: &Entity<CalendarState>,
         window: &mut Window,
@@ -141,7 +142,7 @@ impl DatePickerState {
     }
 
     /// Replaces the selection mode and value without emitting Change, closing an
-    /// open popup first. Invalid or out-of-bounds selections leave both states
+    /// open popup first. Invalid, date-disabled, or out-of-bounds selections leave both states
     /// unchanged. An empty selection preserves the Calendar's navigation date.
     pub fn set_selection(
         &mut self,
@@ -351,13 +352,22 @@ mod tests {
     }
 
     fn harness(cx: &mut TestAppContext) -> (&mut VisualTestContext, Entity<Harness>) {
+        configured_harness(cx, |calendar| calendar)
+    }
+
+    fn configured_harness(
+        cx: &mut TestAppContext,
+        configure: impl FnOnce(CalendarState) -> CalendarState + 'static,
+    ) -> (&mut VisualTestContext, Entity<Harness>) {
         cx.update(crate::init);
-        let (root, cx) = cx.add_window_view(|window, cx| {
+        let (root, cx) = cx.add_window_view(move |window, cx| {
             let content = cx.new(|cx| {
                 let calendar = cx.new(|cx| {
-                    CalendarState::new(date(2024, 1, 31), cx)
-                        .bounds(date(2024, 1, 1), date(2026, 12, 31))
-                        .default_selection(CalendarSelection::Single(Some(date(2024, 1, 31))))
+                    configure(
+                        CalendarState::new(date(2024, 1, 31), cx)
+                            .bounds(date(2024, 1, 1), date(2026, 12, 31))
+                            .default_selection(CalendarSelection::Single(Some(date(2024, 1, 31)))),
+                    )
                 });
                 let picker = cx.new(|cx| DatePickerState::new(&calendar, window, cx));
                 let subscriptions = vec![
@@ -724,5 +734,43 @@ mod tests {
         settle(cx);
         press(cx, "space");
         cx.update(|_, cx| assert!(!view.read(cx).picker.read(cx).is_open(cx)));
+    }
+
+    #[gpui::test]
+    fn disabled_date_activation_and_programmatic_rejection_keep_the_popup_open(
+        cx: &mut TestAppContext,
+    ) {
+        let disabled = date(2024, 2, 1);
+        let (cx, view) = configured_harness(cx, move |calendar| {
+            calendar.disabled_dates(move |date| date == disabled)
+        });
+        press(cx, "tab");
+        press(cx, "enter");
+        press(cx, "right");
+        assert_open_at(cx, &view, disabled);
+        press(cx, "enter");
+        assert_open_at(cx, &view, disabled);
+        cx.update(|window, cx| {
+            let picker = view.read(cx).picker.clone();
+            assert!(!picker.update(cx, |picker, cx| picker.set_selection(
+                CalendarSelection::Single(Some(disabled)),
+                window,
+                cx
+            )));
+            assert!(view.read(cx).changes.borrow().is_empty());
+        });
+        settle(cx);
+        assert_open_at(cx, &view, disabled);
+        press(cx, "right");
+        press(cx, "enter");
+        cx.update(|window, cx| {
+            let view = view.read(cx);
+            assert!(!view.picker.read(cx).is_open(cx));
+            assert!(view.picker.read(cx).focus_handle().is_focused(window));
+            assert_eq!(
+                *view.changes.borrow(),
+                [CalendarSelection::Single(Some(date(2024, 2, 2)))]
+            );
+        });
     }
 }

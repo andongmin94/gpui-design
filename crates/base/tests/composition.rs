@@ -4084,7 +4084,132 @@ fn disabled_select_and_composition_commit_do_not_leak_actions(cx: &mut TestAppCo
 }
 
 #[gpui::test]
+fn catalogue_sheets_keep_each_edge_and_scroll_body_within_the_viewport(cx: &mut TestAppContext) {
+    cx.update(gpui_design::init);
+    let (root, cx) = cx.add_window_view(|window, cx| {
+        let catalogue = cx.new(|cx| catalogue::Catalogue::new(window, cx));
+        Root::new(catalogue, window, cx)
+    });
+    let view = root
+        .read_with(cx, |root, _| root.view().clone())
+        .downcast::<catalogue::Catalogue>()
+        .unwrap();
+    let forms = cx.update(|window, cx| {
+        window.activate_window();
+        let tabs = view.read(cx).tabs.clone();
+        tabs.update(cx, |tabs, cx| {
+            tabs.select_value("forms", window, cx);
+        });
+        view.read(cx).forms.clone()
+    });
+    for (width, height) in [(320., 520.), (980., 840.)] {
+        cx.simulate_resize(gpui::size(px(width), px(height)));
+        for edge in 0..4 {
+            cx.update(|window, cx| {
+                let trigger = forms.read(cx).sheet_triggers[edge].clone();
+                trigger.focus(window, cx);
+            });
+            draw(cx);
+            activate_key(cx, "enter");
+            let (header, body, footer, overflow) = cx.update(|window, cx| {
+                assert!(forms.read(cx).sheet.read(cx).is_open());
+                let id = gpui::ElementId::from("session-help");
+                let bounds = |part| {
+                    test_support::find(window, &[], &(id.clone(), part).into())
+                        .unwrap()
+                        .bounds()
+                };
+                assert!(
+                    test_support::snapshots(window)
+                        .iter()
+                        .any(|node| node.label() == Some("Close help")
+                            && node.focused() == Some(true))
+                );
+                (
+                    bounds("header"),
+                    bounds("body"),
+                    bounds("footer"),
+                    forms.read(cx).sheet_scroll.max_offset().y,
+                )
+            });
+            for bounds in [header, body, footer] {
+                assert!(bounds.left() >= px(-1.) && bounds.right() <= px(width) + px(1.));
+                assert!(bounds.top() >= px(-1.) && bounds.bottom() <= px(height) + px(1.));
+            }
+            assert!(header.bottom() <= body.top() && body.bottom() <= footer.top());
+            match edge {
+                0 => {
+                    assert!(header.top().abs() <= px(1.));
+                    assert!((header.size.width - px(width)).abs() <= px(1.));
+                }
+                1 => {
+                    assert!((header.right() - px(width)).abs() <= px(1.));
+                    assert!(header.top().abs() <= px(1.));
+                    assert!((footer.bottom() - px(height)).abs() <= px(1.));
+                }
+                2 => {
+                    assert!((footer.bottom() - px(height)).abs() <= px(1.));
+                    assert!((header.size.width - px(width)).abs() <= px(1.));
+                }
+                _ => {
+                    assert!(header.left().abs() <= px(1.));
+                    assert!(header.top().abs() <= px(1.));
+                    assert!((footer.bottom() - px(height)).abs() <= px(1.));
+                }
+            }
+            if height == 520. || edge == 0 || edge == 2 {
+                assert!(
+                    overflow > px(0.),
+                    "the actual help text overflows the bounded body"
+                );
+            }
+            if overflow > px(0.) {
+                cx.simulate_event(ScrollEvent {
+                    position: body.center(),
+                    delta: ScrollDelta::Pixels(point(px(0.), px(-100.))),
+                    ..Default::default()
+                });
+                draw(cx);
+                cx.update(|window, cx| {
+                    assert!(forms.read(cx).sheet_scroll.offset().y < px(0.));
+                    let id = gpui::ElementId::from("session-help");
+                    assert_eq!(
+                        test_support::find(window, &[], &(id.clone(), "header").into())
+                            .unwrap()
+                            .bounds(),
+                        header
+                    );
+                    assert_eq!(
+                        test_support::find(window, &[], &(id, "footer").into())
+                            .unwrap()
+                            .bounds(),
+                        footer
+                    );
+                });
+            }
+            activate_key(cx, "escape");
+            cx.update(|window, cx| {
+                assert!(!forms.read(cx).sheet.read(cx).is_open());
+                assert!(forms.read(cx).sheet_triggers[edge].is_focused(window));
+            });
+        }
+    }
+}
+
+#[gpui::test]
 fn catalogue_connects_confirmation_data_and_conversation(cx: &mut TestAppContext) {
+    let assert_named_buttons = |window: &gpui::Window| {
+        for node in test_support::snapshots(window)
+            .into_iter()
+            .filter(|node| node.role() == Some(Role::Button))
+        {
+            assert!(
+                node.label().is_some_and(|label| !label.trim().is_empty()),
+                "button needs a native accessible name: {:?}",
+                node.path()
+            );
+        }
+    };
     cx.update(gpui_design::init);
     let (root, cx) = cx.add_window_view(|window, cx| {
         let catalogue = cx.new(|cx| catalogue::Catalogue::new(window, cx));
@@ -4100,6 +4225,7 @@ fn catalogue_connects_confirmation_data_and_conversation(cx: &mut TestAppContext
     });
     cx.run_until_parked();
     cx.update(|window, _| {
+        assert_named_buttons(window);
         let nodes = test_support::snapshots(window);
         assert!(
             nodes.iter().any(|node| node.role() == Some(Role::MenuBar)
@@ -4225,6 +4351,7 @@ fn catalogue_connects_confirmation_data_and_conversation(cx: &mut TestAppContext
         });
         cx.run_until_parked();
         draw(cx);
+        cx.update(|window, _| assert_named_buttons(window));
     };
     section(cx, 1);
     cx.simulate_keystrokes("tab");
@@ -4389,5 +4516,76 @@ fn catalogue_connects_confirmation_data_and_conversation(cx: &mut TestAppContext
             }),
             "the replaced item collection is selectable without recreating the editor"
         );
+    });
+    cx.simulate_keystrokes("escape tab tab tab tab tab");
+    draw(cx);
+    cx.update(|window, _| {
+        assert_eq!(
+            test_support::find(window, &[], &"calendar-reading-direction".into())
+                .unwrap()
+                .focused(),
+            Some(true)
+        );
+    });
+    activate_key(cx, "enter");
+    cx.update(|window, _| {
+        let nodes = test_support::snapshots(window);
+        let sunday = nodes
+            .iter()
+            .find(|node| node.role() == Some(Role::ColumnHeader) && node.label() == Some("Sun"))
+            .unwrap();
+        let monday = nodes
+            .iter()
+            .find(|node| node.role() == Some(Role::ColumnHeader) && node.label() == Some("Mon"))
+            .unwrap();
+        assert!(
+            sunday.bounds().left() > monday.bounds().left(),
+            "Sunday-first columns are visually reversed for RTL"
+        );
+    });
+    cx.simulate_keystrokes("shift-tab shift-tab shift-tab shift-tab shift-tab shift-tab");
+    draw(cx);
+    cx.update(|window, _| {
+        assert!(
+            test_support::snapshots(window)
+                .iter()
+                .any(|node| node.role() == Some(Role::GridCell)
+                    && node.label() == Some("Wednesday, November 11, 2026")
+                    && node.focused() == Some(true))
+        );
+    });
+    cx.simulate_keystrokes("left left left");
+    draw(cx);
+    activate_key(cx, "enter");
+    cx.update(|window, _| {
+        let nodes = test_support::snapshots(window);
+        let saturday = nodes
+            .iter()
+            .find(|node| {
+                node.role() == Some(Role::GridCell)
+                    && node.label() == Some("Saturday, November 14, 2026")
+            })
+            .unwrap();
+        assert_eq!(saturday.focused(), Some(true));
+        assert_eq!(saturday.disabled(), Some(true));
+        assert_eq!(
+            saturday.selected(),
+            Some(false),
+            "unavailable dates are discoverable but cannot be selected"
+        );
+    });
+    cx.simulate_keystrokes("left left");
+    activate_key(cx, "enter");
+    cx.update(|window, _| {
+        let nodes = test_support::snapshots(window);
+        let monday = nodes
+            .iter()
+            .find(|node| {
+                node.role() == Some(Role::GridCell)
+                    && node.label() == Some("Monday, November 16, 2026")
+            })
+            .unwrap();
+        assert_eq!(monday.focused(), Some(true));
+        assert_eq!(monday.selected(), Some(true));
     });
 }

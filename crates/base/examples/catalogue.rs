@@ -26,7 +26,7 @@ use gpui_design::{ScrollArea, Tab, TabItem, TabList, TabPanel, TabsEvent, TabsSt
 pub(crate) struct Catalogue {
     pub(crate) tabs: Entity<TabsState>,
     pub(crate) navigation: Entity<NavigationCatalogue>,
-    forms: Entity<CatalogueForms>,
+    pub(crate) forms: Entity<CatalogueForms>,
     data: Entity<DataCatalogue>,
     conversation: Entity<ConversationCatalogue>,
     selection: Entity<SelectionCatalogue>,

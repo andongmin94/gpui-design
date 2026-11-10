@@ -147,6 +147,31 @@ name describe the label itself. For Input/Textarea label, help, and validation
 association, use Field, which projects metadata onto its retained input and
 checks the input's live disabled state when its label is clicked.
 
+## Select
+
+`SelectState::new(items, cx)` owns a fixed ordered set of unique values, one
+committed value and a separate open-popup cursor. Disabled options are skipped.
+Observe the state for presentation and subscribe to `SelectEvent::Change` for
+committed user changes. `set_selected_value(Some(value), window, cx)` sets an
+enabled value; `None` clears it. Accepted updates close the popup without a user
+event, using its normal focus restoration. Unknown/disabled values return false
+without changing the value, pending cursor or popup. App updates remain available
+while the whole control is disabled.
+
+| Input | Result |
+| --- | --- |
+| Enter / Space | Open the popup, or commit its highlighted option |
+| Up / Down | Open and move among enabled options |
+| Home / End while open | Highlight the first / last enabled option without committing |
+| Printable characters | Commit a matching option while closed; highlight it while open |
+| Escape | Discard the pending choice, close and restore trigger focus |
+
+Typeahead matches case-insensitive label prefixes and resets after one second.
+Repeated letters cycle matching options. Modified shortcuts, native
+character-preferred events and keys from descendant editors do not search.
+Opening/closing clears the prefix. This is a non-editable select; use Combobox
+for a visible native text query, grouped results or multiple selection.
+
 ## Combobox
 
 Construct `ComboboxState::new(items, window, cx)` with ordered, unique
@@ -226,8 +251,16 @@ let calendar = cx.new(|cx| {
 
 Without `default_selection`, selection starts as `CalendarSelection::Single(None)`. Default bounds cover years
 1–9999; `bounds` narrows the inclusive selectable range before mounting. The
-grid exposes six complete Monday-first weeks through `days()`. Adjacent-month
+grid exposes six complete weeks through `days()`, Monday-first by default. Adjacent-month
 dates remain visible; dates outside the configured bounds are disabled.
+
+Before mounting, `.week_starts_on(Weekday::Sun)` changes the grid and Home/End
+boundaries. Use `weekdays()` for matching header order; `Weekday` is re-exported
+alongside `NaiveDate`. `.disabled_dates(|date| ...)` supplies application rules
+such as weekends or booked dates. It filters existing single/multiple values and
+clears ranges with unavailable endpoints. Default and programmatic setters reject
+unavailable dates/endpoints; a range may include unavailable interior days.
+Keep the predicate's result stable throughout the state's lifetime.
 
 Render `Calendar::new(id, &calendar)` with an accessible month/year label. Use
 ordinary identified `div().id(...).role(Role::Row)` containers for one seven-cell weekday header
@@ -246,10 +279,10 @@ See `Demo::calendar_content` in the native example for the complete composition.
 
 | Input | Result |
 | --- | --- |
-| Tab / Shift+Tab | Enter the grid at its one enabled day stop, or leave it |
-| Left / Right | Move focus by one day |
+| Tab / Shift+Tab | Enter at the one retained day stop, or leave the grid |
+| Left / Right | Move focus one physical cell, reversing chronological direction in RTL |
 | Up / Down | Move focus by one week |
-| Home / End | Move to Monday / Sunday of the current week |
+| Home / End | Move to the configured first / last day of the current week |
 | Page Up / Page Down | Move by one month, clamping month-end dates |
 | Shift+Page Up / Shift+Page Down | Move by one year |
 | Enter / Space / click | Commit the enabled date; emit Change only if it changed |
@@ -261,6 +294,17 @@ a containing ScrollArea can satisfy. Month buttons call `previous_month` or
 Those methods retain an external navigation button's focus. Read `focus_handle()`
 when explicitly moving focus into the calendar; its grid slot can change as the
 visible month changes, so do not cache that handle as a permanent date identity.
+
+Unavailable dates within bounds remain keyboard-focusable for discovery but
+cannot be activated by pointer, Enter or Space. Even an entirely unavailable
+calendar keeps one grid Tab stop; disabling the whole Calendar removes normal
+entry and navigation. Out-of-bounds cells stay outside focus traversal.
+
+Calendar inherits `DirectionProvider` or accepts `.direction(Direction::Rtl)`.
+The application must apply the same `Direction::row` to weekday/date rows and
+mirror weekday header column indices. CalendarDay projects physical columns and
+horizontal keyboard direction from its enclosing Calendar. Labels and text
+formatting remain application-owned; the Selection catalogue shows this layout.
 
 `CalendarSelection` also supports `Multiple(Vec<NaiveDate>)` and
 `Range { start: Option<NaiveDate>, end: Option<NaiveDate> }`. Configure an empty
@@ -277,10 +321,10 @@ start. A nonempty value also updates the visible month and cursor; clearing
 selection retains navigation. `CalendarEvent::Change(selection)` reports user
 changes. `set_disabled` blocks user navigation/selection and normal Tab entry.
 
-The calendar remains Gregorian and Monday-first. Arbitrary disabled-day
-predicates, configurable week starts, non-Gregorian calendars, clocks and timezone
-conversion are not provided. The Selection catalogue demonstrates range and
-multiple dates; the session example retains its single recording date.
+The calendar remains Gregorian. Non-Gregorian arithmetic, clocks and timezone
+conversion are not provided. The Selection catalogue demonstrates Sunday-first,
+weekend-disabled range/multiple dates and RTL; the session example retains its
+Monday-first single recording date.
 
 ## DatePicker
 

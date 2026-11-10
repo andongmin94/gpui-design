@@ -59,7 +59,7 @@ impl Global for DirectionScope {}
 
 /// Supplies inherited direction to descendant controls, including nested views.
 ///
-/// Tabs, radio/toggle groups, sliders, carousels, and coordinated menus resolve
+/// Calendars, tabs, radio/toggle groups, sliders, carousels, and coordinated menus resolve
 /// this scope when rendered. A control's explicit `.direction(...)` wins.
 /// Nested providers restore the outer direction for following siblings.
 ///

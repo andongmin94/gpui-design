@@ -33,7 +33,8 @@ mod recipes;
 use recipes::{
     Alert, AspectRatio, Attachment, Avatar, Badge, ButtonGroup, Card, CodeBlock, DataTable,
     DataTableColumn, DataTableRow, DataTableState, EmptyState, Heading, InlineCode, InputGroup,
-    Item, Kbd, KbdGroup, Marker, Message, Paragraph, Sheet, Sidebar, Skeleton, Spinner, Trace,
+    Item, Kbd, KbdGroup, Marker, Message, Paragraph, Sheet, SheetSide, Sidebar, Skeleton, Spinner,
+    Trace,
 };
 
 #[path = "presentation.rs"]
@@ -2051,6 +2052,7 @@ impl Render for Demo {
                 "Session settings",
                 palette,
             )
+            .side(SheetSide::Right)
             .when(sidebar, |sheet| sheet.w(rems(46.)))
             .description("Choose the session's drawing and toolbar settings.")
             .child(name_field)

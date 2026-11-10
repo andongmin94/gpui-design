@@ -32,9 +32,9 @@ validation. Catalogue coverage alone is not a claim of shadcn/ui-level completen
 | **Textarea** | Multiline editing over the same engine, retained text, wrapping, and normal form Tab traversal | Field container, dimensions, text style, and surrounding content |
 | **Field** | Label focus, help/error descriptions, and required/invalid metadata for existing Input/Textarea-based controls | Layout, label/help/error styles, control rendering, and validation rules |
 | **Label** | Named native text label that focuses an existing control when clicked, with an explicit disabled flag and no extra Tab stop | Text, layout, styling, target accessible name, and matching disabled state |
-| **Select** | Single selection from fixed options, keyboard navigation, disabled options, commit, and focus | Trigger, popup content, and option rendering |
+| **Select** | Fixed single selection, buffered typeahead, Home/End and arrow navigation, disabled options, commit, and focus | Trigger, popup content, and option rendering |
 | **Combobox** | Editable single/multiple selection, grouped search results, replaceable options, keyboard/pointer commit, and draft cancellation | Query frame, suggestion surface, result rows, selected chips, and empty state |
-| **Calendar** | Single/multiple/range date selection, separate focused date, bounded month/year navigation, and a Monday-first grid | Month controls, weekday/date labels, grid layout, and day styling |
+| **Calendar** | Single/multiple/range date selection, separate focus, date-disabled rules, configurable week start, bounded navigation and RTL | Month controls, weekday/date labels, grid layout, and day styling |
 | **DatePicker** | Calendar selection inside Popover, selected-date or retained-cursor initial focus, single/complete-range closing, dismissal, and disabled state | Formatted trigger, calendar/month controls, presets, and popup surface |
 | **Slider** | One or more ordered numeric values, bounded steps, per-thumb focus and accessibility, keyboard/pointer adjustment, disabled state, vertical and RTL geometry | Track, fill, thumbs, sizing, and state styling |
 | **Progress** | Controlled percentage or indeterminate progress, accessible name and numeric range | Track, fill, label, and any animation |
@@ -102,7 +102,7 @@ These types live in the example, outside the `gpui_design` crate exports.
 | **Skeleton** | Static decorative placeholder with application-controlled size and shape | The preview's unavailable percentage display |
 | **Avatar** | Named circular image with explicit fallback text, using GPUI's image loader and cache | Preset artwork or initials in the existing HoverCard preview |
 | **AspectRatio** | Clipped media frame with a finite positive width/height ratio and application-owned content | A recording-frame illustration driven by the retained preset and session name |
-| **Sheet** | Right-edge modal presentation over Dialog, with a viewport-limited width, fixed header/footer, and one scrolling body | Session settings in both appearances, using the existing form and retained state |
+| **Sheet** | Four-edge modal presentation over Dialog, viewport-limited size, fixed header/footer, and one scrolling body | Session settings and catalogue help panels, using retained state |
 | **Sidebar** | Named grouped navigation, ordinary Buttons, current-page metadata, and optional whole/group Collapsible state | Grouped Settings sections and the catalogue's collapsible project navigation |
 | **Typography** | Named headings with explicit levels, paragraphs with native inline-code text runs, and independently named code elements | Help headings, state-ownership explanations, and the example's source identifier |
 | **CodeBlock** | Read-only multiline code, an exact full-text Copy action, and bounded two-axis scrolling with keyboard access | A JSON snapshot of the retained session settings in Help |
@@ -128,6 +128,8 @@ controls' frame borders, radii, layout, design palette, and sizing scales.
 
 Select accepts a fixed, ordered collection when `SelectState` is created. Each
 option has a unique value; the state owns the selected value and keyboard cursor.
+Typing selects an enabled prefix match while closed and highlights it while open.
+Home/End highlight the first/last enabled option in an open popup without committing.
 Command and Combobox share `SearchItem` values, labels, aliases, and disabled
 flags and group labels. Combobox adds single or multiple committed values to the
 shared query and result navigation; typing alone does not change selection.
@@ -238,11 +240,12 @@ scheduling an actual recording. Its date bounds are 2026–2027.
 The separate [catalogue example](crates/base/examples/catalogue.rs) connects the
 remaining families into five retained views. Navigation demonstrates coordinated
 menus, destination links and collapsible grouped project navigation; Forms and feedback runs numeric code entry through
-a confirmation Drawer into a pausing Toast; Media and data supplies RTL-aware
+a confirmation Drawer into a pausing Toast, plus help Sheets at all four edges; Media and data supplies RTL-aware
 Carousel slides and inspectable line/bar/area charts with an exact data table;
 Conversation combines incoming/outgoing bubbles, anchored history/streaming,
 reactions and a validated question/review/complete flow. Selection combines date
-ranges, independent dates and grouped multiple recording targets. These examples are local
+ranges, independent dates and grouped multiple recording targets. Its calendars
+start weeks on Sunday, disable weekend selection and offer RTL layout. These examples are local
 and make no network requests.
 
 ## Layers and source ownership

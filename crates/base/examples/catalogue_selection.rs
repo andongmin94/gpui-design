@@ -9,8 +9,8 @@ use gpui::{
 };
 use gpui_design::{
     Button, Calendar, CalendarDay, CalendarSelection, CalendarState, Combobox, ComboboxGroup,
-    ComboboxList, ComboboxOption, ComboboxState, DatePicker, DatePickerState, InputEditorStyle,
-    NaiveDate, SearchItem,
+    ComboboxList, ComboboxOption, ComboboxState, DatePicker, DatePickerState, Direction,
+    DirectionProvider, InputEditorStyle, NaiveDate, SearchItem, TestSupportExt as _, Weekday,
 };
 
 pub(crate) struct SelectionCatalogue {
@@ -19,6 +19,7 @@ pub(crate) struct SelectionCatalogue {
     availability: Entity<CalendarState>,
     targets: Entity<ComboboxState>,
     extended_targets: bool,
+    direction: Direction,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -31,6 +32,8 @@ impl SelectionCatalogue {
         let range = cx.new(|cx| {
             CalendarState::new(date(11), cx)
                 .bounds(date(1), NaiveDate::from_ymd_opt(2027, 12, 31).unwrap())
+                .week_starts_on(Weekday::Sun)
+                .disabled_dates(|date| matches!(date.weekday(), Weekday::Sat | Weekday::Sun))
                 .default_selection(CalendarSelection::Range {
                     start: None,
                     end: None,
@@ -40,6 +43,8 @@ impl SelectionCatalogue {
         let availability = cx.new(|cx| {
             CalendarState::new(date(11), cx)
                 .bounds(date(1), NaiveDate::from_ymd_opt(2027, 12, 31).unwrap())
+                .week_starts_on(Weekday::Sun)
+                .disabled_dates(|date| matches!(date.weekday(), Weekday::Sat | Weekday::Sun))
                 .default_selection(CalendarSelection::Multiple(vec![date(11), date(13)]))
         });
         let targets = cx.new(|cx| {
@@ -69,6 +74,7 @@ impl SelectionCatalogue {
             availability,
             targets,
             extended_targets: false,
+            direction: Direction::Ltr,
             _subscriptions: subscriptions,
         }
     }
@@ -99,13 +105,18 @@ impl SelectionCatalogue {
             .styles(|styles| styles.disabled(|style| style.opacity(0.45)))
     }
 
-    fn calendar_panel(id: &'static str, state: &Entity<CalendarState>, cx: &App) -> AnyElement {
+    fn calendar_panel(
+        id: &'static str,
+        state: &Entity<CalendarState>,
+        direction: Direction,
+        cx: &App,
+    ) -> AnyElement {
         let model = state.read(cx);
         let month = model.month();
         let previous = state.clone();
         let next = state.clone();
-        let navigation = div()
-            .flex()
+        let navigation = direction
+            .row(div())
             .items_center()
             .justify_between()
             .gap_2()
@@ -113,7 +124,7 @@ impl SelectionCatalogue {
                 Self::button(Button::new((ElementId::from(id), "previous")))
                     .accessibility_label("Previous month")
                     .disabled(!model.can_previous_month())
-                    .child("‹")
+                    .child(if direction.is_rtl() { "›" } else { "‹" })
                     .on_click(move |_, window, cx| {
                         previous.update(cx, |state, cx| state.previous_month(window, cx));
                     }),
@@ -127,7 +138,7 @@ impl SelectionCatalogue {
                 Self::button(Button::new((ElementId::from(id), "next")))
                     .accessibility_label("Next month")
                     .disabled(!model.can_next_month())
-                    .child("›")
+                    .child(if direction.is_rtl() { "‹" } else { "›" })
                     .on_click(move |_, window, cx| {
                         next.update(cx, |state, cx| state.next_month(window, cx));
                     }),
@@ -139,36 +150,42 @@ impl SelectionCatalogue {
             .flex_col()
             .gap_1()
             .child(
-                div()
-                    .id((ElementId::from(id), "weekdays"))
-                    .role(Role::Row)
-                    .aria_row_index(0)
-                    .flex()
+                direction
+                    .row(
+                        div()
+                            .id((ElementId::from(id), "weekdays"))
+                            .role(Role::Row)
+                            .aria_row_index(0),
+                    )
                     .children(
-                        ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+                        model
+                            .weekdays()
                             .into_iter()
                             .enumerate()
                             .map(|(column, day)| {
+                                let label = day.to_string();
                                 div()
                                     .id(("weekday", column))
+                                    .test_support()
                                     .role(Role::ColumnHeader)
-                                    .aria_column_index(column)
-                                    .aria_label(day)
+                                    .aria_column_index(if direction.is_rtl() {
+                                        6 - column
+                                    } else {
+                                        column
+                                    })
+                                    .aria_label(label.clone())
                                     .flex_1()
                                     .min_w_0()
                                     .text_sm()
                                     .text_center()
                                     .text_color(rgb(0x94a3b8))
-                                    .child(day)
+                                    .child(label)
                             }),
                     ),
             )
             .children(model.days().chunks(7).enumerate().map(|(row, week)| {
-                div()
-                    .id((id, row))
-                    .role(Role::Row)
-                    .aria_row_index(row + 1)
-                    .flex()
+                direction
+                    .row(div().id((id, row)).role(Role::Row).aria_row_index(row + 1))
                     .children(week.iter().map(|&day| {
                         CalendarDay::new(state, day)
                             .accessibility_label(day.format("%A, %B %-d, %Y").to_string())
@@ -195,13 +212,16 @@ impl SelectionCatalogue {
                             .child(day.day().to_string())
                     }))
             }));
-        div()
-            .w_full()
-            .flex()
-            .flex_col()
-            .gap_3()
-            .child(navigation)
-            .child(grid)
+        DirectionProvider::new(direction)
+            .child(
+                div()
+                    .w_full()
+                    .flex()
+                    .flex_col()
+                    .gap_3()
+                    .child(navigation)
+                    .child(grid),
+            )
             .into_any_element()
     }
 
@@ -295,6 +315,7 @@ impl SelectionCatalogue {
                 .aria_label("Selected recording targets").flex().flex_wrap().gap_2().children(chips))
             .child(div().flex().flex_wrap().gap_2()
                 .child(Self::button(Button::new("clear-recording-targets"))
+                    .accessibility_label("Clear targets")
                     .disabled(model.selected_indices().is_empty() || model.is_disabled()).child("Clear targets")
                     .on_click(cx.listener(|this, _, window, cx| {
                         let focus = this.targets.read(cx).focus_handle().clone();
@@ -302,6 +323,7 @@ impl SelectionCatalogue {
                         this.targets.update(cx, |state, cx| { state.clear(window, cx); });
                     })))
                 .child(Self::button(Button::new("extend-recording-targets"))
+                    .accessibility_label(if self.extended_targets { "Hide backup target" } else { "Show backup target" })
                     .child(if self.extended_targets { "Hide backup target" } else { "Show backup target" })
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.extended_targets = !this.extended_targets;
@@ -328,21 +350,28 @@ impl Render for SelectionCatalogue {
             .border_1().border_color(rgb(0x334155)).bg(rgb(0x0f172a))
             .child(div().id("selection-title").role(Role::Heading).aria_level(2)
                 .aria_label("Plan a recording").text_lg().font_weight(FontWeight::BOLD).child("Plan a recording"))
-            .child("Choose a recording date range, independent available days, and output targets. This plan stays in local application state.")
+            .child("Choose a recording date range, independent available days, and output targets. Weeks start on Sunday; weekends are unavailable. Arrow keys can inspect unavailable dates. This plan stays local.")
             .child(DatePicker::new("recording-date-range", &self.picker)
                 .accessibility_label("Recording date range")
                 .trigger(|button| Self::button(button).accessibility_label(format!("Recording date range: {range}")).child(range))
                 .content(div().w(px(328.)).max_w((window.viewport_size().width - px(16.)).max(px(0.)))
                     .p_3().rounded_md().border_1().border_color(rgb(0x475569)).bg(rgb(0x0f172a)).text_color(rgb(0xf1f5f9))
-                    .child(Self::calendar_panel("recording-range-calendar", &self.range, cx))))
-            .child(Self::button(Button::new("recording-week-preset")).child("Use Nov 11–13")
+                    .child(Self::calendar_panel("recording-range-calendar", &self.range, self.direction, cx))))
+            .child(Self::button(Button::new("recording-week-preset")).accessibility_label("Use Nov 11–13").child("Use Nov 11–13")
                 .on_click(cx.listener(|this, _, window, cx| {
                     this.picker.update(cx, |state, cx| { state.set_selection(CalendarSelection::Range { start: Some(date(11)), end: Some(date(13)) }, window, cx); });
                 })))
             .child(div().id("availability-title").role(Role::Heading).aria_level(3)
                 .aria_label("Available recording days").font_weight(FontWeight::SEMIBOLD).child("Available recording days"))
-            .child(div().max_w(px(360.)).w_full().child(Self::calendar_panel("availability-calendar", &self.availability, cx)))
+            .child(div().max_w(px(360.)).w_full().child(Self::calendar_panel("availability-calendar", &self.availability, self.direction, cx)))
             .child(if selected_days.is_empty() { "No available dates selected".to_string() } else { format!("Available: {selected_days}") })
             .child(self.render_targets(cx))
+            .child(Self::button(Button::new("calendar-reading-direction"))
+                .accessibility_label("Toggle calendar reading direction")
+                .child(if self.direction.is_rtl() { "Calendar: RTL" } else { "Calendar: LTR" })
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.direction = if this.direction.is_rtl() { Direction::Ltr } else { Direction::Rtl };
+                    cx.notify();
+                })))
     }
 }

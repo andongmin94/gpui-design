@@ -83,7 +83,7 @@ pub(crate) use auto_scroll::AutoScroll;
 pub use breadcrumb::{Breadcrumb, BreadcrumbItem, BreadcrumbList};
 pub use button::{Button, ButtonStyles};
 pub use calendar::{
-    Calendar, CalendarDay, CalendarEvent, CalendarSelection, CalendarState, NaiveDate,
+    Calendar, CalendarDay, CalendarEvent, CalendarSelection, CalendarState, NaiveDate, Weekday,
 };
 pub use carousel::{Carousel, CarouselControl, CarouselEvent, CarouselSlide, CarouselState};
 pub use chart::{Chart, ChartEvent, ChartSeries, ChartState};

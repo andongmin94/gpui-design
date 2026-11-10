@@ -1,7 +1,7 @@
 //! Single, multiple, or range selection with independent calendar keyboard focus.
 
-pub use chrono::NaiveDate;
 use chrono::{Datelike as _, Days, Months};
+pub use chrono::{NaiveDate, Weekday};
 use gpui::{
     AnyElement, App, Context, ElementId, Entity, EntityId, EventEmitter, FocusHandle,
     InteractiveElement, Interactivity, IntoElement, KeyBinding, ParentElement, RenderOnce, Role,
@@ -10,7 +10,7 @@ use gpui::{
 };
 
 use crate::{
-    Button, ButtonStyles, TestSupportExt as _,
+    Button, ButtonStyles, Direction, TestSupportExt as _,
     a11y_disabled::A11yDisabledExt as _,
     actions::{
         SelectDown, SelectFirst, SelectLast, SelectLeft, SelectPageDown, SelectPageUp, SelectRight,
@@ -81,7 +81,7 @@ pub(crate) struct CalendarActivation {
 
 /// Retained selection and one roving Tab stop for a Gregorian calendar.
 ///
-/// The grid contains six Monday-first weeks, including adjacent-month dates.
+/// The grid contains six weeks, Monday-first by default, including adjacent-month dates.
 /// Keyboard navigation changes the visible month as necessary, without selecting
 /// a date. Pointer/native focus preserves the current grid until activation.
 /// Enter, Space, and pointer activation commit selection. Date arithmetic uses
@@ -96,7 +96,10 @@ pub struct CalendarState {
     selection: CalendarSelection,
     minimum: NaiveDate,
     maximum: NaiveDate,
+    first_weekday: Weekday,
+    disabled_dates: Option<Box<dyn Fn(NaiveDate) -> bool>>,
     disabled: bool,
+    direction: Direction,
     focus: [FocusHandle; DAY_COUNT],
     focus_subscriptions: Vec<Subscription>,
     reveal: Option<NaiveDate>,
@@ -118,7 +121,10 @@ impl CalendarState {
             selection: CalendarSelection::Single(None),
             minimum: NaiveDate::from_ymd_opt(1, 1, 1).unwrap(),
             maximum: NaiveDate::from_ymd_opt(9999, 12, 31).unwrap(),
+            first_weekday: Weekday::Mon,
+            disabled_dates: None,
             disabled: false,
+            direction: Direction::Ltr,
             focus: std::array::from_fn(|_| cx.focus_handle()),
             focus_subscriptions: Vec::new(),
             reveal: None,
@@ -166,17 +172,53 @@ impl CalendarState {
         self
     }
 
+    /// Sets the first weekday before mounting. Day order remains chronological;
+    /// use [`Self::weekdays`] for the matching application-owned column labels.
+    pub fn week_starts_on(mut self, weekday: Weekday) -> Self {
+        self.first_weekday = weekday;
+        self
+    }
+
+    /// Prevents matching dates from being selected, before mounting. Existing
+    /// single/multiple values are filtered; a range with a disabled endpoint is
+    /// cleared. Disabled dates may remain inside a range.
+    ///
+    /// Disabled dates within the bounds retain keyboard focus so users can
+    /// discover unavailable days. They cannot be activated. The predicate should
+    /// return the same result for a date throughout this state's lifetime.
+    pub fn disabled_dates(mut self, predicate: impl Fn(NaiveDate) -> bool + 'static) -> Self {
+        self.disabled_dates = Some(Box::new(predicate));
+        self.selection = match self.selection.clone() {
+            CalendarSelection::Single(date) => {
+                CalendarSelection::Single(date.filter(|date| self.date_is_selectable(*date)))
+            }
+            CalendarSelection::Multiple(dates) => CalendarSelection::Multiple(
+                dates
+                    .into_iter()
+                    .filter(|date| self.date_is_selectable(*date))
+                    .collect(),
+            ),
+            selection @ CalendarSelection::Range { .. } => self
+                .normalized_selection(selection)
+                .unwrap_or(CalendarSelection::Range {
+                    start: None,
+                    end: None,
+                }),
+        };
+        self
+    }
+
     /// Sets the selection mode and initial value without emitting an event.
     /// Multiple dates are sorted and deduplicated. The first selected date also
     /// becomes the cursor and visible month; empty selections retain navigation.
     ///
     /// # Panics
-    /// Dates must lie inside the configured bounds. Range endpoints must be
+    /// Dates must be selectable within the configured bounds. Range endpoints must be
     /// ordered, and an end requires a start.
     pub fn default_selection(mut self, selection: CalendarSelection) -> Self {
         self.selection = self
             .normalized_selection(selection)
-            .expect("Calendar default_selection must be ordered and inside its bounds");
+            .expect("Calendar default_selection must be ordered and selectable inside its bounds");
         if let Some(date) = self.selection.first_date() {
             self.cursor = date;
             self.month = date.with_day(1).unwrap();
@@ -218,15 +260,30 @@ impl CalendarState {
         self.maximum
     }
 
+    pub fn first_weekday(&self) -> Weekday {
+        self.first_weekday
+    }
+
+    /// Weekday order for each chronological row returned by [`Self::days`].
+    pub fn weekdays(&self) -> [Weekday; 7] {
+        let mut weekday = self.first_weekday;
+        std::array::from_fn(|_| {
+            let current = weekday;
+            weekday = weekday.succ();
+            current
+        })
+    }
+
     pub fn is_disabled(&self) -> bool {
         self.disabled
     }
 
     pub fn is_date_disabled(&self, date: NaiveDate) -> bool {
-        self.disabled || !(self.minimum..=self.maximum).contains(&date)
+        self.disabled || !self.date_is_selectable(date)
     }
 
-    /// All six Monday-first weeks. Adjacent dates outside configured bounds
+    /// All six weeks in chronological order, starting on [`Self::first_weekday`].
+    /// Adjacent dates outside configured bounds
     /// remain visible and disabled, including year 0/10000 at the outer edges.
     pub fn days(&self) -> [NaiveDate; DAY_COUNT] {
         let first = self.grid_start();
@@ -265,7 +322,7 @@ impl CalendarState {
 
     /// Replaces the selection mode and value without emitting an event. The first
     /// selected date becomes the cursor and visible month. Empty values preserve
-    /// navigation. Invalid or out-of-bounds ranges/dates return false unchanged.
+    /// navigation. Invalid, disabled, or out-of-bounds endpoints/dates return false unchanged.
     /// Programmatic changes remain allowed while the calendar is disabled.
     pub fn set_selection(
         &mut self,
@@ -293,12 +350,12 @@ impl CalendarState {
         &self,
         selection: CalendarSelection,
     ) -> Option<CalendarSelection> {
-        let in_bounds = |date: &NaiveDate| (self.minimum..=self.maximum).contains(date);
+        let selectable = |date: &NaiveDate| self.date_is_selectable(*date);
         match selection {
-            CalendarSelection::Single(date) => (!date.is_some_and(|date| !in_bounds(&date)))
+            CalendarSelection::Single(date) => (!date.is_some_and(|date| !selectable(&date)))
                 .then_some(CalendarSelection::Single(date)),
             CalendarSelection::Multiple(mut dates) => {
-                if !dates.iter().all(in_bounds) {
+                if !dates.iter().all(selectable) {
                     return None;
                 }
                 dates.sort_unstable();
@@ -306,8 +363,8 @@ impl CalendarState {
                 Some(CalendarSelection::Multiple(dates))
             }
             CalendarSelection::Range { start, end } => {
-                if start.is_some_and(|date| !in_bounds(&date))
-                    || end.is_some_and(|date| !in_bounds(&date))
+                if start.is_some_and(|date| !selectable(&date))
+                    || end.is_some_and(|date| !selectable(&date))
                     || matches!((start, end), (None, Some(_)))
                     || matches!((start, end), (Some(start), Some(end)) if start > end)
                 {
@@ -330,7 +387,19 @@ impl CalendarState {
 
     fn grid_start(&self) -> NaiveDate {
         let first = self.month();
-        first - Days::new(first.weekday().num_days_from_monday() as u64)
+        first - Days::new(self.weekday_offset(first) as u64)
+    }
+
+    fn weekday_offset(&self, date: NaiveDate) -> u32 {
+        (date.weekday().num_days_from_monday() + 7 - self.first_weekday.num_days_from_monday()) % 7
+    }
+
+    fn date_is_selectable(&self, date: NaiveDate) -> bool {
+        (self.minimum..=self.maximum).contains(&date)
+            && !self
+                .disabled_dates
+                .as_ref()
+                .is_some_and(|predicate| predicate(date))
     }
 
     fn index_of(&self, date: NaiveDate) -> usize {
@@ -359,7 +428,7 @@ impl CalendarState {
                     cx.defer_in(window, move |state, window, cx| {
                         if state.focus[index].is_focused(window) {
                             let date = state.days()[index];
-                            if !state.is_date_disabled(date) {
+                            if !state.disabled && (state.minimum..=state.maximum).contains(&date) {
                                 // Pointer focus precedes release. Keep an
                                 // adjacent-month cell in place until activation
                                 // so that press and release hit the same cell.
@@ -491,11 +560,15 @@ impl EventEmitter<CalendarActivation> for CalendarState {}
 /// Place month navigation buttons outside this grid and call the state's
 /// previous/next month methods. Supply an accessible name, normally the visible
 /// month and year, and application-owned weekday/date labels and styles.
+/// Match header order to [`CalendarState::weekdays`]. For RTL, use
+/// [`Direction::row`] on every header/date row, with mirrored header column
+/// indices. Date cells resolve direction from this grid automatically.
 #[derive(IntoElement)]
 pub struct Calendar {
     base: crate::ObservedElement<gpui::Stateful<gpui::Div>>,
     state: Entity<CalendarState>,
     label: Option<SharedString>,
+    direction: Option<Direction>,
 }
 
 impl Calendar {
@@ -504,11 +577,19 @@ impl Calendar {
             base: div().id(id).test_support(),
             state: state.clone(),
             label: None,
+            direction: None,
         }
     }
 
     pub fn accessibility_label(mut self, label: impl Into<SharedString>) -> Self {
         self.label = Some(label.into());
+        self
+    }
+
+    /// Overrides the inherited logical direction for horizontal arrows and
+    /// date-cell column indices. Application-owned row layout must match.
+    pub fn direction(mut self, direction: Direction) -> Self {
+        self.direction = Some(direction);
         self
     }
 }
@@ -535,8 +616,11 @@ impl StatefulInteractiveElement for Calendar {}
 
 impl RenderOnce for Calendar {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        self.state
-            .update(cx, |state, cx| state.bind_focus(window, cx));
+        let direction = self.direction.unwrap_or_else(|| Direction::current(cx));
+        self.state.update(cx, |state, cx| {
+            state.direction = direction;
+            state.bind_focus(window, cx);
+        });
         let disabled = self.state.read(cx).disabled;
         let multiselectable = !matches!(
             self.state.read(cx).selection(),
@@ -561,14 +645,14 @@ impl RenderOnce for Calendar {
             .on_action(move |_: &SelectLeft, window, cx| {
                 left.update(cx, |state, cx| {
                     if state.handles_navigation(window, cx) {
-                        state.move_days(-1, window, cx);
+                        state.move_days(if direction.is_rtl() { 1 } else { -1 }, window, cx);
                     }
                 });
             })
             .on_action(move |_: &SelectRight, window, cx| {
                 right.update(cx, |state, cx| {
                     if state.handles_navigation(window, cx) {
-                        state.move_days(1, window, cx);
+                        state.move_days(if direction.is_rtl() { -1 } else { 1 }, window, cx);
                     }
                 });
             })
@@ -589,22 +673,14 @@ impl RenderOnce for Calendar {
             .on_action(move |_: &SelectFirst, window, cx| {
                 first.update(cx, |state, cx| {
                     if state.handles_navigation(window, cx) {
-                        state.move_days(
-                            -(state.cursor.weekday().num_days_from_monday() as i64),
-                            window,
-                            cx,
-                        );
+                        state.move_days(-(state.weekday_offset(state.cursor) as i64), window, cx);
                     }
                 });
             })
             .on_action(move |_: &SelectLast, window, cx| {
                 last.update(cx, |state, cx| {
                     if state.handles_navigation(window, cx) {
-                        state.move_days(
-                            6 - state.cursor.weekday().num_days_from_monday() as i64,
-                            window,
-                            cx,
-                        );
+                        state.move_days(6 - state.weekday_offset(state.cursor) as i64, window, cx);
                     }
                 });
             })
@@ -703,9 +779,16 @@ impl RenderOnce for CalendarDay {
         let model = self.state.read(cx);
         let index = model.index_of(self.date);
         let disabled = model.is_date_disabled(self.date);
+        let disabled_focusable =
+            !model.disabled && (model.minimum..=model.maximum).contains(&self.date);
         let selected = model.is_selected(self.date);
         let focus = model.focus[index].clone();
         let tab_stop = model.cursor == self.date;
+        let column = if model.direction.is_rtl() {
+            6 - index % 7
+        } else {
+            index % 7
+        };
         let date = self.date;
         let reveal_state = self.state.clone();
         let state = self.state;
@@ -714,9 +797,10 @@ impl RenderOnce for CalendarDay {
             .accessibility_label(self.label.unwrap_or_else(|| date.to_string().into()))
             .aria_selected(selected)
             .aria_row_index(index / 7 + 1)
-            .aria_column_index(index % 7)
+            .aria_column_index(column)
             .selected(selected)
             .disabled(disabled)
+            .focus_when_disabled(disabled_focusable)
             .track_focus(&focus)
             .tab_stop(tab_stop)
             .when(tab_stop, |button| {
@@ -761,67 +845,79 @@ mod tests {
     };
 
     use super::*;
-    use crate::Root;
+    use crate::{DirectionProvider, Root};
 
     struct Harness {
         state: Entity<CalendarState>,
         before: FocusHandle,
         after: FocusHandle,
+        direction: Direction,
+        calendar_direction: Option<Direction>,
         _subscription: Subscription,
     }
 
     impl Render for Harness {
         fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
             let days = self.state.read(cx).days();
-            div()
-                .w(px(280.))
-                .flex()
-                .flex_col()
-                .child(
-                    Button::new("before")
-                        .track_focus(&self.before)
-                        .h(px(32.))
-                        .child("Before"),
-                )
-                .child(
-                    Calendar::new("calendar", &self.state)
-                        .accessibility_label("Recording date")
-                        .flex()
-                        .flex_col()
-                        .child(
-                            div().id("weekdays").role(Role::Row).flex().children(
-                                ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-                                    .into_iter()
-                                    .enumerate()
-                                    .map(|(index, label)| {
-                                        div()
-                                            .id(("weekday", index))
-                                            .role(Role::ColumnHeader)
-                                            .aria_column_index(index)
-                                            .w(px(40.))
-                                            .h(px(24.))
-                                            .child(label)
-                                    }),
-                            ),
-                        )
-                        .children(days.chunks(7).enumerate().map(|(index, week)| {
-                            div().id(("week", index)).role(Role::Row).flex().children(
-                                week.iter().map(|&date| {
-                                    CalendarDay::new(&self.state, date)
-                                        .debug_selector(move || format!("date-{date}"))
-                                        .w(px(40.))
-                                        .h(px(32.))
-                                        .child(date.day().to_string())
-                                }),
+            let weekdays = self.state.read(cx).weekdays();
+            let direction = self.calendar_direction.unwrap_or(self.direction);
+            DirectionProvider::new(self.direction).child(
+                div()
+                    .w(px(280.))
+                    .flex()
+                    .flex_col()
+                    .child(
+                        Button::new("before")
+                            .track_focus(&self.before)
+                            .h(px(32.))
+                            .child("Before"),
+                    )
+                    .child(
+                        Calendar::new("calendar", &self.state)
+                            .when_some(self.calendar_direction, |calendar, direction| {
+                                calendar.direction(direction)
+                            })
+                            .accessibility_label("Recording date")
+                            .flex()
+                            .flex_col()
+                            .child(
+                                direction
+                                    .row(div().id("weekdays").role(Role::Row))
+                                    .children(weekdays.into_iter().enumerate().map(
+                                        |(index, label)| {
+                                            div()
+                                                .id(("weekday", index))
+                                                .role(Role::ColumnHeader)
+                                                .aria_column_index(if direction.is_rtl() {
+                                                    6 - index
+                                                } else {
+                                                    index
+                                                })
+                                                .w(px(40.))
+                                                .h(px(24.))
+                                                .child(label.to_string())
+                                        },
+                                    )),
                             )
-                        })),
-                )
-                .child(
-                    Button::new("after")
-                        .track_focus(&self.after)
-                        .h(px(32.))
-                        .child("After"),
-                )
+                            .children(days.chunks(7).enumerate().map(|(index, week)| {
+                                direction
+                                    .row(div().id(("week", index)).role(Role::Row))
+                                    .children(week.iter().map(|&date| {
+                                        CalendarDay::new(&self.state, date)
+                                            .debug_selector(move || format!("date-{date}"))
+                                            .w(px(40.))
+                                            .h(px(32.))
+                                            .child(date.day().to_string())
+                                    }))
+                            })),
+                    )
+                    .child(
+                        Button::new("after")
+                            .track_focus(&self.after)
+                            .h(px(32.))
+                            .child("After"),
+                    ),
+            )
         }
     }
 
@@ -836,23 +932,35 @@ mod tests {
         initial: NaiveDate,
         bounds: Option<(NaiveDate, NaiveDate)>,
     ) -> (&mut VisualTestContext, Entity<Harness>, Changes) {
+        configured_harness(cx, initial, bounds, |state| state)
+    }
+
+    fn configured_harness(
+        cx: &mut TestAppContext,
+        initial: NaiveDate,
+        bounds: Option<(NaiveDate, NaiveDate)>,
+        configure: impl FnOnce(CalendarState) -> CalendarState + 'static,
+    ) -> (&mut VisualTestContext, Entity<Harness>, Changes) {
         cx.update(crate::init);
         let (root, cx) = cx.add_window_view(move |window, cx| {
             let content = cx.new(|cx| {
                 let state = cx.new(|cx| {
                     let state = CalendarState::new(initial, cx)
                         .default_selection(CalendarSelection::Single(Some(initial)));
-                    if let Some((minimum, maximum)) = bounds {
+                    let state = if let Some((minimum, maximum)) = bounds {
                         state.bounds(minimum, maximum)
                     } else {
                         state
-                    }
+                    };
+                    configure(state)
                 });
                 let subscription = cx.observe(&state, |_, _, cx| cx.notify());
                 Harness {
                     state,
                     before: cx.focus_handle().tab_stop(true),
                     after: cx.focus_handle().tab_stop(true),
+                    direction: Direction::Ltr,
+                    calendar_direction: None,
                     _subscription: subscription,
                 }
             });
@@ -1243,5 +1351,205 @@ mod tests {
                 CalendarSelection::Multiple(vec![second, third]),
             ]
         );
+    }
+
+    #[gpui::test]
+    fn sunday_first_disabled_dates_remain_discoverable_without_activation(cx: &mut TestAppContext) {
+        let initial = date(2026, 11, 11);
+        let (cx, view, changes) = configured_harness(cx, initial, None, |state| {
+            state
+                .week_starts_on(Weekday::Sun)
+                .disabled_dates(|date| matches!(date.weekday(), Weekday::Sat | Weekday::Sun))
+        });
+        cx.update(|_, cx| {
+            let state = view.read(cx).state.read(cx);
+            assert_eq!(state.first_weekday(), Weekday::Sun);
+            assert_eq!(state.days()[0], date(2026, 11, 1));
+            assert_eq!(state.days()[41], date(2026, 12, 12));
+            assert_eq!(
+                state.weekdays(),
+                [
+                    Weekday::Sun,
+                    Weekday::Mon,
+                    Weekday::Tue,
+                    Weekday::Wed,
+                    Weekday::Thu,
+                    Weekday::Fri,
+                    Weekday::Sat
+                ]
+            );
+        });
+        cx.simulate_keystrokes("tab home");
+        draw(cx);
+        assert_cursor(cx, &view, date(2026, 11, 8), Some(initial));
+        press(cx, "enter");
+        press(cx, "end");
+        assert_cursor(cx, &view, date(2026, 11, 14), Some(initial));
+        press(cx, "space");
+        let disabled = cx.debug_bounds("date-2026-11-08").unwrap().center();
+        cx.simulate_click(disabled, Modifiers::default());
+        draw(cx);
+        assert_cursor(cx, &view, date(2026, 11, 14), Some(initial));
+        cx.simulate_keystrokes("tab");
+        draw(cx);
+        cx.update(|window, cx| assert!(view.read(cx).after.is_focused(window)));
+        cx.simulate_keystrokes("shift-tab");
+        draw(cx);
+        assert_cursor(cx, &view, date(2026, 11, 14), Some(initial));
+        assert!(changes.borrow().is_empty());
+        cx.update(|window, cx| {
+            let state = view.read(cx).state.clone();
+            let day = CalendarDay::new(&state, date(2026, 11, 14))
+                .render(window, cx)
+                .into_element();
+            let mut node = accesskit::Node::new(day.a11y_role().unwrap());
+            day.write_a11y_info(&mut node);
+            assert!(node.is_disabled());
+            assert_eq!(node.column_index(), Some(6));
+            assert_eq!(node.row_index(), Some(2));
+            state.update(cx, |state, cx| {
+                for selection in [
+                    CalendarSelection::Single(Some(date(2026, 11, 14))),
+                    CalendarSelection::Multiple(vec![initial, date(2026, 11, 14)]),
+                    CalendarSelection::Range {
+                        start: Some(initial),
+                        end: Some(date(2026, 11, 14)),
+                    },
+                ] {
+                    assert!(!state.set_selection(selection, window, cx));
+                    assert_eq!(state.selection(), &CalendarSelection::Single(Some(initial)));
+                }
+                let range = CalendarSelection::Range {
+                    start: Some(date(2026, 11, 13)),
+                    end: Some(date(2026, 11, 16)),
+                };
+                assert!(state.set_selection(range, window, cx));
+                assert!(state.is_selected(date(2026, 11, 14)));
+                assert!(state.is_selected(date(2026, 11, 15)));
+            });
+        });
+        draw(cx);
+        let enabled = cx.debug_bounds("date-2026-11-12").unwrap().center();
+        cx.simulate_click(enabled, Modifiers::default());
+        draw(cx);
+        cx.update(|_, cx| {
+            assert_eq!(
+                view.read(cx).state.read(cx).selection(),
+                &CalendarSelection::Range {
+                    start: Some(date(2026, 11, 12)),
+                    end: None
+                }
+            )
+        });
+        assert_eq!(changes.borrow().len(), 1);
+    }
+
+    #[gpui::test]
+    fn disabled_date_configuration_filters_retained_values(cx: &mut TestAppContext) {
+        let enabled = date(2026, 11, 13);
+        let disabled = date(2026, 11, 14);
+        cx.update(|cx| {
+            for (selection, expected) in [
+                (
+                    CalendarSelection::Single(Some(disabled)),
+                    CalendarSelection::Single(None),
+                ),
+                (
+                    CalendarSelection::Multiple(vec![disabled, enabled]),
+                    CalendarSelection::Multiple(vec![enabled]),
+                ),
+                (
+                    CalendarSelection::Range {
+                        start: Some(enabled),
+                        end: Some(disabled),
+                    },
+                    CalendarSelection::Range {
+                        start: None,
+                        end: None,
+                    },
+                ),
+            ] {
+                let state = cx.new(|cx| {
+                    CalendarState::new(enabled, cx)
+                        .default_selection(selection)
+                        .disabled_dates(move |date| date == disabled)
+                });
+                assert_eq!(state.read(cx).selection(), &expected);
+            }
+        });
+    }
+
+    #[gpui::test]
+    fn all_dates_disabled_keeps_one_tab_stop_until_whole_calendar_is_disabled(
+        cx: &mut TestAppContext,
+    ) {
+        let initial = date(2026, 11, 11);
+        let (cx, view, changes) =
+            configured_harness(cx, initial, None, |state| state.disabled_dates(|_| true));
+        cx.simulate_keystrokes("tab right enter");
+        draw(cx);
+        assert_cursor(cx, &view, date(2026, 11, 12), None);
+        cx.simulate_keystrokes("tab");
+        draw(cx);
+        cx.update(|window, cx| {
+            assert!(view.read(cx).after.is_focused(window));
+            let state = view.read(cx).state.clone();
+            state.update(cx, |state, cx| state.set_disabled(true, window, cx));
+        });
+        draw(cx);
+        cx.simulate_keystrokes("shift-tab");
+        draw(cx);
+        cx.update(|window, cx| assert!(view.read(cx).before.is_focused(window)));
+        assert!(changes.borrow().is_empty());
+    }
+
+    #[gpui::test]
+    fn inherited_rtl_mirrors_arrows_and_native_columns_and_allows_override(
+        cx: &mut TestAppContext,
+    ) {
+        let initial = date(2026, 11, 11);
+        let (cx, view, changes) = harness(cx, initial, None);
+        view.update(cx, |view, cx| {
+            view.direction = Direction::Rtl;
+            cx.notify();
+        });
+        draw(cx);
+        cx.simulate_keystrokes("tab left");
+        draw(cx);
+        assert_cursor(cx, &view, date(2026, 11, 12), Some(initial));
+        press(cx, "right");
+        assert_cursor(cx, &view, initial, Some(initial));
+        let wednesday = cx.debug_bounds("date-2026-11-11").unwrap();
+        let thursday = cx.debug_bounds("date-2026-11-12").unwrap();
+        assert!(thursday.left() < wednesday.left());
+        cx.update(|window, cx| {
+            let state = view.read(cx).state.clone();
+            let day = CalendarDay::new(&state, initial)
+                .render(window, cx)
+                .into_element();
+            let mut node = accesskit::Node::new(day.a11y_role().unwrap());
+            day.write_a11y_info(&mut node);
+            assert_eq!(node.column_index(), Some(4));
+        });
+        view.update(cx, |view, cx| {
+            view.calendar_direction = Some(Direction::Ltr);
+            cx.notify();
+        });
+        draw(cx);
+        press(cx, "right");
+        assert_cursor(cx, &view, date(2026, 11, 12), Some(initial));
+        let wednesday = cx.debug_bounds("date-2026-11-11").unwrap();
+        let thursday = cx.debug_bounds("date-2026-11-12").unwrap();
+        assert!(thursday.left() > wednesday.left());
+        cx.update(|window, cx| {
+            let state = view.read(cx).state.clone();
+            let day = CalendarDay::new(&state, initial)
+                .render(window, cx)
+                .into_element();
+            let mut node = accesskit::Node::new(day.a11y_role().unwrap());
+            day.write_a11y_info(&mut node);
+            assert_eq!(node.column_index(), Some(2));
+        });
+        assert!(changes.borrow().is_empty());
     }
 }

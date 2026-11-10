@@ -1,5 +1,10 @@
 //! A wholly local session-code flow using the retained form and modal primitives.
 
+#[path = "recipes/sheet.rs"]
+mod sheet;
+use sheet::Sheet;
+pub(crate) use sheet::SheetSide;
+
 use gpui::{
     AppContext as _, Context, Entity, FocusHandle, InteractiveElement as _, IntoElement,
     ParentElement as _, Render, ScrollHandle, SharedString, Styled as _, Subscription, Window, div,
@@ -21,6 +26,11 @@ pub struct CatalogueForms {
     body_scroll: ScrollHandle,
     status: SharedString,
     confirmed: bool,
+    pub(crate) sheet: Entity<DialogState>,
+    pub(crate) sheet_side: SheetSide,
+    pub(crate) sheet_triggers: [FocusHandle; 4],
+    sheet_close: FocusHandle,
+    pub(crate) sheet_scroll: ScrollHandle,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -31,7 +41,10 @@ impl CatalogueForms {
         let dialog = cx.new(|cx| DialogState::new(cx).with_initial_focus(&confirm_focus));
         let drawer = cx.new(|cx| DrawerState::with_dialog(dialog, window, cx));
         let toast = cx.new(|cx| ToastState::new(window, cx));
+        let sheet_close = cx.focus_handle();
+        let sheet = cx.new(|cx| DialogState::new(cx).with_initial_focus(&sheet_close));
         let subscriptions = vec![
+            cx.observe(&sheet, |_, _, cx| cx.notify()),
             cx.observe(&otp, |_, _, cx| cx.notify()),
             cx.observe(&drawer, |_, _, cx| cx.notify()),
             cx.observe(&toast, |_, _, cx| cx.notify()),
@@ -49,6 +62,11 @@ impl CatalogueForms {
             body_scroll: ScrollHandle::new(),
             status: "Enter the displayed local code to continue.".into(),
             confirmed: false,
+            sheet,
+            sheet_side: SheetSide::Right,
+            sheet_triggers: std::array::from_fn(|_| cx.focus_handle()),
+            sheet_close,
+            sheet_scroll: ScrollHandle::new(),
             _subscriptions: subscriptions,
         }
     }
@@ -80,6 +98,31 @@ impl Render for CatalogueForms {
         let code = self.otp.read(cx).value(cx);
         let dialog = self.drawer.read(cx).dialog().clone();
         let status = self.status.clone();
+        let palette = super::Appearance::Compact.palette();
+        let close_focus = self.sheet_close.clone();
+        let help = Sheet::new("session-help", &self.sheet, &self.sheet_scroll, "Session help", palette)
+            .side(self.sheet_side)
+            .description("Keyboard guidance and the current local session state.")
+            .footer(DialogClose::new(&self.sheet).trigger(move |button| button
+                .accessibility_label("Close help")
+                .track_focus(&close_focus).px_3().py_2().rounded_md()
+                .bg(palette.field).text_color(palette.foreground)
+                .focus_visible(|style| style.bg(palette.accent).text_color(palette.accent_foreground))
+                .child("Close help")))
+            .child(format!("Entered code: {}", if code.is_empty() { "Empty" } else { code.as_ref() }))
+            .child(self.status.clone())
+            .children([
+                ("Enter digits", "Type the six-digit code displayed in the form. The editor accepts digits and keeps its native text selection."),
+                ("Paste a code", "Paste digits into the editor. The existing selection is replaced using the same native editing behavior."),
+                ("Edit a digit", "Use Left and Right to move the caret. Backspace or Delete removes digits without leaving the editor."),
+                ("Select text", "Use the platform Select All shortcut or Shift with arrow keys. Copy and paste use the application's clipboard."),
+                ("Review", "Tab to Review session and press Enter or Space. A matching code opens the confirmation drawer."),
+                ("Confirm", "Choose Confirm in the drawer. The local example marks the session as confirmed and shows a notification."),
+                ("Cancel", "Escape, Cancel or the drawer backdrop dismisses the review. Its grip can also be dragged down."),
+                ("Keep context", "The form's code remains in its retained input state when help closes. No request or confirmation is sent to a server."),
+            ].into_iter().map(|(title, body)| div().flex().flex_col().gap_1()
+                .child(div().font_weight(gpui::FontWeight::SEMIBOLD).child(title))
+                .child(div().whitespace_normal().child(body))));
         div()
             .w_full()
             .flex()
@@ -127,6 +170,7 @@ impl Render for CatalogueForms {
             )
             .child(
                 Button::new("review-session")
+                    .accessibility_label("Review session")
                     .track_focus(&self.review_focus)
                     .disabled(!complete)
                     .px_3()
@@ -160,6 +204,7 @@ impl Render for CatalogueForms {
                         ToastClose::new("dismiss-session-notification", &self.toast).trigger(
                             |button| {
                                 button
+                                    .accessibility_label("Dismiss")
                                     .px_2()
                                     .py_1()
                                     .rounded_md()
@@ -212,6 +257,7 @@ impl Render for CatalogueForms {
                             .p_4()
                             .child(DialogClose::new(&dialog).trigger(|button| {
                                 button
+                                    .accessibility_label("Cancel")
                                     .px_3()
                                     .py_2()
                                     .rounded_md()
@@ -223,6 +269,7 @@ impl Render for CatalogueForms {
                             }))
                             .child(
                                 Button::new("confirm-session")
+                                    .accessibility_label("Confirm")
                                     .track_focus(&self.confirm_focus)
                                     .px_3()
                                     .py_2()
@@ -239,5 +286,40 @@ impl Render for CatalogueForms {
                             ),
                     ),
             )
+            .child(
+                div().flex().flex_wrap().gap_2().children(
+                    [
+                        (SheetSide::Top, "Help from top"),
+                        (SheetSide::Right, "Help from right"),
+                        (SheetSide::Bottom, "Help from bottom"),
+                        (SheetSide::Left, "Help from left"),
+                    ]
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, (side, label))| {
+                        Button::new(("session-help-edge", index))
+                            .accessibility_label(label)
+                            .track_focus(&self.sheet_triggers[index])
+                            .px_3()
+                            .py_2()
+                            .rounded_md()
+                            .bg(palette.field)
+                            .text_color(palette.foreground)
+                            .hover(|style| style.bg(palette.highlight))
+                            .focus_visible(|style| {
+                                style
+                                    .bg(palette.accent)
+                                    .text_color(palette.accent_foreground)
+                            })
+                            .child(label)
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.sheet_side = side;
+                                this.sheet.update(cx, |state, cx| state.open(window, cx));
+                                cx.notify();
+                            }))
+                    }),
+                ),
+            )
+            .child(help)
     }
 }
