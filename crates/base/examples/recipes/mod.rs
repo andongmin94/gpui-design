@@ -45,3 +45,9 @@ pub(crate) use skeleton::Skeleton;
 pub(crate) use spinner::Spinner;
 pub(crate) use trace::Trace;
 pub(crate) use typography::{Heading, InlineCode, Paragraph};
+
+// Run the isolated Sidebar review in the existing three-platform composition
+// target without changing the native showcase or its Tabs/TabPanel contract.
+#[cfg(all(test, feature = "test-support"))]
+#[path = "../../tests/sidebar_candidate/mod.rs"]
+mod sidebar_candidate;
