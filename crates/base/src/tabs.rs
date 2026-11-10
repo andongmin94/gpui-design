@@ -130,6 +130,34 @@ impl TabsState {
         self.selected.map(|index| &self.items[index])
     }
 
+    /// Selects an enabled item without moving keyboard focus.
+    ///
+    /// Returns `true` when the selection changes. Missing, disabled, and
+    /// already-selected values return `false` without emitting a change.
+    /// The caller owns focus when removing the previously selected content.
+    pub fn select_value(
+        &mut self,
+        value: impl AsRef<str>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(index) = self
+            .items
+            .iter()
+            .position(|item| item.value.as_ref() == value.as_ref() && !item.disabled)
+        else {
+            return false;
+        };
+        if self.selected == Some(index) {
+            return false;
+        }
+        self.selected = Some(index);
+        cx.emit(TabsEvent::Change(self.items[index].value.clone()));
+        cx.notify();
+        window.refresh();
+        true
+    }
+
     /// The stable focus handle of a tab in the fixed collection.
     pub fn tab_focus_handle(&self, index: usize) -> &FocusHandle {
         &self.tab_focus[index]
@@ -660,6 +688,59 @@ mod tests {
             assert_eq!(state.selected_index(), Some(index));
             assert!(state.tab_focus_handle(index).is_focused(window));
         });
+    }
+
+    #[gpui::test]
+    fn programmatic_selection_preserves_focus_and_emits_only_real_changes(
+        cx: &mut TestAppContext,
+    ) {
+        let (cx, view, changes) = harness(cx, Axis::Horizontal, items());
+        cx.update(|window, cx| {
+            let state = view.read(cx).state.clone();
+            assert!(view.read(cx).before.is_focused(window));
+            assert!(state.update(cx, |state, cx| state.select_value("help", window, cx)));
+            assert_eq!(state.read(cx).selected_index(), Some(2));
+            assert!(view.read(cx).before.is_focused(window));
+        });
+        draw(cx);
+        cx.run_until_parked();
+        draw(cx);
+        cx.update(|window, cx| {
+            assert_eq!(view.read(cx).state.read(cx).selected_index(), Some(2));
+            assert!(view.read(cx).before.is_focused(window));
+        });
+        assert_eq!(*changes.borrow(), [SharedString::from("help")]);
+
+        cx.update(|window, cx| {
+            let state = view.read(cx).state.clone();
+            for value in ["help", "missing", "disabled"] {
+                assert!(!state.update(cx, |state, cx| state.select_value(value, window, cx)));
+                assert_eq!(state.read(cx).selected_index(), Some(2));
+                assert!(view.read(cx).before.is_focused(window));
+            }
+        });
+        draw(cx);
+        cx.run_until_parked();
+        draw(cx);
+        assert_eq!(*changes.borrow(), [SharedString::from("help")]);
+
+        cx.update(|window, cx| {
+            let state = view.read(cx).state.clone();
+            assert!(state.update(cx, |state, cx| state.select_value("general", window, cx)));
+            assert_eq!(state.read(cx).selected_index(), Some(0));
+            assert!(view.read(cx).before.is_focused(window));
+        });
+        draw(cx);
+        cx.run_until_parked();
+        draw(cx);
+        cx.update(|window, cx| {
+            assert_eq!(view.read(cx).state.read(cx).selected_index(), Some(0));
+            assert!(view.read(cx).before.is_focused(window));
+        });
+        assert_eq!(
+            *changes.borrow(),
+            [SharedString::from("help"), SharedString::from("general")]
+        );
     }
 
     #[gpui::test]
