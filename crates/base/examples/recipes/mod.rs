@@ -21,6 +21,7 @@ mod pagination;
 mod sheet;
 mod skeleton;
 mod spinner;
+mod trace;
 mod typography;
 
 pub(crate) use alert::Alert;
@@ -42,4 +43,5 @@ pub(crate) use pagination::Pagination;
 pub(crate) use sheet::Sheet;
 pub(crate) use skeleton::Skeleton;
 pub(crate) use spinner::Spinner;
+pub(crate) use trace::Trace;
 pub(crate) use typography::{Heading, InlineCode, Paragraph};

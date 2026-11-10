@@ -6,9 +6,9 @@ Its main catalogue contains **66 entries**, each listed once below. The separate
 AI Elements catalogue is outside this comparison; conversation components already
 in the main catalogue remain included.
 
-GPUI Design currently documents **31 public library families and twenty copyable
-presentation/composition recipes**, covering **51 catalogue entries** within the scopes below.
-This is not 51/66 feature parity: a family can exist with a deliberately limited
+GPUI Design currently documents **31 public library families and twenty-one copyable
+presentation/composition recipes**, covering **52 catalogue entries** within the scopes below.
+This is not 52/66 feature parity: a family can exist with a deliberately limited
 contract, and several shadcn entries describe combinations of other parts.
 These counts do not measure performance, accessibility conformance, or completion
 of native desktop validation.
@@ -125,19 +125,18 @@ popup, focus, and scrolling machinery.
 | Message Scroller | Pending | Transcript anchoring and streaming/history scroll behavior are not implemented by the scrollbar support alone. |
 | Questionnaire | Pending | Individual form controls exist; multi-step question flow and response composition are missing. |
 | Sidebar | Pending | A navigation shell with disclosure and layout behavior is not yet provided. |
-| Trace | Pending | Shared disclosure controls exist; expandable activity/tool/source rows have no reusable composition. |
+| Trace | Recipe | Application-supplied summary, named read-only Paragraph details, and an optional existing action over retained Collapsible state. Shared Button activation, expanded/disabled metadata, active-only content, and focus on closure are preserved. Help presents current form values rather than recorded operations. No execution history, streaming, parser, separate disclosure state, or scroll controller. |
 
 ## Next priorities
 
 1. Extend data-table operations only where an application needs them, including
    typed ordering or row selection. Preserve shared focus and activation behavior
    instead of duplicating those public foundations.
-2. Extend the source-owned recipe set alongside working flows. Trace is a
-   candidate for an application-supplied summary with read-only source or activity
-   details, composing the existing Collapsible lifecycle. Define a truthful
-   consumer before implementing it; execution history, streaming, transport, and
-   transcript anchoring remain separate capabilities. This candidate is recorded
-   for future work.
+2. Extend the source-owned recipe set alongside working flows. Sidebar is a
+   candidate for a navigation shell around the existing settings sections,
+   composing shared Tabs, Buttons, and disclosure behavior where needed. Define
+   its layout and keyboard contract without adding a second navigation state.
+   This candidate is recorded for future work.
 3. Extend menu composition where real screens need it, starting with checked
    commands and submenus. Continue composing panes with Resizable/ScrollArea;
    virtualization and transcript anchoring remain separate work.

@@ -1,6 +1,6 @@
 # Presentation recipes
 
-These twenty recipes are reusable application source, used by the native
+These twenty-one recipes are reusable application source, used by the native
 [two-style example](../crates/base/examples/two_styles.rs). They compose GPUI
 layout with the existing controls and keep colors, spacing, and sizing in the
 consumer's `Palette` or application-supplied `Styled` values.
@@ -32,6 +32,7 @@ alongside the desired recipe:
 | Pagination | ButtonGroup |
 | DataTable | InputGroup, EmptyState, Pagination, and ButtonGroup |
 | Message | Typography (`Paragraph`) |
+| Trace | Typography (`Paragraph`) |
 
 ## Card
 
@@ -769,6 +770,71 @@ and no upload or download occurs. The existing CodeBlock Copy action remains
 independent; Attachment adds no clipboard operation, preview renderer, progress
 state, transport, or storage mechanism.
 
+## Trace
+
+[`trace.rs`](../crates/base/examples/recipes/trace.rs) presents a summary that
+expands into named read-only details and an optional application action. It
+composes existing Collapsible parts, Button behavior, and Typography's Paragraph.
+
+```rust,ignore
+let disclosure = cx.new(CollapsibleState::new);
+// Retain this entity and observe it so the application view redraws.
+
+Trace::new(
+    "settings-trace",
+    &disclosure,
+    "Current settings · MiniCast",
+    "Current settings details",
+    detail_text,
+    palette,
+)
+.action(close_details_button)
+```
+
+The application owns and observes the supplied `Entity<CollapsibleState>`.
+Configure its initial state with `default_open` and use the existing `set_open`
+and `set_disabled` methods for later changes. Keep the root and trigger mounted
+while closed. Trace supplies no additional disclosure state, event type, data
+collection, or execution controller.
+
+The existing Collapsible root is an unnamed native Group with a non-Tab focus
+scope. Its trigger is a Button named by the complete summary, with the native
+expanded and disabled metadata supplied by CollapsibleTrigger. The visible
+expansion cue adds no role or name. Opening through the trigger leaves focus
+there; ordinary Tab traversal enters any supplied action. The details Region
+uses the explicit `details_label`, contributes no Tab stop, and contains one
+Paragraph named by its complete text. The pinned GPUI API does not expose native
+trigger/content relationship IDs. Closed details contribute no layout, action
+focus stops, or accessibility nodes.
+
+Pointer, Enter, and Space toggle through the existing trigger. Closing while an
+action in the details owns focus returns focus to the live trigger. If the
+trigger is disabled, the existing Collapsible lifecycle instead uses its non-Tab
+root so traversal can leave the disclosure. Disabling the trigger does not close
+or disable the open details or supplied actions; their enabled state belongs to
+the application and their existing Buttons. Changing summary or detail strings
+does not reset the retained open state or focus. The application must move focus
+to a retained target before removing the entire host or a focused action.
+
+Give the frame a bounded width. Summary and body wrap using GPUI text layout and
+grow vertically without truncation. The optional `.action(...)` element sits
+inside the details after the body; a container can supply multiple controls with
+its own fitting layout. `Styled` customizes the outer frame; the supplied palette
+styles the trigger and Paragraph. Long details use the parent's existing
+ScrollArea, with no inner viewport or new scroll-key handling.
+
+Both appearances place Trace after the configuration preview in Help's State
+ownership panel. The summary uses the current session name, and the details read
+the current session, Calendar selection, preset, drawing tool, cursor and toolbar
+settings, and note values. Close details calls the existing
+`CollapsibleState::set_open(false, ...)`, which restores summary focus. Editing
+the underlying form updates the visible text; closing and reopening settings
+preserves the retained disclosure and form values.
+This consumer describes current settings and does not record operations, jobs,
+or model reasoning. Trace has no log source, parser, streaming output, transport,
+or timeline model. Item remains a static generic row, Message presents authored
+content, and Collapsible continues to own the shared disclosure behavior.
+
 ## Verification scope
 
 The existing composition suite runs the same recipe modules as the native
@@ -867,3 +933,16 @@ current UTF-8 JSON, Inspect JSON reaches the existing code focus target, and
 CodeBlock keeps its complete copy and scrolling behavior. Clipboard assertions
 remain limited to GPUI's test clipboard; native file access, screen-reader speech,
 and desktop visual observations are not established by these checks.
+
+Trace coverage checks summary naming, expanded/disabled metadata, the named
+Region and Paragraph hierarchy, and the absence of closed-content semantics or
+Tab stops. Long summaries and details wrap at narrow widths in both appearances.
+Interaction checks exercise pointer/Enter/Space activation, ordinary traversal,
+optional and disabled actions, content replacement while open, and focus return
+on closure. They also preserve Collapsible's disabled-trigger behavior: open
+content stays available, and closing focused content uses the existing non-Tab
+root before traversal leaves. The Help consumer checks current form values,
+disclosure retention, the Close details action, and surrounding Sheet scrolling
+and focus. The composition target retains its 1.5 MiB stack check. These tests
+exercise native metadata, layout, and simulated input; desktop rendering,
+screen-reader speech, IME, and performance still require separate validation.

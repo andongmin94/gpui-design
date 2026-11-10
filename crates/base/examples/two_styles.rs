@@ -32,7 +32,7 @@ mod recipes;
 use recipes::{
     Alert, AspectRatio, Attachment, Avatar, Badge, ButtonGroup, Card, CodeBlock, DataTable,
     DataTableColumn, DataTableRow, DataTableState, EmptyState, Heading, InlineCode, InputGroup,
-    Item, Kbd, KbdGroup, Marker, Message, Paragraph, Sheet, Skeleton, Spinner,
+    Item, Kbd, KbdGroup, Marker, Message, Paragraph, Sheet, Skeleton, Spinner, Trace,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -129,6 +129,7 @@ pub(crate) struct Demo {
     pub(crate) fields_scroll: ScrollHandle,
     pub(crate) configuration_scroll: ScrollHandle,
     pub(crate) configuration_focus: FocusHandle,
+    pub(crate) settings_trace: Entity<CollapsibleState>,
     pub(crate) calendar: Entity<CalendarState>,
     pub(crate) date_picker: Entity<DatePickerState>,
     pub(crate) schedule_split: Entity<ResizableState>,
@@ -329,6 +330,7 @@ impl Demo {
         });
         let preview = cx.new(|cx| SliderState::new(0.0..=100.0, 5.0, cx).default_value(40.0));
         let preview_options = cx.new(CollapsibleState::new);
+        let settings_trace = cx.new(CollapsibleState::new);
         let reset_cancel_focus = cx.focus_handle();
         let reset_dialog =
             cx.new(|cx| DialogState::new(cx).with_initial_focus(&reset_cancel_focus));
@@ -370,6 +372,7 @@ impl Demo {
             cx.observe(&accordion, |_, _, cx| cx.notify()),
             cx.observe(&preview, |_, _, cx| cx.notify()),
             cx.observe(&preview_options, |_, _, cx| cx.notify()),
+            cx.observe(&settings_trace, |_, _, cx| cx.notify()),
             cx.observe(&reset_dialog, |_, _, cx| cx.notify()),
             cx.observe(&formatting, |_, _, cx| cx.notify()),
             cx.observe(&dialog, |_, _, cx| cx.notify()),
@@ -404,6 +407,7 @@ impl Demo {
             fields_scroll: ScrollHandle::new(),
             configuration_scroll: ScrollHandle::new(),
             configuration_focus: cx.focus_handle().tab_stop(true),
+            settings_trace,
             calendar,
             date_picker,
             schedule_split,
@@ -1161,6 +1165,7 @@ impl Demo {
     ) -> gpui::AnyElement {
         let help = self.render_keyboard_help(palette, popup_max_width);
         let configuration = self.render_configuration(palette, cx);
+        let settings_trace = self.render_settings_trace(palette, cx);
         let accordion_state = self.accordion.read(cx);
         let header = |index: usize| {
             let item = &accordion_state.items()[index];
@@ -1230,6 +1235,7 @@ impl Demo {
                                 .text("This JSON is generated in memory from the current settings and has not been saved to a file. The attachment describes the JSON below; inspect it or copy its complete text."),
                         )
                         .child(configuration)
+                        .child(settings_trace)
                         .child(
                             Paragraph::new("help-source-description", palette)
                                 .text("The consumer example lives in:"),
@@ -1256,6 +1262,61 @@ impl Demo {
             )
             .child(help_sections)
             .into_any_element()
+    }
+
+    fn render_settings_trace(&self, palette: Palette, cx: &Context<Self>) -> gpui::AnyElement {
+        let session = self.input.read(cx).value();
+        let date = self
+            .calendar
+            .read(cx)
+            .selected_date()
+            .map(|date| date.format("%Y-%m-%d").to_string())
+            .unwrap_or_else(|| "Not selected".to_string());
+        let preset = self
+            .preset
+            .read(cx)
+            .selected_item(cx)
+            .map(|item| item.label().clone())
+            .unwrap_or_else(|| "Not selected".into());
+        let tool = self
+            .select
+            .read(cx)
+            .selected_item()
+            .map(|item| item.label().clone())
+            .unwrap_or_else(|| "Not selected".into());
+        let details = format!(
+            "Current form values\nSession: {session}\nRecording date: {date}\nPreset: {preset}\nDrawing tool: {tool}\nCursor: {}\nToolbar: {}\nNotes:\n{}",
+            if self.show_cursor {
+                "Visible"
+            } else {
+                "Hidden"
+            },
+            if self.keep_toolbar {
+                "Pinned"
+            } else {
+                "Automatic"
+            },
+            self.notes.read(cx).value(),
+        );
+        let state = self.settings_trace.clone();
+        Trace::new(
+            "settings-trace",
+            &self.settings_trace,
+            format!("Current settings · {session}"),
+            "Current settings details",
+            details,
+            palette,
+        )
+        .action(Self::button(
+            palette,
+            Button::new("close-settings-trace")
+                .accessibility_label("Close current settings details")
+                .on_click(move |_, window, cx| {
+                    state.update(cx, |state, cx| state.set_open(false, window, cx));
+                })
+                .child("Close details"),
+        ))
+        .into_any_element()
     }
 
     fn render_preview_options(&self, palette: Palette, cx: &Context<Self>) -> gpui::AnyElement {

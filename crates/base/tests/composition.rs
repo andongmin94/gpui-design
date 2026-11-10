@@ -1323,6 +1323,13 @@ fn configuration_code_copies_current_values_and_contains_nested_scrolling(cx: &m
         }
         cx.simulate_keystrokes("tab");
         draw(cx);
+        cx.update(|window, cx| {
+            let trace = demo.read(cx).settings_trace.read(cx);
+            assert!(!trace.is_open());
+            assert!(trace.trigger_focus_handle().is_focused(window));
+        });
+        cx.simulate_keystrokes("tab");
+        draw(cx);
         cx.update(|window, _| {
             assert!(
                 test_support::snapshots(window)
@@ -1330,7 +1337,7 @@ fn configuration_code_copies_current_values_and_contains_nested_scrolling(cx: &m
                     .any(|item| { item.label() == Some("Done") && item.focused() == Some(true) })
             );
         });
-        cx.simulate_keystrokes("shift-tab");
+        cx.simulate_keystrokes("shift-tab shift-tab");
         draw(cx);
         cx.update(|window, cx| assert!(demo.read(cx).configuration_focus.is_focused(window)));
         cx.simulate_keystrokes("escape");
@@ -1622,6 +1629,361 @@ fn configuration_attachment_tracks_utf8_content_and_keyboard_inspection(cx: &mut
             assert_eq!(demo.tabs.read(cx).selected_index(), Some(2));
             assert_eq!(demo.accordion.read(cx).open_index(), Some(2));
             assert_metadata(window, current.as_ref());
+        });
+    }
+}
+
+#[gpui::test]
+fn settings_trace_discloses_current_values_with_retained_focus_and_parent_scroll(
+    cx: &mut TestAppContext,
+) {
+    let trace_id = gpui::ElementId::from("settings-trace");
+    let body_id = (trace_id.clone(), "body").into();
+    let summary_id = (trace_id.clone(), "summary").into();
+    let viewport_id = (gpui::ElementId::from("session-settings"), "body").into();
+    let long_name = "긴 세션_LongEnglish_".repeat(6);
+    let long_notes = format!(
+        "첫 줄\n{}\n\n{}\n마지막 줄\n",
+        "한국어와 English details. ".repeat(12),
+        "unbroken설정".repeat(20)
+    );
+    let details = |session: &str, date: &str, notes: &str| {
+        format!(
+            "Current form values\nSession: {session}\nRecording date: {date}\nPreset: Balanced\nDrawing tool: Pen\nCursor: Visible\nToolbar: Automatic\nNotes:\n{notes}"
+        )
+    };
+
+    for appearance in [Appearance::Compact, Appearance::Settings] {
+        let (cx, demo) = harness(cx, appearance);
+        cx.simulate_resize(gpui::size(px(320.), px(480.)));
+        draw(cx);
+        open_dialog(cx, &demo);
+        cx.update(|window, cx| {
+            let input = demo.read(cx).input.clone();
+            input.update(cx, |state, cx| {
+                state.set_value(long_name.clone(), window, cx)
+            });
+            let notes = demo.read(cx).notes.clone();
+            notes.update(cx, |state, cx| {
+                state.set_value(long_notes.clone(), window, cx)
+            });
+            let help = demo.read(cx).tabs.read(cx).tab_focus_handle(2).clone();
+            help.focus(window, cx);
+        });
+        draw(cx);
+        cx.run_until_parked();
+        draw(cx);
+        cx.update(|window, cx| {
+            let accordion = demo.read(cx).accordion.clone();
+            accordion.update(cx, |state, cx| state.toggle(2, window, cx));
+        });
+        draw(cx);
+        let (trigger_id, content_id) = cx.update(|_, cx| {
+            let id = demo.read(cx).settings_trace.entity_id();
+            (
+                gpui::ElementId::from(("collapsible-trigger", id)),
+                gpui::ElementId::from(("collapsible-content", id)),
+            )
+        });
+        let expected = details(&long_name, "2026-11-09", &long_notes);
+
+        // Layout is checked with both palettes; the action flow below runs once.
+        for width in [320., 280.] {
+            cx.simulate_resize(gpui::size(px(width), px(480.)));
+            draw(cx);
+            let closed_height = cx.update(|window, cx| {
+                assert!(!demo.read(cx).settings_trace.read(cx).is_open());
+                let trace = test_support::find(window, &[], &trace_id).unwrap();
+                assert_eq!(trace.role(), Some(Role::Group));
+                assert_eq!(trace.label(), None);
+                let trigger = test_support::find(window, &[], &trigger_id).unwrap();
+                assert_eq!(trigger.role(), Some(Role::Button));
+                assert_eq!(
+                    trigger.label(),
+                    Some(format!("Current settings · {long_name}").as_str())
+                );
+                assert_eq!(trigger.expanded(), Some(false));
+                assert!(test_support::find(window, &[], &content_id).is_none());
+                assert!(test_support::find(window, &[], &body_id).is_none());
+                assert!(test_support::find(window, &[], &"close-settings-trace".into()).is_none());
+                let state = demo.read(cx).settings_trace.clone();
+                state.update(cx, |state, cx| state.set_open(true, window, cx));
+                trace.bounds().size.height
+            });
+            draw(cx);
+            draw(cx);
+            let viewport = cx.update(|window, _| {
+                test_support::find(window, &[], &viewport_id)
+                    .unwrap()
+                    .bounds()
+            });
+            cx.simulate_event(ScrollEvent {
+                position: point(viewport.left() + px(2.), viewport.center().y),
+                delta: ScrollDelta::Pixels(point(px(0.), px(-10_000.))),
+                ..Default::default()
+            });
+            draw(cx);
+            let (initial_body_bounds, code_offset) = cx.update(|window, cx| {
+                let trace = test_support::find(window, &[], &trace_id).unwrap();
+                assert!(trace.bounds().size.height > closed_height);
+                assert!(trace.bounds().left() >= viewport.left());
+                assert!(trace.bounds().right() <= viewport.right() + px(1.));
+                let region = test_support::find(window, &[], &content_id).unwrap();
+                assert_eq!(region.role(), Some(Role::Region));
+                assert_eq!(region.label(), Some("Current settings details"));
+                let body = test_support::find(window, &[], &body_id).unwrap();
+                assert_eq!(body.role(), Some(Role::Paragraph));
+                assert_eq!(body.label(), Some(expected.as_str()));
+                assert_eq!(body.focused(), None);
+                for part in [&summary_id, &body_id] {
+                    let text = test_support::texts(window)
+                        .into_iter()
+                        .find(|text| text.path().contains(part))
+                        .unwrap();
+                    assert!(text.bounds().left() >= trace.bounds().left());
+                    assert!(text.bounds().right() <= trace.bounds().right() + px(1.));
+                    if part == &body_id {
+                        assert_eq!(text.text(), expected);
+                    }
+                }
+                assert!(test_support::snapshots(window).iter().all(|part| {
+                    !part.path().contains(&trace_id) || part.role() != Some(Role::ScrollView)
+                }));
+                let scroll = &demo.read(cx).fields_scroll;
+                assert_eq!(scroll.offset().x, px(0.));
+                assert_eq!(scroll.max_offset().x, px(0.));
+                assert!(scroll.max_offset().y > px(0.));
+                assert!((scroll.offset().y + scroll.max_offset().y).abs() < px(1.));
+                (body.bounds(), demo.read(cx).configuration_scroll.offset())
+            });
+            // At narrow heights, the action and source text after the paragraph
+            // can fill the viewport at its end. Reveal the paragraph with a
+            // real wheel over the sheet gutter before testing a wheel on it.
+            let reveal_delta = (viewport.center().y - initial_body_bounds.bottom()).max(px(0.));
+            if reveal_delta > px(0.) {
+                cx.simulate_event(ScrollEvent {
+                    position: point(viewport.left() + px(2.), viewport.center().y),
+                    delta: ScrollDelta::Pixels(point(px(0.), reveal_delta)),
+                    ..Default::default()
+                });
+                draw(cx);
+            }
+            let (over_body, visible_body, body_bounds, before_body_wheel) = cx.update(|window, cx| {
+                let body = test_support::find(window, &[], &body_id).unwrap();
+                let visible = body.bounds().intersect(&viewport);
+                assert!(
+                    body.visible() && visible.size.width > px(2.) && visible.size.height > px(2.),
+                    "width {width}: body {:?} must intersect viewport {viewport:?}; visible {visible:?}",
+                    body.bounds(),
+                );
+                let position = visible.center();
+                assert!(body.bounds().contains(&position) && viewport.contains(&position));
+                assert_eq!(demo.read(cx).configuration_scroll.offset(), code_offset);
+                (
+                    position,
+                    visible,
+                    body.bounds(),
+                    demo.read(cx).fields_scroll.offset().y,
+                )
+            });
+            cx.simulate_event(ScrollEvent {
+                position: over_body,
+                delta: ScrollDelta::Pixels(point(px(0.), px(80.))),
+                ..Default::default()
+            });
+            draw(cx);
+            cx.update(|_, cx| {
+                assert!(
+                    demo.read(cx).fields_scroll.offset().y > before_body_wheel,
+                    "width {width}: wheel at {over_body:?} inside visible body {visible_body:?} (full {body_bounds:?}, viewport {viewport:?}) must scroll parent from {before_body_wheel:?}; actual {:?}",
+                    demo.read(cx).fields_scroll.offset(),
+                );
+                assert_eq!(demo.read(cx).configuration_scroll.offset(), code_offset);
+            });
+            cx.simulate_event(ScrollEvent {
+                position: point(viewport.left() + px(2.), viewport.center().y),
+                delta: ScrollDelta::Pixels(point(px(0.), px(10_000.))),
+                ..Default::default()
+            });
+            draw(cx);
+            cx.update(|window, cx| {
+                assert_eq!(demo.read(cx).fields_scroll.offset().y, px(0.));
+                let state = demo.read(cx).settings_trace.clone();
+                state.update(cx, |state, cx| state.set_open(false, window, cx));
+            });
+            draw(cx);
+            cx.update(|window, _| {
+                assert!(
+                    (test_support::find(window, &[], &trace_id)
+                        .unwrap()
+                        .bounds()
+                        .size
+                        .height
+                        - closed_height)
+                        .abs()
+                        < px(1.)
+                );
+                assert!(test_support::find(window, &[], &body_id).is_none());
+                assert!(test_support::find(window, &[], &content_id).is_none());
+            });
+        }
+        if matches!(appearance, Appearance::Compact) {
+            cx.simulate_keystrokes("escape");
+            draw(cx);
+            continue;
+        }
+
+        cx.update(|window, cx| demo.read(cx).input.focus_handle(cx).focus(window, cx));
+        draw(cx);
+        let select_all = if cfg!(target_os = "macos") {
+            "cmd-a"
+        } else {
+            "ctrl-a"
+        };
+        cx.simulate_keystrokes(select_all);
+        let name = "현재 작업 🎯";
+        cx.simulate_input(name);
+        cx.update(|window, cx| {
+            let preferences = demo.read(cx).tabs.read(cx).tab_focus_handle(0).clone();
+            preferences.focus(window, cx);
+        });
+        draw(cx);
+        cx.run_until_parked();
+        draw(cx);
+        cx.update(|window, cx| demo.read(cx).notes.focus_handle(cx).focus(window, cx));
+        draw(cx);
+        cx.simulate_keystrokes(select_all);
+        let notes = "첫 줄\nCurrent notes 🚀\n";
+        cx.simulate_input(notes);
+        cx.update(|window, cx| {
+            let help = demo.read(cx).tabs.read(cx).tab_focus_handle(2).clone();
+            help.focus(window, cx);
+        });
+        draw(cx);
+        cx.run_until_parked();
+        draw(cx);
+        cx.update(|window, cx| {
+            let trigger = demo
+                .read(cx)
+                .settings_trace
+                .read(cx)
+                .trigger_focus_handle()
+                .clone();
+            trigger.focus(window, cx);
+        });
+        draw(cx);
+        activate_key(cx, "enter");
+        cx.update(|window, cx| {
+            let state = demo.read(cx).settings_trace.read(cx);
+            assert!(state.is_open());
+            assert!(state.trigger_focus_handle().is_focused(window));
+            let trigger = test_support::find(window, &[], &trigger_id).unwrap();
+            assert_eq!(trigger.expanded(), Some(true));
+            assert_eq!(
+                trigger.label(),
+                Some(format!("Current settings · {name}").as_str())
+            );
+            assert_eq!(
+                test_support::find(window, &[], &body_id).unwrap().label(),
+                Some(details(name, "2026-11-09", notes).as_str())
+            );
+        });
+        cx.simulate_keystrokes("tab");
+        draw(cx);
+        cx.update(|window, _| {
+            assert_eq!(
+                test_support::find(window, &[], &"close-settings-trace".into())
+                    .unwrap()
+                    .focused(),
+                Some(true)
+            )
+        });
+
+        // Replacing current application values while the disclosure is open
+        // must not remount its state or steal focus from its existing action.
+        let replacement_name = "Refreshed session 교체";
+        let replacement_notes = "Current replacement\n다시 읽는 본문";
+        cx.update(|window, cx| {
+            let input = demo.read(cx).input.clone();
+            input.update(cx, |state, cx| {
+                state.set_value(replacement_name, window, cx)
+            });
+            let notes = demo.read(cx).notes.clone();
+            notes.update(cx, |state, cx| {
+                state.set_value(replacement_notes, window, cx)
+            });
+            let calendar = demo.read(cx).calendar.clone();
+            calendar.update(cx, |state, cx| {
+                assert!(state.set_selected_date(None, window, cx))
+            });
+        });
+        draw(cx);
+        let replacement = details(replacement_name, "Not selected", replacement_notes);
+        cx.update(|window, cx| {
+            assert!(demo.read(cx).settings_trace.read(cx).is_open());
+            assert_eq!(
+                test_support::find(window, &[], &"close-settings-trace".into())
+                    .unwrap()
+                    .focused(),
+                Some(true)
+            );
+            assert_eq!(
+                test_support::find(window, &[], &body_id).unwrap().label(),
+                Some(replacement.as_str())
+            );
+            assert_eq!(
+                test_support::find(window, &[], &trigger_id)
+                    .unwrap()
+                    .label(),
+                Some(format!("Current settings · {replacement_name}").as_str())
+            );
+        });
+        activate_key(cx, "enter");
+        draw(cx);
+        cx.update(|window, cx| {
+            let state = demo.read(cx).settings_trace.read(cx);
+            assert!(!state.is_open());
+            assert!(state.trigger_focus_handle().is_focused(window));
+            assert!(
+                test_support::find(window, &[], &trigger_id)
+                    .unwrap()
+                    .visible()
+            );
+            assert!(test_support::find(window, &[], &content_id).is_none());
+            assert!(test_support::find(window, &[], &"close-settings-trace".into()).is_none());
+        });
+        activate_key(cx, "space");
+        cx.update(|window, cx| {
+            let state = demo.read(cx).settings_trace.read(cx);
+            assert!(state.is_open());
+            assert!(state.trigger_focus_handle().is_focused(window));
+        });
+        cx.simulate_keystrokes("tab escape");
+        draw(cx);
+        cx.update(|window, cx| {
+            assert!(!demo.read(cx).dialog.read(cx).is_open());
+            assert!(demo.read(cx).settings_trace.read(cx).is_open());
+            assert!(
+                demo.read(cx)
+                    .edit_hint
+                    .read(cx)
+                    .focus_handle()
+                    .is_focused(window)
+            );
+        });
+        open_dialog(cx, &demo);
+        cx.update(|window, cx| {
+            let demo = demo.read(cx);
+            assert!(demo.settings_trace.read(cx).is_open());
+            assert_eq!(demo.input.read(cx).value(), replacement_name);
+            assert_eq!(demo.notes.read(cx).value(), replacement_notes);
+            assert_eq!(demo.calendar.read(cx).selected_date(), None);
+            assert_eq!(demo.tabs.read(cx).selected_index(), Some(2));
+            assert_eq!(demo.accordion.read(cx).open_index(), Some(2));
+            assert_eq!(
+                test_support::find(window, &[], &body_id).unwrap().label(),
+                Some(replacement.as_str())
+            );
         });
     }
 }
