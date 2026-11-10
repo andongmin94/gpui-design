@@ -5,7 +5,7 @@ use gpui::{
     RenderOnce, Role, SharedString, Stateful, StatefulInteractiveElement as _, StyleRefinement,
     Styled, Window, div, prelude::FluentBuilder as _, rems,
 };
-use gpui_design::Button;
+use gpui_design::{Button, ObservedElement, TestSupportExt as _};
 
 use super::super::Palette;
 
@@ -15,16 +15,18 @@ use super::super::Palette;
 /// Tab and Shift-Tab traverse enabled entries, Enter/Space activate the
 /// focused entry, and arrow keys do not change the selected section.
 ///
-/// `Button::selected` controls presentation only. It does not expose
-/// `aria-selected`; the navigation landmark and its Button children carry
-/// the semantics for this composition.
+/// `Button::selected` controls presentation; `Button::current` separately exposes
+/// the current page to assistive technology. The navigation landmark and its
+/// Buttons retain their native roles, without tab selection semantics.
 ///
 /// The caller must retain the supplied `TabsState` and render only the
-/// content corresponding to its selected item. Do not compose `TabList`,
-/// `Tab`, or `TabPanel` alongside this Sidebar.
+/// content corresponding to its selected item. Each Button uses that state's
+/// `tab_focus_handle(index)` for explicit focus restoration. Do not reuse this
+/// state with `TabList`, `Tab`, or `TabPanel`: TabList installs automatic focus
+/// selection, while this Sidebar activates only on Enter/Space or a click.
 #[derive(IntoElement)]
 pub(crate) struct Sidebar {
-    base: Stateful<Div>,
+    base: ObservedElement<Stateful<Div>>,
     id: ElementId,
     state: Entity<gpui_design::TabsState>,
     label: SharedString,
@@ -42,6 +44,7 @@ impl Sidebar {
         Self {
             base: div()
                 .id(id.clone())
+                .test_support()
                 .w(rems(10.))
                 .min_w_0()
                 .flex()
@@ -80,7 +83,9 @@ impl RenderOnce for Sidebar {
 
             Button::new((self.id.clone(), index.to_string()))
                 .accessibility_label(label.clone())
+                .track_focus(model.tab_focus_handle(index))
                 .selected(is_selected)
+                .current(is_selected)
                 .disabled(disabled)
                 .w_full()
                 .min_w_0()

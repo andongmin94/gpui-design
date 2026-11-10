@@ -6,6 +6,7 @@
 //! Derived from GPUI Kit v0.9.0 under Apache-2.0; the public surface and
 //! initialization are scoped to the documented controls and their support APIs.
 
+mod a11y_current;
 mod a11y_disabled;
 mod accordion;
 pub mod actions;

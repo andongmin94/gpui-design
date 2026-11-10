@@ -1,6 +1,6 @@
 # Presentation recipes
 
-These twenty-one recipes are reusable application source, used by the native
+These twenty-two recipes are reusable application source, used by the native
 [two-style example](../crates/base/examples/two_styles.rs). They compose GPUI
 layout with the existing controls and keep colors, spacing, and sizing in the
 consumer's `Palette` or application-supplied `Styled` values.
@@ -497,14 +497,73 @@ scroll focus target or scroll-key bindings.
 
 Both appearances now use Sheet for the existing Session settings form. The
 example reuses its DialogState, initial name-input focus, body scroll handle,
-Preferences/Help/Schedule/Presets tabs, and Done validation rule. Closing and
-reopening keeps the same input, selection, and table state. The existing Edit
+Preferences/Help/Schedule/Presets sections, and Done validation rule. Compact
+keeps TabList/Tab/TabPanel in a 22 rem Sheet. Settings supplies a 46 rem preferred
+width and uses Sidebar with the selected named Region. Both widths remain capped
+by the viewport; the wider presentation gives navigation and form content room
+to sit beside one another. Closing and reopening keeps the same input, selection,
+and table state. The existing Edit
 triggers and menu/command actions open that state; the recipe adds no separate
 selection. Avatar and AspectRatio still render the retained preset in its
 HoverCard preview. Search commands and Reset preview keep their centered Dialog
 and AlertDialog presentations.
 The example caps its deferred Select, Combobox, Calendar, and Help popup widths
 against the window as well; those surfaces do not inherit the Sheet's width cap.
+
+## Sidebar
+
+[`sidebar.rs`](../crates/base/examples/recipes/sidebar.rs) composes named
+navigation from ordinary Buttons and the fixed items and selection of a retained
+`TabsState`:
+
+```rust,ignore
+// Create and retain a state dedicated to this Sidebar, and observe its changes.
+let sections = cx.new(|cx| TabsState::new(items, cx));
+
+Sidebar::new("settings-sections", &sections, "Settings sections", palette);
+```
+
+The root exposes native Navigation semantics and the supplied label. Each entry
+is a Button named by its item's label and uses that item's stable
+`tab_focus_handle(index)`. Disabled items retain their disabled presentation and
+are skipped by ordinary Tab traversal. The selected entry sets
+`Button::current(true)`, providing native `AriaCurrent::Page`, independently of
+`Button::selected(...)` and its visual highlight. Entries keep Button roles;
+the navigation does not expose tab-selected metadata.
+
+| Input | Result |
+| --- | --- |
+| Tab / Shift-Tab | Move among enabled entries and surrounding controls without changing the selected section |
+| Enter / Space / click | Select the activated entry through `TabsState::select_value` |
+| Arrow keys | Do not change the selected section |
+
+The application owns content rendering and destination focus. Render only the
+selected section and give it an appropriate named Region; inactive sections
+must not leave controls or accessibility nodes mounted. Keep input entities and
+form values in the application so switching sections preserves them. Selection
+through `select_value` does not move focus; explicit navigation from another
+surface, such as Breadcrumb, must also choose a retained focus target.
+
+Use a fresh `TabsState` for Sidebar and keep it separate from any state used by
+TabList, Tab, or TabPanel. TabList installs automatic focus-selection
+subscriptions that remain with its state after it is unmounted. Reusing that
+state for Sidebar would make focus change selection and break the explicit
+activation contract. This restriction applies to switching between the two
+presentations as well as mounting them together. The example creates a separate
+Demo and state for each fixed appearance.
+
+The default Sidebar is a 10 rem vertical column. `Styled` can change its width,
+spacing, and presentation; the consumer places it beside the current content or
+stacks the two. Settings uses it inside the existing Sheet. At viewport widths
+below 640 px the Sidebar becomes full-width above the current Region. This only
+changes layout: it retains the same Buttons, selected item, keyboard behavior,
+and focus handles. Compact continues to use its own horizontal TabList and
+TabPanel composition. Breadcrumb's Session settings action explicitly selects
+Preferences and focuses its navigation entry in either appearance.
+
+The recipe adds no routing, navigation history, disclosure state, nested groups,
+or separate selection model. Its application-owned layout uses the existing
+Sheet's scrolling body and modal focus containment.
 
 ## Typography
 
@@ -844,7 +903,10 @@ and palette values have no separate test suite. The existing field/preset flow
 covers missing-name recovery, the disabled addon for a read-only input, urgent
 inline semantics, and the Item's retained preview/edit behavior. The date-picker
 flow also checks that the ordinary schedule notice remains a Note. The existing
-three-platform CI continues to check composition and native compilation. One
+three-platform CI continues to check real consumer composition and native
+compilation. Linux additionally runs isolated recipe tests. Windows and macOS
+filter the `two_styles::recipes::` tests from the same composition target, keeping
+the real application flows while avoiding repeated recipe-only checks. One
 additional composed flow covers the preset table's sorting, filter/empty recovery,
 page boundaries, stable-ID action, and retained choice. There is no separate data
 test framework or duplicated platform-specific flow. These results do not
@@ -894,6 +956,14 @@ These are native metadata, layout, and simulated-input checks; screen-reader
 speech, platform IME behavior, and desktop visual results require separate
 validation.
 
+Sidebar is exercised in the Settings consumer's existing composition flows;
+there is no separate candidate fixture. The flows check explicit activation,
+disabled entries, current-section semantics, retained values, ordinary focus
+traversal, and the stacked narrow-window layout. Compact's TabList behavior
+remains covered by its real consumer flows. Button's native metadata contract
+owns current-page checks, and TabsState's core regression owns focus-neutral
+programmatic selection and change events.
+
 Code Block coverage checks empty and multiline content, Unicode, complete code
 names, preserved line endings, and exact full-text copying through GPUI's test
 clipboard. Layout checks exercise both appearances, narrow widths, long lines,
@@ -913,35 +983,32 @@ or clears. These are metadata, layout, and simulated-input checks; native
 screen-reader speech, IME, DPI, and desktop visual observations remain separate
 validation work.
 
-Message coverage checks the Comment/Label/Paragraph hierarchy, each supplied
-text's accessible name appearing once, explicit line breaks, long Korean and
-English content, and vertical growth at narrow widths in both appearances.
-Action checks cover absence/presence, native Button naming, Tab/Shift+Tab,
-Enter/Space and pointer activation, body updates, disabling, and removal without
-an added message focus stop. The Schedule consumer checks the shared note value,
-local edit metadata, empty-state transitions, Edit note focus, and existing
-Sheet scrolling and dismissal. These are headless metadata, layout, and input
+Message's focused recipe check covers the Comment/Label/Paragraph hierarchy,
+each supplied text's accessible name appearing once, explicit line breaks, long
+Korean and English content, and narrow-width wrapping in both appearances.
+Button's own tests cover activation and disabled behavior. The Schedule consumer
+checks the shared note value, local edit metadata, empty-state transitions,
+Edit note focus, and existing Sheet scrolling and dismissal. These are headless
+metadata, layout, and input
 checks; native screen-reader speech and desktop visual validation remain
 separate.
 
-Attachment coverage checks the full filename name and combined metadata
-description without duplicate child semantics, long Korean and English filenames,
-narrow-width wrapping, and both appearances. Optional-action checks preserve
-Button naming, keyboard and pointer activation, disabled behavior, and ordinary
-focus traversal. The Help consumer checks that the byte count follows the
-current UTF-8 JSON, Inspect JSON reaches the existing code focus target, and
+Attachment's focused recipe check covers the full filename name and combined
+metadata description without duplicate child semantics, long Korean and English filenames,
+narrow-width wrapping, and both appearances. Supplied actions retain Button's
+independently tested activation and disabled behavior. The Help consumer checks
+that the byte count follows the current UTF-8 JSON, Inspect JSON reaches the
+existing code focus target, and
 CodeBlock keeps its complete copy and scrolling behavior. Clipboard assertions
 remain limited to GPUI's test clipboard; native file access, screen-reader speech,
 and desktop visual observations are not established by these checks.
 
-Trace coverage checks summary naming, expanded/disabled metadata, the named
-Region and Paragraph hierarchy, and the absence of closed-content semantics or
-Tab stops. Long summaries and details wrap at narrow widths in both appearances.
-Interaction checks exercise pointer/Enter/Space activation, ordinary traversal,
-optional and disabled actions, content replacement while open, and focus return
-on closure. They also preserve Collapsible's disabled-trigger behavior: open
-content stays available, and closing focused content uses the existing non-Tab
-root before traversal leaves. The Help consumer checks current form values,
+Trace's focused recipe check covers summary naming, expanded metadata, the named
+Region and Paragraph hierarchy, closed-content removal, and long summaries and
+details wrapping at narrow widths in both appearances. Collapsible's core tests
+own activation, disabled-trigger behavior, and focus return on closure; supplied
+actions use the existing Button contract. The Help consumer checks current form
+values,
 disclosure retention, the Close details action, and surrounding Sheet scrolling
 and focus. The composition target retains its 1.5 MiB stack check. These tests
 exercise native metadata, layout, and simulated input; desktop rendering,

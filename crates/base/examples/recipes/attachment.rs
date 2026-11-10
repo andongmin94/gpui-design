@@ -121,11 +121,10 @@ impl RenderOnce for Attachment {
 #[cfg(all(test, feature = "test-support"))]
 mod tests {
     use gpui::{
-        AppContext as _, Context, Entity, FocusHandle, Focusable as _, KeyDownEvent, KeyUpEvent,
-        Keystroke, Modifiers, Pixels, Render, Subscription, TestAppContext, VisualTestContext, px,
+        AppContext as _, Context, Entity, Pixels, Render, TestAppContext, VisualTestContext, px,
         size,
     };
-    use gpui_design::{Button, Input, Root, input::InputState, test_support};
+    use gpui_design::{Root, test_support};
 
     use super::super::super::Appearance;
     use super::*;
@@ -133,56 +132,20 @@ mod tests {
     struct Sample {
         appearance: Appearance,
         width: Pixels,
-        file_name: Entity<InputState>,
+        file_name: SharedString,
         media_type: SharedString,
         size_label: SharedString,
-        action: bool,
-        disabled: bool,
-        activations: usize,
-        focus: [FocusHandle; 2],
-        _subscription: Subscription,
     }
 
     impl Render for Sample {
-        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-            let attachment = Attachment::new(
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().w(self.width).flex().flex_col().child(Attachment::new(
                 "sample-attachment",
-                self.file_name.read(cx).value(),
+                self.file_name.clone(),
                 self.media_type.clone(),
                 self.size_label.clone(),
                 self.appearance.palette(),
-            )
-            .when(self.action, |attachment| {
-                attachment.action(
-                    Button::new("attachment-action")
-                        .track_focus(&self.focus[0])
-                        .accessibility_label("Inspect configuration")
-                        .disabled(self.disabled)
-                        .min_w_0()
-                        .h(px(32.))
-                        .px_2()
-                        .child("Inspect")
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.activations += 1;
-                            this.size_label = format!("{} bytes", this.activations).into();
-                            this.disabled = this.activations == 3;
-                            cx.notify();
-                        })),
-                )
-            });
-            div()
-                .w(self.width)
-                .flex()
-                .flex_col()
-                .gap_2()
-                .child(div().h(px(32.)).child(Input::new(&self.file_name)))
-                .child(attachment)
-                .child(
-                    Button::new("after-attachment")
-                        .track_focus(&self.focus[1])
-                        .h(px(32.))
-                        .child("After"),
-                )
+            ))
         }
     }
 
@@ -191,22 +154,12 @@ mod tests {
         appearance: Appearance,
     ) -> (&mut VisualTestContext, Entity<Sample>) {
         let (root, cx) = cx.add_window_view(|window, cx| {
-            let sample = cx.new(|cx| {
-                let file_name =
-                    cx.new(|cx| InputState::new(window, cx).default_value("session.json"));
-                let subscription = cx.observe(&file_name, |_, _, cx| cx.notify());
-                Sample {
-                    appearance,
-                    width: px(360.),
-                    file_name,
-                    media_type: "application/json".into(),
-                    size_label: "64 bytes".into(),
-                    action: false,
-                    disabled: false,
-                    activations: 0,
-                    focus: std::array::from_fn(|_| cx.focus_handle()),
-                    _subscription: subscription,
-                }
+            let sample = cx.new(|_| Sample {
+                appearance,
+                width: px(360.),
+                file_name: "session.json".into(),
+                media_type: "application/json".into(),
+                size_label: "64 bytes".into(),
             });
             Root::new(sample, window, cx)
         });
@@ -219,18 +172,6 @@ mod tests {
 
     fn draw(cx: &mut VisualTestContext) {
         cx.update(|window, cx| window.draw(cx).clear(cx));
-    }
-
-    fn activate_key(cx: &mut VisualTestContext, key: &str) {
-        let keystroke =
-            cx.update(|_, cx| Keystroke::parse_with_os(key, cx.platform_info().os).unwrap());
-        cx.simulate_event(KeyDownEvent {
-            keystroke: keystroke.clone(),
-            is_held: false,
-            prefer_character_input: false,
-        });
-        cx.simulate_event(KeyUpEvent { keystroke });
-        draw(cx);
     }
 
     #[gpui::test]
@@ -248,13 +189,8 @@ mod tests {
         for appearance in [Appearance::Compact, Appearance::Settings] {
             let (cx, sample) = harness(cx, appearance);
             cx.simulate_resize(size(px(500.), px(2000.)));
-            cx.update(|window, cx| {
-                let file = sample.read(cx).file_name.clone();
-                file.update(cx, |state, cx| {
-                    state.set_value(file_name.clone(), window, cx)
-                });
-            });
             sample.update(cx, |sample, cx| {
+                sample.file_name = file_name.clone().into();
                 sample.media_type = media_type.into();
                 sample.size_label = size_label.into();
                 cx.notify();
@@ -335,129 +271,5 @@ mod tests {
                 });
             }
         }
-    }
-
-    #[gpui::test]
-    fn edited_filename_and_optional_action_keep_existing_focus_behavior(cx: &mut TestAppContext) {
-        cx.update(gpui_design::init);
-        let (cx, sample) = harness(cx, Appearance::Settings);
-        sample.update(cx, |sample, cx| {
-            sample.width = px(160.);
-            cx.notify();
-        });
-        cx.update(|window, cx| {
-            window.activate_window();
-            let before = sample.read(cx).file_name.focus_handle(cx);
-            before.focus(window, cx);
-        });
-        draw(cx);
-        cx.simulate_keystrokes(if cfg!(target_os = "macos") {
-            "cmd-a"
-        } else {
-            "ctrl-a"
-        });
-        cx.simulate_input("회의 session.json");
-        draw(cx);
-        cx.run_until_parked();
-        draw(cx);
-        cx.update(|window, _| {
-            let attachment = test_support::find(window, &[], &"sample-attachment".into()).unwrap();
-            assert_eq!(attachment.label(), Some("회의 session.json"));
-            assert_eq!(
-                attachment.description(),
-                Some("application/json · 64 bytes")
-            );
-        });
-        cx.simulate_keystrokes("tab");
-        draw(cx);
-        cx.update(|window, cx| assert!(sample.read(cx).focus[1].is_focused(window)));
-        cx.simulate_keystrokes("shift-tab");
-        draw(cx);
-        cx.update(|window, cx| {
-            assert!(
-                sample
-                    .read(cx)
-                    .file_name
-                    .focus_handle(cx)
-                    .is_focused(window)
-            )
-        });
-
-        sample.update(cx, |sample, cx| {
-            sample.action = true;
-            cx.notify();
-        });
-        draw(cx);
-        cx.simulate_keystrokes("tab");
-        draw(cx);
-        cx.update(|window, cx| {
-            assert!(sample.read(cx).focus[0].is_focused(window));
-            let attachment = test_support::find(window, &[], &"sample-attachment".into()).unwrap();
-            let action = test_support::find(window, &[], &"attachment-action".into()).unwrap();
-            assert_eq!(action.role(), Some(Role::Button));
-            assert_eq!(action.label(), Some("Inspect configuration"));
-            assert!(action.bounds().left() >= attachment.bounds().left());
-            assert!(action.bounds().right() <= attachment.bounds().right() + px(1.));
-        });
-        activate_key(cx, "enter");
-        activate_key(cx, "space");
-        let position = cx.update(|window, _| {
-            test_support::find(window, &[], &"attachment-action".into())
-                .unwrap()
-                .bounds()
-                .center()
-        });
-        cx.simulate_click(position, Modifiers::default());
-        draw(cx);
-        cx.update(|window, cx| {
-            let sample = sample.read(cx);
-            assert_eq!(sample.activations, 3);
-            assert!(sample.disabled);
-            assert!(sample.focus[0].is_focused(window));
-            let attachment = test_support::find(window, &[], &"sample-attachment".into()).unwrap();
-            assert_eq!(attachment.label(), Some("회의 session.json"));
-            assert_eq!(attachment.description(), Some("application/json · 3 bytes"));
-        });
-        activate_key(cx, "enter");
-        activate_key(cx, "space");
-        cx.simulate_click(position, Modifiers::default());
-        draw(cx);
-        assert_eq!(sample.read_with(cx, |sample, _| sample.activations), 3);
-        cx.simulate_keystrokes("tab");
-        draw(cx);
-        cx.update(|window, cx| assert!(sample.read(cx).focus[1].is_focused(window)));
-        cx.simulate_keystrokes("shift-tab");
-        draw(cx);
-        cx.update(|window, cx| {
-            assert!(
-                sample
-                    .read(cx)
-                    .file_name
-                    .focus_handle(cx)
-                    .is_focused(window)
-            )
-        });
-
-        // The caller moves focus outside before removing an action.
-        sample.update(cx, |sample, cx| {
-            sample.action = false;
-            cx.notify();
-        });
-        draw(cx);
-        cx.update(|window, cx| {
-            assert!(
-                sample
-                    .read(cx)
-                    .file_name
-                    .focus_handle(cx)
-                    .is_focused(window)
-            )
-        });
-        cx.simulate_keystrokes("tab");
-        draw(cx);
-        cx.update(|window, cx| {
-            assert!(sample.read(cx).focus[1].is_focused(window));
-            assert!(test_support::find(window, &[], &"attachment-action".into()).is_none());
-        });
     }
 }

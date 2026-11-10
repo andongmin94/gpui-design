@@ -70,6 +70,16 @@ fn open_dialog(cx: &mut VisualTestContext, demo: &Entity<Demo>) {
     });
 }
 
+// Both navigation presentations share selection state; Sidebar focus alone does not select.
+fn focus_section(window: &mut gpui::Window, cx: &mut gpui::App, demo: &Entity<Demo>, index: usize) {
+    let tabs = demo.read(cx).tabs.clone();
+    tabs.update(cx, |state, cx| {
+        let value = state.items()[index].value().clone();
+        state.select_value(value, window, cx);
+        state.tab_focus_handle(index).focus(window, cx);
+    });
+}
+
 #[gpui::test]
 fn sheet_geometry_scrolling_and_nested_modal_preserve_focus(cx: &mut TestAppContext) {
     let parts = |window: &gpui::Window| {
@@ -89,7 +99,7 @@ fn sheet_geometry_scrolling_and_nested_modal_preserve_focus(cx: &mut TestAppCont
         )
     };
     // Both palettes have different widths and padding; exercise those layout risks.
-    for (appearance, preferred_rems) in [(Appearance::Compact, 22.), (Appearance::Settings, 28.)] {
+    for (appearance, preferred_rems) in [(Appearance::Compact, 22.), (Appearance::Settings, 46.)] {
         let (cx, demo) = harness(cx, appearance);
         cx.simulate_resize(gpui::size(px(760.), px(780.)));
         draw(cx);
@@ -724,7 +734,7 @@ fn select_dismissal_preserves_tab_pointer_and_dialog_focus(cx: &mut TestAppConte
 }
 
 #[gpui::test]
-fn settings_tabs_and_popover_preserve_nested_focus(cx: &mut TestAppContext) {
+fn settings_sidebar_and_popover_preserve_nested_focus(cx: &mut TestAppContext) {
     let (cx, demo) = harness(cx, Appearance::Settings);
     let changes = Rc::new(RefCell::new(Vec::new()));
     cx.update(|_, cx| {
@@ -737,22 +747,62 @@ fn settings_tabs_and_popover_preserve_nested_focus(cx: &mut TestAppContext) {
         .detach();
     });
     open_dialog(cx, &demo);
-    cx.simulate_keystrokes("tab tab right");
+    cx.simulate_keystrokes("tab tab");
+    draw(cx);
+    cx.update(|window, cx| {
+        let navigation = test_support::find(window, &[], &"session-sections".into()).unwrap();
+        assert_eq!(navigation.role(), Some(Role::Navigation));
+        assert_eq!(navigation.label(), Some("Session sections"));
+        assert!(
+            demo.read(cx)
+                .tabs
+                .read(cx)
+                .tab_focus_handle(0)
+                .is_focused(window)
+        );
+    });
+    cx.simulate_keystrokes("right down home end");
     draw(cx);
     cx.update(|window, cx| {
         let tabs = demo.read(cx).tabs.read(cx);
-        assert_eq!(tabs.selected_index(), Some(2), "skip the disabled Sync tab");
+        assert_eq!(tabs.selected_index(), Some(0));
+        assert!(tabs.tab_focus_handle(0).is_focused(window));
+    });
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    cx.update(|window, cx| {
+        let tabs = demo.read(cx).tabs.read(cx);
+        assert_eq!(
+            tabs.selected_index(),
+            Some(0),
+            "focus does not select a section"
+        );
+        assert!(
+            tabs.tab_focus_handle(2).is_focused(window),
+            "skip disabled Sync"
+        );
+    });
+    assert!(changes.borrow().is_empty());
+    activate_key(cx, "enter");
+    cx.update(|window, cx| {
+        let tabs = demo.read(cx).tabs.read(cx);
+        assert_eq!(tabs.selected_index(), Some(2));
         assert!(tabs.tab_focus_handle(2).is_focused(window));
         assert!(test_support::find(window, &[], &"show-cursor".into()).is_none());
-        assert!(
-            test_support::snapshots(window).iter().any(|item| {
-                item.role() == Some(Role::TabPanel) && item.label() == Some("Help")
-            })
-        );
-        assert!(test_support::snapshots(window).iter().any(|item| {
-            item.role() == Some(Role::Tab)
-                && item.label() == Some("Sync (unavailable)")
-                && item.disabled() == Some(true)
+        let region_id = (gpui::ElementId::from("session-region"), "2".to_string()).into();
+        let region = test_support::find(window, &[], &region_id).unwrap();
+        assert_eq!(region.role(), Some(Role::Region));
+        assert_eq!(region.label(), Some("Help"));
+        let disabled_id = (gpui::ElementId::from("session-sections"), "1".to_string()).into();
+        let disabled = test_support::find(window, &[], &disabled_id).unwrap();
+        assert_eq!(disabled.role(), Some(Role::Button));
+        assert_eq!(disabled.label(), Some("Sync (unavailable)"));
+        assert_eq!(disabled.disabled(), Some(true));
+        assert!(!test_support::snapshots(window).iter().any(|item| {
+            matches!(
+                item.role(),
+                Some(Role::Tab | Role::TabList | Role::TabPanel)
+            )
         }));
         let heading = test_support::find(window, &[], &"help-title".into()).unwrap();
         assert_eq!(heading.role(), Some(Role::Heading));
@@ -772,7 +822,36 @@ fn settings_tabs_and_popover_preserve_nested_focus(cx: &mut TestAppContext) {
         &[gpui::SharedString::from("help")]
     );
 
-    cx.simulate_keystrokes("tab tab");
+    for width in [320., 760.] {
+        cx.simulate_resize(gpui::size(px(width), px(780.)));
+        draw(cx);
+        draw(cx);
+        cx.update(|window, cx| {
+            let navigation = test_support::find(window, &[], &"session-sections".into())
+                .unwrap()
+                .bounds();
+            let region_id = (gpui::ElementId::from("session-region"), "2".to_string()).into();
+            let region = test_support::find(window, &[], &region_id)
+                .unwrap()
+                .bounds();
+            let body_id = (gpui::ElementId::from("session-settings"), "body").into();
+            let body = test_support::find(window, &[], &body_id).unwrap().bounds();
+            for bounds in [navigation, region] {
+                assert!(bounds.left() >= body.left());
+                assert!(bounds.right() <= body.right() + px(1.));
+            }
+            if width < 640. {
+                assert!(navigation.bottom() <= region.top());
+            } else {
+                assert!(navigation.right() <= region.left());
+            }
+            let tabs = demo.read(cx).tabs.read(cx);
+            assert_eq!(tabs.selected_index(), Some(2));
+            assert!(tabs.tab_focus_handle(2).is_focused(window));
+        });
+    }
+
+    cx.simulate_keystrokes("tab tab tab tab");
     draw(cx);
     cx.update(|window, cx| {
         assert!(
@@ -890,17 +969,24 @@ fn settings_tabs_and_popover_preserve_nested_focus(cx: &mut TestAppContext) {
         assert!(demo.input.focus_handle(cx).is_focused(window));
     });
 
-    // A hidden panel has no Tab stops; its application-owned values survive remounting.
-    cx.simulate_keystrokes("tab tab home tab");
+    // A hidden region has no Tab stops; its application-owned values survive remounting.
+    cx.simulate_keystrokes("tab tab");
+    draw(cx);
+    activate_key(cx, "space");
+    cx.simulate_keystrokes("tab tab tab tab");
     draw(cx);
     activate_key(cx, "space");
     cx.update(|_, cx| assert!(!demo.read(cx).show_cursor));
-    cx.simulate_keystrokes("shift-tab right");
+    cx.simulate_keystrokes("shift-tab shift-tab shift-tab");
     draw(cx);
+    activate_key(cx, "enter");
     cx.update(|window, _| {
         assert!(test_support::find(window, &[], &"show-cursor".into()).is_none());
     });
-    cx.simulate_keystrokes("left tab");
+    cx.simulate_keystrokes("shift-tab");
+    draw(cx);
+    activate_key(cx, "space");
+    cx.simulate_keystrokes("tab tab tab tab");
     draw(cx);
     cx.update(|window, cx| {
         assert!(!demo.read(cx).show_cursor);
@@ -909,8 +995,11 @@ fn settings_tabs_and_popover_preserve_nested_focus(cx: &mut TestAppContext) {
         assert_eq!(checkbox.focused(), Some(true));
     });
 
-    // The root ancestor returns to Preferences through existing tab focus activation.
-    cx.simulate_keystrokes("shift-tab right tab tab");
+    // The root ancestor explicitly selects Preferences and restores its Sidebar focus.
+    cx.simulate_keystrokes("shift-tab shift-tab shift-tab");
+    draw(cx);
+    activate_key(cx, "enter");
+    cx.simulate_keystrokes("tab tab tab tab");
     draw(cx);
     activate_key(cx, "enter");
     cx.simulate_keystrokes("tab");
@@ -935,7 +1024,10 @@ fn settings_tabs_and_popover_preserve_nested_focus(cx: &mut TestAppContext) {
     });
 
     // Removing the parent surface must also finish the retained popup lifecycle.
-    cx.simulate_keystrokes("right tab tab");
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    activate_key(cx, "space");
+    cx.simulate_keystrokes("tab tab tab tab");
     draw(cx);
     activate_key(cx, "enter");
     cx.update(|window, cx| {
@@ -972,8 +1064,7 @@ fn help_typography_wraps_in_both_appearances_without_adding_focus(cx: &mut TestA
         draw(cx);
         open_dialog(cx, &demo);
         cx.update(|window, cx| {
-            let help = demo.read(cx).tabs.read(cx).tab_focus_handle(2).clone();
-            help.focus(window, cx);
+            focus_section(window, cx, &demo, 2);
         });
         draw(cx);
         cx.run_until_parked();
@@ -1147,8 +1238,7 @@ fn configuration_code_copies_current_values_and_contains_nested_scrolling(cx: &m
             input.update(cx, |state, cx| state.set_value(name.clone(), window, cx));
             let notes = demo.read(cx).notes.clone();
             notes.update(cx, |state, cx| state.set_value(initial_notes, window, cx));
-            let help = demo.read(cx).tabs.read(cx).tab_focus_handle(2).clone();
-            help.focus(window, cx);
+            focus_section(window, cx, &demo, 2);
         });
         draw(cx);
         cx.run_until_parked();
@@ -1427,8 +1517,7 @@ fn configuration_attachment_tracks_utf8_content_and_keyboard_inspection(cx: &mut
             notes.update(cx, |state, cx| {
                 state.set_value("원본 노트📝\nBefore editing.\n", window, cx)
             });
-            let help = demo.read(cx).tabs.read(cx).tab_focus_handle(2).clone();
-            help.focus(window, cx);
+            focus_section(window, cx, &demo, 2);
         });
         draw(cx);
         cx.run_until_parked();
@@ -1513,8 +1602,7 @@ fn configuration_attachment_tracks_utf8_content_and_keyboard_inspection(cx: &mut
         let name = "다음 세션 🎯 Updated configuration";
         cx.simulate_input(name);
         cx.update(|window, cx| {
-            let preferences = demo.read(cx).tabs.read(cx).tab_focus_handle(0).clone();
-            preferences.focus(window, cx);
+            focus_section(window, cx, &demo, 0);
         });
         draw(cx);
         cx.run_until_parked();
@@ -1525,8 +1613,7 @@ fn configuration_attachment_tracks_utf8_content_and_keyboard_inspection(cx: &mut
         let notes = "첫 줄 🚀\nEnglish body with a quoted \"value\".\n\n마지막 줄\n";
         cx.simulate_input(notes);
         cx.update(|window, cx| {
-            let help = demo.read(cx).tabs.read(cx).tab_focus_handle(2).clone();
-            help.focus(window, cx);
+            focus_section(window, cx, &demo, 2);
         });
         draw(cx);
         cx.run_until_parked();
@@ -1667,8 +1754,7 @@ fn settings_trace_discloses_current_values_with_retained_focus_and_parent_scroll
             notes.update(cx, |state, cx| {
                 state.set_value(long_notes.clone(), window, cx)
             });
-            let help = demo.read(cx).tabs.read(cx).tab_focus_handle(2).clone();
-            help.focus(window, cx);
+            focus_section(window, cx, &demo, 2);
         });
         draw(cx);
         cx.run_until_parked();
@@ -1844,8 +1930,7 @@ fn settings_trace_discloses_current_values_with_retained_focus_and_parent_scroll
         let name = "현재 작업 🎯";
         cx.simulate_input(name);
         cx.update(|window, cx| {
-            let preferences = demo.read(cx).tabs.read(cx).tab_focus_handle(0).clone();
-            preferences.focus(window, cx);
+            focus_section(window, cx, &demo, 0);
         });
         draw(cx);
         cx.run_until_parked();
@@ -1856,8 +1941,7 @@ fn settings_trace_discloses_current_values_with_retained_focus_and_parent_scroll
         let notes = "첫 줄\nCurrent notes 🚀\n";
         cx.simulate_input(notes);
         cx.update(|window, cx| {
-            let help = demo.read(cx).tabs.read(cx).tab_focus_handle(2).clone();
-            help.focus(window, cx);
+            focus_section(window, cx, &demo, 2);
         });
         draw(cx);
         cx.run_until_parked();
@@ -2479,7 +2563,7 @@ fn command_search_opens_a_retained_multiline_form(cx: &mut TestAppContext) {
         &[gpui::SharedString::from("edit")]
     );
 
-    cx.simulate_keystrokes("tab tab tab tab tab tab");
+    cx.simulate_keystrokes("tab tab tab tab tab tab tab tab tab");
     draw(cx);
     cx.update(|window, cx| {
         assert!(demo.read(cx).notes.focus_handle(cx).is_focused(window));
@@ -2747,7 +2831,7 @@ fn field_feedback_and_search_selection_work_inside_the_dialog(cx: &mut TestAppCo
     draw(cx);
     cx.update(|window, cx| assert!(demo.read(cx).input.focus_handle(cx).is_focused(window)));
 
-    cx.simulate_keystrokes("tab tab tab tab tab tab tab");
+    cx.simulate_keystrokes("tab tab tab tab tab tab tab tab tab tab");
     draw(cx);
     draw(cx); // The focused input's reveal request updates the form's scroll offset.
     cx.update(|window, cx| {
@@ -3192,8 +3276,7 @@ fn schedule_marker_tracks_selection_at_narrow_widths_without_adding_focus(cx: &m
         draw(cx);
         open_dialog(cx, &demo);
         cx.update(|window, cx| {
-            let schedule = demo.read(cx).tabs.read(cx).tab_focus_handle(3).clone();
-            schedule.focus(window, cx);
+            focus_section(window, cx, &demo, 3);
         });
         draw(cx);
         cx.run_until_parked();
@@ -3297,8 +3380,7 @@ fn schedule_message_reuses_notes_and_preserves_metadata_focus_and_parent_scroll(
             notes.update(cx, |state, cx| {
                 state.set_value(restored.clone(), window, cx)
             });
-            let schedule = demo.read(cx).tabs.read(cx).tab_focus_handle(3).clone();
-            schedule.focus(window, cx);
+            focus_section(window, cx, &demo, 3);
         });
         draw(cx);
         cx.run_until_parked();
@@ -3389,8 +3471,7 @@ fn schedule_message_reuses_notes_and_preserves_metadata_focus_and_parent_scroll(
         // Exercise the editing and action flow once after both layout checks.
         // An edit in Preferences is the same retained note shown in Schedule.
         cx.update(|window, cx| {
-            let preferences = demo.read(cx).tabs.read(cx).tab_focus_handle(0).clone();
-            preferences.focus(window, cx);
+            focus_section(window, cx, &demo, 0);
         });
         draw(cx);
         cx.run_until_parked();
@@ -3408,8 +3489,7 @@ fn schedule_message_reuses_notes_and_preserves_metadata_focus_and_parent_scroll(
         draw(cx);
         let edited_at = cx.update(|_, cx| demo.read(cx).notes_edited_at.unwrap());
         cx.update(|window, cx| {
-            let schedule = demo.read(cx).tabs.read(cx).tab_focus_handle(3).clone();
-            schedule.focus(window, cx);
+            focus_section(window, cx, &demo, 3);
         });
         draw(cx);
         cx.run_until_parked();
@@ -3542,7 +3622,10 @@ fn schedule_message_reuses_notes_and_preserves_metadata_focus_and_parent_scroll(
 fn preset_table_filters_sorts_pages_and_applies_stable_rows(cx: &mut TestAppContext) {
     let (cx, demo) = harness(cx, Appearance::Settings);
     open_dialog(cx, &demo);
-    cx.simulate_keystrokes("tab tab end tab");
+    cx.simulate_keystrokes("tab tab tab tab tab");
+    draw(cx);
+    activate_key(cx, "enter");
+    cx.simulate_keystrokes("tab");
     draw(cx);
     let id = gpui::ElementId::from("preset-catalogue");
     let pagination = gpui::ElementId::from((id.clone(), "pagination"));

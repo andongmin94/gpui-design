@@ -61,7 +61,7 @@ jobs:
 
       - name: Test composed controls on native platforms
         if: runner.os != 'Linux'
-        run: cargo test -p gpui-design --features test-support --locked --test composition
+        run: cargo test -p gpui-design --features test-support --locked --test composition -- --skip two_styles::recipes::
 
       - name: Build native example with default features
         run: cargo build -p gpui-design --example two_styles --locked

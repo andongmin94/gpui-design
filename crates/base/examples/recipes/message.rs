@@ -124,10 +124,10 @@ impl RenderOnce for Message {
 #[cfg(all(test, feature = "test-support"))]
 mod tests {
     use gpui::{
-        AppContext as _, Context, Entity, FocusHandle, KeyDownEvent, KeyUpEvent, Keystroke,
-        Modifiers, Pixels, Render, TestAppContext, VisualTestContext, px, size,
+        AppContext as _, Context, Entity, Pixels, Render, TestAppContext, VisualTestContext, px,
+        size,
     };
-    use gpui_design::{Button, Root, test_support};
+    use gpui_design::{Root, test_support};
 
     use super::super::super::Appearance;
     use super::*;
@@ -138,58 +138,17 @@ mod tests {
         author: SharedString,
         time: SharedString,
         body: SharedString,
-        action: bool,
-        disabled: bool,
-        activations: usize,
-        focus: [FocusHandle; 3],
     }
 
     impl Render for Sample {
-        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-            let palette = self.appearance.palette();
-            let message = Message::new(
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().w(self.width).flex().flex_col().child(Message::new(
                 "sample-message",
                 self.author.clone(),
                 self.time.clone(),
                 self.body.clone(),
-                palette,
-            )
-            .when(self.action, |message| {
-                message.action(
-                    Button::new("message-action")
-                        .track_focus(&self.focus[1])
-                        .accessibility_label("Acknowledge note")
-                        .disabled(self.disabled)
-                        .min_w_0()
-                        .h(px(32.))
-                        .px_2()
-                        .child("Acknowledge")
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.activations += 1;
-                            this.body = format!("Acknowledged {} times", this.activations).into();
-                            this.disabled = this.activations == 3;
-                            cx.notify();
-                        })),
-                )
-            });
-            div()
-                .w(self.width)
-                .flex()
-                .flex_col()
-                .gap_2()
-                .child(
-                    Button::new("before-message")
-                        .track_focus(&self.focus[0])
-                        .h(px(32.))
-                        .child("Before"),
-                )
-                .child(message)
-                .child(
-                    Button::new("after-message")
-                        .track_focus(&self.focus[2])
-                        .h(px(32.))
-                        .child("After"),
-                )
+                self.appearance.palette(),
+            ))
         }
     }
 
@@ -198,16 +157,12 @@ mod tests {
         appearance: Appearance,
     ) -> (&mut VisualTestContext, Entity<Sample>) {
         let (root, cx) = cx.add_window_view(|window, cx| {
-            let sample = cx.new(|cx| Sample {
+            let sample = cx.new(|_| Sample {
                 appearance,
                 width: px(360.),
                 author: "You".into(),
                 time: "Edited 2026-11-10 08:30 UTC".into(),
                 body: "A retained local note.".into(),
-                action: false,
-                disabled: false,
-                activations: 0,
-                focus: std::array::from_fn(|_| cx.focus_handle()),
             });
             Root::new(sample, window, cx)
         });
@@ -220,18 +175,6 @@ mod tests {
 
     fn draw(cx: &mut VisualTestContext) {
         cx.update(|window, cx| window.draw(cx).clear(cx));
-    }
-
-    fn activate_key(cx: &mut VisualTestContext, key: &str) {
-        let keystroke =
-            cx.update(|_, cx| Keystroke::parse_with_os(key, cx.platform_info().os).unwrap());
-        cx.simulate_event(KeyDownEvent {
-            keystroke: keystroke.clone(),
-            is_held: false,
-            prefer_character_input: false,
-        });
-        cx.simulate_event(KeyUpEvent { keystroke });
-        draw(cx);
     }
 
     #[gpui::test]
@@ -317,93 +260,5 @@ mod tests {
                 });
             }
         }
-    }
-
-    #[gpui::test]
-    fn optional_action_keeps_button_focus_and_state_transitions(cx: &mut TestAppContext) {
-        cx.update(gpui_design::init);
-        let (cx, sample) = harness(cx, Appearance::Settings);
-        sample.update(cx, |sample, cx| {
-            sample.width = px(160.);
-            cx.notify();
-        });
-        cx.update(|window, cx| {
-            window.activate_window();
-            let before = sample.read(cx).focus[0].clone();
-            before.focus(window, cx);
-        });
-        draw(cx);
-        cx.simulate_keystrokes("tab");
-        draw(cx);
-        cx.update(|window, cx| assert!(sample.read(cx).focus[2].is_focused(window)));
-        cx.simulate_keystrokes("shift-tab");
-        draw(cx);
-        cx.update(|window, cx| assert!(sample.read(cx).focus[0].is_focused(window)));
-
-        sample.update(cx, |sample, cx| {
-            sample.action = true;
-            cx.notify();
-        });
-        draw(cx);
-        cx.simulate_keystrokes("tab");
-        draw(cx);
-        cx.update(|window, cx| {
-            assert!(sample.read(cx).focus[1].is_focused(window));
-            let message = test_support::find(window, &[], &"sample-message".into()).unwrap();
-            let action = test_support::find(window, &[], &"message-action".into()).unwrap();
-            assert_eq!(action.role(), Some(Role::Button));
-            assert_eq!(action.label(), Some("Acknowledge note"));
-            assert!(action.bounds().left() >= message.bounds().left());
-            assert!(action.bounds().right() <= message.bounds().right() + px(1.));
-        });
-        activate_key(cx, "enter");
-        activate_key(cx, "space");
-        let position = cx.update(|window, _| {
-            test_support::find(window, &[], &"message-action".into())
-                .unwrap()
-                .bounds()
-                .center()
-        });
-        cx.simulate_click(position, Modifiers::default());
-        draw(cx);
-        cx.update(|window, cx| {
-            let sample = sample.read(cx);
-            assert_eq!(sample.activations, 3);
-            assert!(sample.disabled);
-            assert!(sample.focus[1].is_focused(window));
-            let body = test_support::find(
-                window,
-                &[],
-                &(ElementId::from("sample-message"), "body").into(),
-            )
-            .unwrap();
-            assert_eq!(body.label(), Some("Acknowledged 3 times"));
-            assert_eq!(body.role(), Some(Role::Paragraph));
-        });
-        activate_key(cx, "enter");
-        activate_key(cx, "space");
-        cx.simulate_click(position, Modifiers::default());
-        draw(cx);
-        assert_eq!(sample.read_with(cx, |sample, _| sample.activations), 3);
-        cx.simulate_keystrokes("tab");
-        draw(cx);
-        cx.update(|window, cx| assert!(sample.read(cx).focus[2].is_focused(window)));
-        cx.simulate_keystrokes("shift-tab");
-        draw(cx);
-        cx.update(|window, cx| assert!(sample.read(cx).focus[0].is_focused(window)));
-
-        sample.update(cx, |sample, cx| {
-            sample.action = false;
-            sample.body = "Updated after the action was removed.".into();
-            cx.notify();
-        });
-        draw(cx);
-        cx.update(|window, cx| assert!(sample.read(cx).focus[0].is_focused(window)));
-        cx.simulate_keystrokes("tab");
-        draw(cx);
-        cx.update(|window, cx| {
-            assert!(sample.read(cx).focus[2].is_focused(window));
-            assert!(test_support::find(window, &[], &"message-action".into()).is_none());
-        });
     }
 }

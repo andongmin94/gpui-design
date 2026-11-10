@@ -26,6 +26,7 @@ pub struct Button {
     style: StyleRefinement,
     semantic_styles: ButtonStyles,
     selected: bool,
+    current: bool,
     disabled: bool,
     children: SmallVec<[AnyElement; 2]>,
     on_click: Option<ClickHandler>,
@@ -46,6 +47,7 @@ impl Button {
             style: StyleRefinement::default(),
             semantic_styles: ButtonStyles::default(),
             selected: false,
+            current: false,
             disabled: false,
             children: SmallVec::new(),
             on_click: None,
@@ -76,6 +78,16 @@ impl Button {
     /// does not automatically set `aria_toggled`.
     pub fn selected(mut self, selected: bool) -> Self {
         self.selected = selected;
+        self
+    }
+
+    /// Marks a navigation button as the current page for assistive technology.
+    ///
+    /// The default is false, which omits current-page metadata. This does not
+    /// change selection styling, focus, or activation; applications control
+    /// those separately with [`Self::selected`] and their navigation handlers.
+    pub fn current(mut self, current: bool) -> Self {
+        self.current = current;
         self
     }
 
@@ -218,7 +230,8 @@ impl RenderOnce for Button {
         let style = self.resolved_style();
         let on_click = self.on_click;
 
-        self.base
+        let base = self
+            .base
             // Centering is part of Button's control geometry. Without a flex
             // formatting context an ordinary child starts at the root's
             // leading edge, so a fixed-height unstyled Button cannot align its
@@ -283,7 +296,8 @@ impl RenderOnce for Button {
                 })
             })
             .refine_style(&style)
-            .a11y_disabled(disabled)
+            .a11y_disabled(disabled);
+        crate::a11y_current::current_page(base, self.current)
     }
 }
 
@@ -616,7 +630,7 @@ mod tests {
 
     #[gpui::test]
     fn accessibility_role_label_and_disabled_action_surface(cx: &mut TestAppContext) {
-        type Captured = Arc<Mutex<Option<(accesskit::Node, accesskit::Node)>>>;
+        type Captured = Arc<Mutex<Vec<(bool, bool, accesskit::Node)>>>;
 
         struct A11yProbe {
             captured: Captured,
@@ -627,46 +641,49 @@ mod tests {
                 let captured = self.captured.clone();
                 canvas(
                     move |_, window, cx| {
-                        let mut info = |button: Button| {
-                            let mut node = accesskit::Node::new(Role::Button);
-                            button
+                        let mut nodes = captured.lock().unwrap();
+                        nodes.clear();
+                        for (index, (disabled, current)) in
+                            [(false, false), (false, true), (true, false), (true, true)]
+                                .into_iter()
+                                .enumerate()
+                        {
+                            let element = Button::new(("button", index))
+                                .accessibility_label("Settings")
+                                .selected(true)
+                                .current(current)
+                                .disabled(disabled)
+                                .on_click(|_, _, _| {})
                                 .render(window, cx)
-                                .into_element()
-                                .write_a11y_info(&mut node);
-                            node
-                        };
-                        let enabled = info(
-                            Button::new("enabled")
-                                .accessibility_label("Save")
-                                .on_click(|_, _, _| {}),
-                        );
-                        let disabled = info(
-                            Button::new("disabled")
-                                .disabled(true)
-                                .accessibility_label("Save")
-                                .on_click(|_, _, _| {}),
-                        );
-                        *captured.lock().unwrap() = Some((enabled, disabled));
+                                .into_element();
+                            let mut node = accesskit::Node::new(element.a11y_role().unwrap());
+                            element.write_a11y_info(&mut node);
+                            nodes.push((disabled, current, node));
+                        }
                     },
                     |_, _, _, _| {},
                 )
             }
         }
 
-        let captured: Captured = Arc::new(Mutex::new(None));
+        let captured: Captured = Arc::default();
         let result = captured.clone();
         let (_, cx) = cx.add_window_view(move |_, _| A11yProbe { captured });
         cx.update(|window, cx| {
             window.draw(cx).clear(cx);
         });
-        let (enabled, disabled) = result.lock().unwrap().take().unwrap();
-        assert_eq!(enabled.role(), Role::Button);
-        assert_eq!(enabled.label(), Some("Save"));
-        assert!(enabled.supports_action(accesskit::Action::Click));
-
-        assert_eq!(disabled.role(), Role::Button);
-        assert!(!disabled.supports_action(accesskit::Action::Click));
-        assert!(!enabled.is_disabled());
-        assert!(disabled.is_disabled());
+        let nodes = result.lock().unwrap();
+        assert_eq!(nodes.len(), 4);
+        for (disabled, current, node) in nodes.iter() {
+            assert_eq!(node.role(), Role::Button);
+            assert_eq!(node.label(), Some("Settings"));
+            assert_eq!(node.supports_action(accesskit::Action::Click), !disabled);
+            assert_eq!(node.is_disabled(), *disabled);
+            assert_eq!(
+                node.aria_current(),
+                current.then_some(accesskit::AriaCurrent::Page)
+            );
+            assert_eq!(node.is_selected(), None);
+        }
     }
 }

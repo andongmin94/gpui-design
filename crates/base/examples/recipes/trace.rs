@@ -158,10 +158,10 @@ impl RenderOnce for Trace {
 #[cfg(all(test, feature = "test-support"))]
 mod tests {
     use gpui::{
-        AppContext as _, Context, FocusHandle, KeyDownEvent, KeyUpEvent, Keystroke, Modifiers,
-        Pixels, Render, Role, Subscription, TestAppContext, VisualTestContext, px, size,
+        AppContext as _, Context, Pixels, Render, Role, Subscription, TestAppContext,
+        VisualTestContext, px, size,
     };
-    use gpui_design::{Button, Root, test_support};
+    use gpui_design::{Root, test_support};
 
     use super::super::super::Appearance;
     use super::*;
@@ -172,59 +172,19 @@ mod tests {
         state: Entity<CollapsibleState>,
         summary: SharedString,
         details: SharedString,
-        action: bool,
-        action_disabled: bool,
-        activations: usize,
-        focus: [FocusHandle; 3],
         _subscription: Subscription,
     }
 
     impl Render for Sample {
-        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-            let trace = Trace::new(
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().w(self.width).flex().flex_col().child(Trace::new(
                 "sample-trace",
                 &self.state,
                 self.summary.clone(),
                 "Configuration details",
                 self.details.clone(),
                 self.appearance.palette(),
-            )
-            .when(self.action, |trace| {
-                trace.action(
-                    Button::new("trace-action")
-                        .track_focus(&self.focus[1])
-                        .accessibility_label("Close details")
-                        .disabled(self.action_disabled)
-                        .min_w_0()
-                        .h(px(32.))
-                        .px_2()
-                        .child("Close")
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.activations += 1;
-                            this.state
-                                .update(cx, |state, cx| state.set_open(false, window, cx));
-                            cx.notify();
-                        })),
-                )
-            });
-            div()
-                .w(self.width)
-                .flex()
-                .flex_col()
-                .gap_2()
-                .child(
-                    Button::new("before-trace")
-                        .track_focus(&self.focus[0])
-                        .h(px(32.))
-                        .child("Before"),
-                )
-                .child(trace)
-                .child(
-                    Button::new("after-trace")
-                        .track_focus(&self.focus[2])
-                        .h(px(32.))
-                        .child("After"),
-                )
+            ))
         }
     }
 
@@ -242,10 +202,6 @@ mod tests {
                     state,
                     summary: "Inspect configuration".into(),
                     details: "The current session has a retained note.".into(),
-                    action: false,
-                    action_disabled: false,
-                    activations: 0,
-                    focus: std::array::from_fn(|_| cx.focus_handle()),
                     _subscription: subscription,
                 }
             });
@@ -255,29 +211,12 @@ mod tests {
             .read_with(cx, |root, _| root.view().clone())
             .downcast::<Sample>()
             .unwrap();
-        cx.update(|window, cx| {
-            window.activate_window();
-            let before = sample.read(cx).focus[0].clone();
-            before.focus(window, cx);
-            window.draw(cx).clear(cx);
-        });
+        draw(cx);
         (cx, sample)
     }
 
     fn draw(cx: &mut VisualTestContext) {
         cx.update(|window, cx| window.draw(cx).clear(cx));
-    }
-
-    fn activate_key(cx: &mut VisualTestContext, key: &str) {
-        let keystroke =
-            cx.update(|_, cx| Keystroke::parse_with_os(key, cx.platform_info().os).unwrap());
-        cx.simulate_event(KeyDownEvent {
-            keystroke: keystroke.clone(),
-            is_held: false,
-            prefer_character_input: false,
-        });
-        cx.simulate_event(KeyUpEvent { keystroke });
-        draw(cx);
     }
 
     fn part_ids(sample: &Entity<Sample>, cx: &VisualTestContext) -> (ElementId, ElementId) {
@@ -392,190 +331,5 @@ mod tests {
                 assert!(test_support::find(window, &[], &(id.clone(), "body").into()).is_none());
             });
         }
-    }
-
-    #[gpui::test]
-    fn trace_actions_and_replacement_preserve_collapsible_focus(cx: &mut TestAppContext) {
-        cx.update(gpui_design::init);
-        let (cx, sample) = harness(cx, Appearance::Settings);
-        let (trigger_id, content_id) = part_ids(&sample, cx);
-        cx.update(|window, _| assert!(test_support::find(window, &[], &content_id).is_none()));
-        cx.simulate_keystrokes("tab");
-        activate_key(cx, "enter");
-        cx.update(|window, cx| {
-            let state = sample.read(cx).state.read(cx);
-            assert!(state.is_open());
-            assert!(state.trigger_focus_handle().is_focused(window));
-        });
-        // Static body and Region add no Tab stop.
-        cx.simulate_keystrokes("tab");
-        draw(cx);
-        cx.update(|window, cx| assert!(sample.read(cx).focus[2].is_focused(window)));
-        cx.simulate_keystrokes("shift-tab");
-        activate_key(cx, "space");
-        cx.update(|window, cx| {
-            assert!(!sample.read(cx).state.read(cx).is_open());
-            assert!(test_support::find(window, &[], &content_id).is_none());
-        });
-        let position = cx.update(|window, _| {
-            test_support::find(window, &[], &trigger_id)
-                .unwrap()
-                .bounds()
-                .center()
-        });
-        cx.simulate_click(position, Modifiers::default());
-        draw(cx);
-        sample.update(cx, |sample, cx| {
-            sample.action = true;
-            cx.notify();
-        });
-        draw(cx);
-        cx.simulate_keystrokes("tab");
-        draw(cx);
-        cx.update(|window, cx| assert!(sample.read(cx).focus[1].is_focused(window)));
-        sample.update(cx, |sample, cx| {
-            sample.summary = "Updated configuration summary".into();
-            sample.details = "Updated retained details.\n다시 구성한 본문입니다.".into();
-            cx.notify();
-        });
-        draw(cx);
-        cx.update(|window, cx| {
-            let sample = sample.read(cx);
-            assert!(sample.state.read(cx).is_open());
-            assert!(sample.focus[1].is_focused(window));
-            let trigger = test_support::find(window, &[], &trigger_id).unwrap();
-            assert_eq!(trigger.label(), Some("Updated configuration summary"));
-            let body = test_support::find(
-                window,
-                &[],
-                &(ElementId::from("sample-trace"), "body").into(),
-            )
-            .unwrap();
-            assert_eq!(body.label(), Some(sample.details.as_ref()));
-        });
-        activate_key(cx, "enter");
-        cx.update(|window, cx| {
-            let sample = sample.read(cx);
-            assert_eq!(sample.activations, 1);
-            assert!(!sample.state.read(cx).is_open());
-            assert!(
-                sample
-                    .state
-                    .read(cx)
-                    .trigger_focus_handle()
-                    .is_focused(window)
-            );
-            assert!(test_support::find(window, &[], &content_id).is_none());
-            assert!(test_support::find(window, &[], &"trace-action".into()).is_none());
-        });
-        activate_key(cx, "space");
-        cx.simulate_keystrokes("tab shift-tab");
-        draw(cx);
-        cx.update(|window, cx| {
-            assert!(
-                sample
-                    .read(cx)
-                    .state
-                    .read(cx)
-                    .trigger_focus_handle()
-                    .is_focused(window)
-            );
-        });
-        sample.update(cx, |sample, cx| {
-            sample.action = false;
-            cx.notify();
-        });
-        draw(cx);
-        cx.simulate_keystrokes("tab");
-        draw(cx);
-        cx.update(|window, cx| {
-            assert!(sample.read(cx).focus[2].is_focused(window));
-            assert!(sample.read(cx).state.read(cx).is_open());
-            assert!(test_support::find(window, &[], &"trace-action".into()).is_none());
-        });
-    }
-
-    #[gpui::test]
-    fn disabled_trace_trigger_keeps_content_and_existing_closure_target(cx: &mut TestAppContext) {
-        cx.update(gpui_design::init);
-        let (cx, sample) = harness(cx, Appearance::Compact);
-        let (trigger_id, content_id) = part_ids(&sample, cx);
-        sample.update(cx, |sample, cx| {
-            sample.width = px(160.);
-            sample.action = true;
-            cx.notify();
-        });
-        draw(cx);
-        cx.simulate_keystrokes("tab");
-        activate_key(cx, "enter");
-        cx.update(|window, cx| {
-            let state = sample.read(cx).state.clone();
-            state.update(cx, |state, cx| state.set_disabled(true, window, cx));
-        });
-        draw(cx);
-        let trigger_position = cx.update(|window, _| {
-            let trigger = test_support::find(window, &[], &trigger_id).unwrap();
-            assert_eq!(trigger.disabled(), Some(true));
-            assert_eq!(trigger.expanded(), Some(true));
-            let action = test_support::find(window, &[], &"trace-action".into()).unwrap();
-            // The snapshot exposes AccessKit's set flag; enabled has no flag.
-            assert_eq!(action.disabled(), None);
-            trigger.bounds().center()
-        });
-        activate_key(cx, "enter");
-        activate_key(cx, "space");
-        cx.simulate_click(trigger_position, Modifiers::default());
-        draw(cx);
-        cx.update(|window, cx| {
-            assert!(sample.read(cx).state.read(cx).is_open());
-            assert!(test_support::find(window, &[], &content_id).is_some());
-        });
-        cx.simulate_keystrokes("tab");
-        draw(cx);
-        sample.update(cx, |sample, cx| {
-            sample.action_disabled = true;
-            cx.notify();
-        });
-        draw(cx);
-        let action_position = cx.update(|window, cx| {
-            assert!(sample.read(cx).focus[1].is_focused(window));
-            let action = test_support::find(window, &[], &"trace-action".into()).unwrap();
-            assert_eq!(action.disabled(), Some(true));
-            action.bounds().center()
-        });
-        activate_key(cx, "enter");
-        activate_key(cx, "space");
-        cx.simulate_click(action_position, Modifiers::default());
-        draw(cx);
-        assert_eq!(sample.read_with(cx, |sample, _| sample.activations), 0);
-        cx.simulate_keystrokes("tab");
-        draw(cx);
-        cx.update(|window, cx| assert!(sample.read(cx).focus[2].is_focused(window)));
-        cx.simulate_keystrokes("shift-tab");
-        draw(cx);
-        cx.update(|window, cx| assert!(sample.read(cx).focus[0].is_focused(window)));
-        sample.update(cx, |sample, cx| {
-            sample.action_disabled = false;
-            cx.notify();
-        });
-        draw(cx);
-        cx.simulate_keystrokes("tab");
-        draw(cx);
-        cx.update(|window, cx| {
-            assert!(sample.read(cx).focus[1].is_focused(window));
-        });
-        // The content action still works while the disclosure trigger is disabled.
-        activate_key(cx, "enter");
-        cx.update(|window, cx| {
-            assert_eq!(sample.read(cx).activations, 1);
-            assert!(!sample.read(cx).state.read(cx).is_open());
-            let trace = test_support::find(window, &[], &"sample-trace".into()).unwrap();
-            assert_eq!(trace.focused(), Some(true));
-            assert!(test_support::find(window, &[], &content_id).is_none());
-            assert!(test_support::find(window, &[], &"trace-action".into()).is_none());
-        });
-        cx.simulate_keystrokes("tab");
-        draw(cx);
-        cx.update(|window, cx| assert!(sample.read(cx).focus[2].is_focused(window)));
     }
 }

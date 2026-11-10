@@ -19,6 +19,7 @@ mod marker;
 mod message;
 mod pagination;
 mod sheet;
+mod sidebar;
 mod skeleton;
 mod spinner;
 mod trace;
@@ -41,13 +42,8 @@ pub(crate) use marker::Marker;
 pub(crate) use message::Message;
 pub(crate) use pagination::Pagination;
 pub(crate) use sheet::Sheet;
+pub(crate) use sidebar::Sidebar;
 pub(crate) use skeleton::Skeleton;
 pub(crate) use spinner::Spinner;
 pub(crate) use trace::Trace;
 pub(crate) use typography::{Heading, InlineCode, Paragraph};
-
-// Run the isolated Sidebar review in the existing three-platform composition
-// target without changing the native showcase or its Tabs/TabPanel contract.
-#[cfg(all(test, feature = "test-support"))]
-#[path = "../../tests/sidebar_candidate/mod.rs"]
-mod sidebar_candidate;

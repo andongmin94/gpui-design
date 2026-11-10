@@ -1,10 +1,9 @@
 //! Native breadcrumb structure with application-owned navigation and styling.
 
 use gpui::{
-    AnyElement, App, Bounds, Div, Element, ElementId, GlobalElementId, InspectorElementId,
-    InteractiveElement, Interactivity, IntoElement, LayoutId, ParentElement, Pixels, RenderOnce,
-    Role, SharedString, Stateful, StatefulInteractiveElement as _, StyleRefinement, Styled, Window,
-    accesskit, div,
+    AnyElement, App, Div, ElementId, InteractiveElement as _, IntoElement, ParentElement,
+    RenderOnce, Role, SharedString, Stateful, StatefulInteractiveElement as _, StyleRefinement,
+    Styled, Window, div,
 };
 
 use crate::TestSupportExt as _;
@@ -131,117 +130,13 @@ impl ParentElement for BreadcrumbItem {
 
 impl RenderOnce for BreadcrumbItem {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
-        let base = self.base.role(Role::ListItem);
-        #[cfg(feature = "test-support")]
-        {
-            base.map_inner(|inner| CurrentPage {
-                inner,
-                current: self.current,
-            })
-        }
-        #[cfg(not(feature = "test-support"))]
-        {
-            CurrentPage {
-                inner: base,
-                current: self.current,
-            }
-        }
-    }
-}
-
-// GPUI has no aria_current builder. Add the native property without inserting
-// another layout or accessibility node, keeping observation outside the adapter.
-struct CurrentPage {
-    inner: Stateful<Div>,
-    current: bool,
-}
-
-impl IntoElement for CurrentPage {
-    type Element = Self;
-
-    fn into_element(self) -> Self {
-        self
-    }
-}
-
-impl InteractiveElement for CurrentPage {
-    fn interactivity(&mut self) -> &mut Interactivity {
-        self.inner.interactivity()
-    }
-}
-
-impl Element for CurrentPage {
-    type RequestLayoutState = <Stateful<Div> as Element>::RequestLayoutState;
-    type PrepaintState = <Stateful<Div> as Element>::PrepaintState;
-
-    fn id(&self) -> Option<ElementId> {
-        Element::id(&self.inner)
-    }
-
-    fn source_location(&self) -> Option<&'static std::panic::Location<'static>> {
-        self.inner.source_location()
-    }
-
-    fn request_layout(
-        &mut self,
-        id: Option<&GlobalElementId>,
-        inspector: Option<&InspectorElementId>,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> (LayoutId, Self::RequestLayoutState) {
-        self.inner.request_layout(id, inspector, window, cx)
-    }
-
-    fn prepaint(
-        &mut self,
-        id: Option<&GlobalElementId>,
-        inspector: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
-        layout: &mut Self::RequestLayoutState,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> Self::PrepaintState {
-        self.inner
-            .prepaint(id, inspector, bounds, layout, window, cx)
-    }
-
-    fn paint(
-        &mut self,
-        id: Option<&GlobalElementId>,
-        inspector: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
-        layout: &mut Self::RequestLayoutState,
-        prepaint: &mut Self::PrepaintState,
-        window: &mut Window,
-        cx: &mut App,
-    ) {
-        self.inner
-            .paint(id, inspector, bounds, layout, prepaint, window, cx)
-    }
-
-    fn a11y_role(&self) -> Option<Role> {
-        self.inner.a11y_role()
-    }
-
-    fn write_a11y_info(&self, node: &mut accesskit::Node) {
-        self.inner.write_a11y_info(node);
-        if self.current {
-            node.set_aria_current(accesskit::AriaCurrent::Page);
-        }
-    }
-
-    fn a11y_synthetic_children(
-        &mut self,
-        prepaint: &mut Self::PrepaintState,
-        builder: &mut gpui::A11ySubtreeBuilder,
-    ) {
-        Element::a11y_synthetic_children(&mut self.inner, prepaint, builder);
+        crate::a11y_current::current_page(self.base.role(Role::ListItem), self.current)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use gpui::TestAppContext;
+    use gpui::{Element as _, TestAppContext, accesskit};
 
     use super::*;
 

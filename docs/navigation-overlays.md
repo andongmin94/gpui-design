@@ -9,9 +9,11 @@ its ordinary settings action. A Collapsible holds the preview controls.
 Search commands opens a Command query and result list inside Dialog; both menus
 dispatch the same application actions. Separator provides semantic division
 between content regions, and the settings form includes retained multiline notes.
-Preferences, Help, Schedule, and Presets tabs demonstrate active panels; Help
-contains an Accordion, and its keyboard section opens a guide in a non-modal
-Popover. Breadcrumb shows that guide's location, while the application-owned
+Compact uses Preferences, Help, Schedule, and Presets tabs with active panels.
+Settings uses the [Sidebar recipe](presentation-recipes.md#sidebar) and a named
+Region for the current section. Help contains an Accordion, and its keyboard
+section opens a guide in a non-modal Popover. Breadcrumb shows that guide's
+location, while the application-owned
 [Kbd recipe](presentation-recipes.md#kbd) displays the existing keyboard controls.
 All styles live in the example.
 
@@ -60,9 +62,11 @@ The ancestor Buttons already provide their accessible names. Separators, path
 contents, colors, typography, and layout remain application-owned.
 
 The example renders `Session settings > Help > Keyboard guide` inside the
-existing Help Popover. Session settings first closes the Popover, then focuses
-the existing Preferences tab at index zero; Tabs' automatic activation selects
-that panel. Help closes the Popover and returns focus to its trigger while
+existing Help Popover. Session settings first closes the Popover, calls
+`TabsState::select_value("preferences", window, cx)`, then focuses the existing
+navigation handle at index zero. Explicit selection works for both Compact's
+TabList and Settings' Sidebar, whose focus alone does not select a section.
+Help closes the Popover and returns focus to its trigger while
 keeping Help selected. Keyboard guide is the current, noninteractive final item.
 These callbacks use the existing Popover and Tabs state instead of a second
 navigation model.
@@ -95,9 +99,17 @@ and activation. The application supplies its visual content. The state exposes
 subscribe to `TabsEvent::Change(value)` for changed selection. Selecting the
 current tab does not emit a duplicate event.
 
-Activation is automatic: moving focus to an enabled tab also selects it. This
-includes pointer, keyboard, and programmatic focus. Each list has one Tab stop,
-at its selected tab.
+`select_value(value, window, cx)` selects an enabled item without moving keyboard
+focus. It returns `true` and emits one `TabsEvent::Change` only when selection
+changes; unknown, disabled, and already-selected values return `false` without
+an event. Observe the state for the associated redraw. If selecting another
+item removes the currently focused content, the caller must move focus to a
+retained navigation entry or another valid target. This method does not choose
+that target or turn an ordinary navigation Button into a Tab.
+
+TabList activation is automatic: moving focus to an enabled tab also selects it.
+This includes pointer, keyboard, and programmatic focus. Each list has one Tab
+stop, at its selected tab.
 
 | Input | Horizontal list | Vertical list |
 | --- | --- | --- |
@@ -122,6 +134,19 @@ label comes from its tab. The pinned GPUI API exposes roles, labels, and selecte
 state but not a public sibling-node relationship API, so explicit native
 tab-to-panel controls/labelled-by relationships are not emitted. Native screen
 reader behavior still needs desktop validation.
+
+The Sidebar recipe reuses the fixed items, selected value, and stable focus
+handles from a dedicated `TabsState`, with explicit Button activation instead
+of TabList's automatic selection. Create a fresh state for that use: TabList
+installs retained focus subscriptions, so a state previously bound to TabList
+must not be shared with or retargeted to Sidebar. Resizing the Settings example
+only rearranges its Sidebar and content; it never swaps them for TabList.
+
+`Button::current(true)` marks the selected navigation Button with native
+`AriaCurrent::Page`. Its default false value omits that property. The method
+leaves styling and focus unchanged; `Button::selected(...)` and the application's
+destination handler control those concerns separately. Sidebar keeps native
+Navigation/Button/Region semantics rather than the TabList/Tab/TabPanel roles.
 
 ## Accordion
 
@@ -561,6 +586,7 @@ current-page metadata, and the composed ancestor actions in the existing Help
 flow. That flow also checks that static key hints leave focus with the existing
 controls. These contracts do not establish native screen-reader announcements
 or the visual appearance of the path and keycaps.
-The full suite runs once on Linux; composition checks and native
-example builds also run on Windows and macOS. They do not replace
+The full suite runs once on Linux, including isolated recipe checks. Windows and
+macOS run the real consumer composition flows with recipe-only tests filtered
+out, and all three platforms build the native example. They do not replace
 native IME, screen reader, DPI, and visual checks on a desktop.

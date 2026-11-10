@@ -8,16 +8,17 @@ Headless separates control behavior from application-owned presentation; the
 examples render native GPUI windows.
 
 This is an early foundation for an independent component ecosystem. It currently
-includes 31 public library families and twenty-one copyable presentation recipes. An
-executable example gives the same behavior two visual treatments. The source is
-maintained in this repository, with GPUI kept as an exactly pinned rendering
+includes 31 public library families and twenty-two copyable presentation recipes. An
+executable example composes shared controls into compact tabbed and spacious
+sidebar presentations. The source is maintained in this repository, with GPUI
+kept as an exactly pinned rendering
 dependency.
 
 ## Current scope
 
 | Control | Behavior supplied by the library | Application-owned presentation |
 | --- | --- | --- |
-| **Button** | Pointer and keyboard activation, disabled state, focus, accessible name and role | Content, spacing, shape, and state styling |
+| **Button** | Pointer and keyboard activation, disabled state, focus, accessible name and role, and optional current-page metadata | Content, spacing, shape, and state styling |
 | **Toggle** | Controlled pressed state over Button's activation, focus, and disabled behavior | Content and pressed-state styling |
 | **ToggleGroup** | Multiple pressed values, one Tab stop, orientation-aware navigation, and disabled items | Group layout and Toggle option styling |
 | **Checkbox** | Controlled unchecked/checked/mixed state, activation, disabled state, and focus | Indicator, label, layout, and state styling |
@@ -78,6 +79,7 @@ These types live in the example, outside the `gpui_design` crate exports.
 | **Avatar** | Named circular image with explicit fallback text, using GPUI's image loader and cache | Preset artwork or initials in the existing HoverCard preview |
 | **AspectRatio** | Clipped media frame with a finite positive width/height ratio and application-owned content | A recording-frame illustration driven by the retained preset and session name |
 | **Sheet** | Right-edge modal presentation over Dialog, with a viewport-limited width, fixed header/footer, and one scrolling body | Session settings in both appearances, using the existing form and retained state |
+| **Sidebar** | Named navigation with ordinary Buttons, native current-page metadata, and explicit selection through retained TabsState | The Settings appearance's sections, beside their current named Region or stacked above it in a narrow window |
 | **Typography** | Named headings with explicit levels, paragraphs with native inline-code text runs, and independently named code elements | Help headings, state-ownership explanations, and the example's source identifier |
 | **CodeBlock** | Read-only multiline code, an exact full-text Copy action, and bounded two-axis scrolling with keyboard access | A JSON snapshot of the retained session settings in Help |
 | **Marker** | One named date/status label between decorative separators, with wrapping text and no focus stop | The currently selected Calendar date above Schedule's notes and recording plan |
@@ -89,7 +91,7 @@ The breadth target is the range of screens and interactions supported by
 shadcn/ui. The [component coverage map](docs/component-coverage.md) compares all
 66 entries in its current main catalogue with the actual public scope here.
 It distinguishes behavior, source-owned presentation recipes, and larger
-compositions. The 31 library families and twenty-one recipes cover 52 catalogue entries
+compositions. The 31 library families and twenty-two recipes cover 53 catalogue entries
 within defined scopes. The map records each entry's limits and the work still
 needed; this count does not establish full shadcn/ui feature parity.
 
@@ -105,8 +107,9 @@ navigation; typing alone does not change that selection. Its current scope is
 fixed single selection, without free-form values, async sources, or groups.
 
 The [two-style example](crates/base/examples/two_styles.rs) applies a compact dark
-presentation and a light settings presentation to the same controls. Its styles
-live in application code, outside the behavior layer. A Session actions menu and
+presentation and a light settings presentation to shared form controls, with
+different section navigation. Its styles live in application code, outside the
+behavior layer. A Session actions menu and
 the summary's ContextMenu open the settings Sheet or toggle application values.
 The two hosts use separate MenuState entities with shared command definitions and
 the same application callback. Right-click the summary or focus it and press
@@ -120,14 +123,22 @@ The artwork is embedded from `examples/assets`; this illustrative recording
 frame uses no network request and generates no recording.
 Both appearances use a right-edge Sheet for Session settings. It retains the
 existing DialogState, initial input focus, form values, and scroll handle. Its
-width follows the application palette and fits within the viewport; the title
-and Done footer stay outside the scrolling body. Preferences, Help, Schedule,
-and Presets tabs retain their values when the Sheet closes and reopens. Help uses
-an Accordion whose keyboard section opens a guide in a non-modal Popover.
+preferred width is 22 rem in Compact and 46 rem in Settings, capped at the
+viewport width; the title and Done footer stay outside the scrolling body.
+Compact uses TabList/Tab/TabPanel with automatic arrow-key selection. Settings
+uses Sidebar's ordinary Buttons and renders only the selected named Region:
+Tab moves among enabled entries, while Enter, Space, or a click selects one.
+Below a 640 px viewport width, that Sidebar stacks above its content without
+changing its keyboard contract. Each appearance owns its separate retained
+TabsState; a Sidebar must not share or reuse a state previously bound by TabList.
+Preferences, Help, Schedule, and Presets keep their form values when the Sheet
+closes and reopens. Help uses an Accordion whose keyboard section opens a guide
+in a non-modal Popover.
 Breadcrumb presents `Session settings > Help > Keyboard guide` in that guide.
-Its ancestor Buttons either close the guide and select Preferences through the
-existing tab focus, or return to the Help trigger; the current item is static
-text. Kbd displays the controls' existing keys, including Shift+F10 beside the
+Its ancestor Buttons either close the guide, select Preferences through
+`TabsState::select_value`, and focus its navigation entry, or return to the Help
+trigger; the current item is static text. Kbd displays the controls' existing
+keys, including Shift+F10 beside the
 summary's context-menu hint, without registering shortcuts.
 The State ownership panel uses Typography for its explanations and CodeBlock for
 a JSON snapshot of the current session settings. Copy writes that complete
@@ -287,7 +298,7 @@ The GPUI snapshot family is pinned to **`=0.3.11`**. Update those pins and
 | `crates/base/src/` | The `gpui-design` library and its behavior-level tests |
 | `crates/base/tests/` | Integration tests using the public API |
 | `crates/base/examples/two_styles.rs` | Native example and application-owned styles |
-| `crates/base/examples/recipes/` | Twenty-one copyable presentation/composition recipes, including traces, attachments, messages, markers, code blocks, typography, sheets, media frames, avatars, data tables, loading indicators, and keycaps |
+| `crates/base/examples/recipes/` | Twenty-two copyable presentation/composition recipes, including sidebar navigation, traces, attachments, messages, markers, code blocks, typography, sheets, media frames, avatars, data tables, loading indicators, and keycaps |
 | `crates/base/examples/assets/` | Embedded example artwork used by the preset preview and its image-decoding regression |
 | `docs/form-controls.md` | Form control usage and interaction contracts |
 | `docs/navigation-overlays.md` | Breadcrumb, Tabs, Accordion, command menus, and composed focus behavior |
@@ -320,12 +331,16 @@ once; each platform still compiles its native dependencies and example.
 | --- | --- | --- | --- |
 | Formatting and Clippy | Yes | — | — |
 | Full behavior and integration suite | Yes | — | — |
-| Public-API composition tests | Included above | Yes | Yes |
+| Real consumer composition flows | Included above | Yes | Yes |
+| Isolated recipe tests | Included above | — | — |
 | Native example build | Yes | Yes | Yes |
 
 Composition tests use representative flows across the two appearances instead of
 duplicating every scenario for each palette. Add tests for distinct behavior and
-observed regressions. Workflow run results are the source of automated status.
+observed regressions. Windows and macOS run the composition target with
+`--skip two_styles::recipes::`, leaving isolated recipe tests to Linux while
+retaining the real consumer flows and native builds. Workflow run results are
+the source of automated status.
 
 Headless tests exercise control behavior and exposed accessibility metadata.
 Native Korean/CJK IME composition and candidate windows, screen-reader interaction,

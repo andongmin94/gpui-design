@@ -1,4 +1,4 @@
-//! The same headless controls with two application-owned presentations.
+//! Shared session controls with compact tabs and a settings sidebar.
 //! Run with `compact` (the default) or `settings`.
 
 use std::sync::Arc;
@@ -32,7 +32,7 @@ mod recipes;
 use recipes::{
     Alert, AspectRatio, Attachment, Avatar, Badge, ButtonGroup, Card, CodeBlock, DataTable,
     DataTableColumn, DataTableRow, DataTableState, EmptyState, Heading, InlineCode, InputGroup,
-    Item, Kbd, KbdGroup, Marker, Message, Paragraph, Sheet, Skeleton, Spinner, Trace,
+    Item, Kbd, KbdGroup, Marker, Message, Paragraph, Sheet, Sidebar, Skeleton, Spinner, Trace,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -958,6 +958,9 @@ impl Demo {
                                 .accessibility_label("Session settings")
                                 .on_click(move |_, window, cx| {
                                     settings_help.update(cx, |state, cx| state.close(window, cx));
+                                    settings_tabs.update(cx, |state, cx| {
+                                        state.select_value("preferences", window, cx);
+                                    });
                                     let focus = settings_tabs.read(cx).tab_focus_handle(0).clone();
                                     focus.focus(window, cx);
                                 })
@@ -1060,7 +1063,11 @@ impl Demo {
                             )
                             .child(gpui::text!(
                                 id = "help-arrows-description",
-                                "Choose tabs and options"
+                                if matches!(self.appearance, Appearance::Settings) {
+                                    "Choose options"
+                                } else {
+                                    "Choose tabs and options"
+                                }
                             )),
                     )
                     .child(
@@ -1944,26 +1951,36 @@ impl Render for Demo {
                     }),
             );
         let tab_state = self.tabs.read(cx);
-        let tab_list = TabList::new("session-sections", &self.tabs)
-            .axis(Axis::Horizontal)
-            .accessibility_label("Session sections")
-            .flex()
-            .flex_wrap()
-            .gap_1()
-            .children(tab_state.items().iter().enumerate().map(|(index, item)| {
-                Tab::new(&self.tabs, index)
-                    .px_2()
-                    .py_1()
-                    .border_1()
-                    .border_color(palette.border)
-                    .rounded(palette.radius)
-                    .focus_visible(|style| style.border_color(palette.accent))
-                    .when(tab_state.selected_index() == Some(index), |tab| {
-                        tab.bg(palette.accent).text_color(palette.accent_foreground)
-                    })
-                    .when(item.is_disabled(), |tab| tab.opacity(0.45))
-                    .child(item.label().clone())
-            }));
+        let sidebar = matches!(self.appearance, Appearance::Settings);
+        let stacked_sections = window.viewport_size().width < px(640.);
+        let navigation = if sidebar {
+            Sidebar::new("session-sections", &self.tabs, "Session sections", palette)
+                .flex_shrink_0()
+                .when(stacked_sections, |sidebar| sidebar.w_full())
+                .into_any_element()
+        } else {
+            TabList::new("session-sections", &self.tabs)
+                .axis(Axis::Horizontal)
+                .accessibility_label("Session sections")
+                .flex()
+                .flex_wrap()
+                .gap_1()
+                .children(tab_state.items().iter().enumerate().map(|(index, item)| {
+                    Tab::new(&self.tabs, index)
+                        .px_2()
+                        .py_1()
+                        .border_1()
+                        .border_color(palette.border)
+                        .rounded(palette.radius)
+                        .focus_visible(|style| style.border_color(palette.accent))
+                        .when(tab_state.selected_index() == Some(index), |tab| {
+                            tab.bg(palette.accent).text_color(palette.accent_foreground)
+                        })
+                        .when(item.is_disabled(), |tab| tab.opacity(0.45))
+                        .child(item.label().clone())
+                }))
+                .into_any_element()
+        };
         let help_sections = self.render_help_sections(palette, popup_max_width, cx);
         let table_preset = self.preset.clone();
         let preset_table = DataTable::new("preset-catalogue", &self.preset_table, palette)
@@ -1975,14 +1992,10 @@ impl Render for Demo {
                     state.set_selected_value(Some(value.as_ref()), window, cx);
                 });
             });
-        let panels = div()
-            .flex()
-            .flex_col()
-            .flex_shrink_0()
-            .gap(palette.gap)
-            .child(tab_list)
-            .child(
-                TabPanel::new(&self.tabs, 0)
+        let sections = [
+            (
+                0,
+                div()
                     .flex()
                     .flex_col()
                     .gap(palette.gap)
@@ -2003,29 +2016,56 @@ impl Render for Demo {
                             .bg(palette.border),
                     )
                     .child(notes_field)
-                    .child(preset_field),
-            )
-            .child(
-                TabPanel::new(&self.tabs, 2)
-                    .flex()
-                    .flex_col()
-                    .gap(palette.gap)
-                    .child(help_sections),
-            )
-            .child(
-                TabPanel::new(&self.tabs, 3)
-                    .flex()
-                    .flex_col()
-                    .gap(palette.gap)
-                    .child(self.schedule(palette, window, cx)),
-            )
-            .child(
-                TabPanel::new(&self.tabs, 4)
-                    .flex()
-                    .flex_col()
-                    .gap(palette.gap)
-                    .child(preset_table),
-            );
+                    .child(preset_field)
+                    .into_any_element(),
+            ),
+            (2, help_sections),
+            (3, self.schedule(palette, window, cx).into_any_element()),
+            (4, preset_table.into_any_element()),
+        ];
+        let content = div()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .gap(palette.gap)
+            .when(sidebar && !stacked_sections, |content| content.flex_1())
+            .when(!sidebar || stacked_sections, |content| content.w_full())
+            .children(sections.into_iter().filter_map(|(index, content)| {
+                if sidebar {
+                    (tab_state.selected_index() == Some(index)).then(|| {
+                        div()
+                            .id((gpui::ElementId::from("session-region"), index.to_string()))
+                            .test_support()
+                            .role(Role::Region)
+                            .aria_label(tab_state.items()[index].label().clone())
+                            .track_focus(
+                                &tab_state.panel_focus_handle(index).clone().tab_stop(false),
+                            )
+                            .w_full()
+                            .min_w_0()
+                            .child(content)
+                            .into_any_element()
+                    })
+                } else {
+                    Some(
+                        TabPanel::new(&self.tabs, index)
+                            .flex()
+                            .flex_col()
+                            .gap(palette.gap)
+                            .child(content)
+                            .into_any_element(),
+                    )
+                }
+            }));
+        let panels = div()
+            .w_full()
+            .min_w_0()
+            .flex()
+            .flex_shrink_0()
+            .gap(palette.gap)
+            .when(!sidebar || stacked_sections, |panels| panels.flex_col())
+            .child(navigation)
+            .child(content);
         let settings =
             Sheet::new(
                 "session-settings",
@@ -2034,6 +2074,7 @@ impl Render for Demo {
                 "Session settings",
                 palette,
             )
+            .when(sidebar, |sheet| sheet.w(rems(46.)))
             .description("Choose the session's drawing and toolbar settings.")
             .child(name_field)
             .child(

@@ -6,9 +6,9 @@ Its main catalogue contains **66 entries**, each listed once below. The separate
 AI Elements catalogue is outside this comparison; conversation components already
 in the main catalogue remain included.
 
-GPUI Design currently documents **31 public library families and twenty-one copyable
-presentation/composition recipes**, covering **52 catalogue entries** within the scopes below.
-This is not 52/66 feature parity: a family can exist with a deliberately limited
+GPUI Design currently documents **31 public library families and twenty-two copyable
+presentation/composition recipes**, covering **53 catalogue entries** within the scopes below.
+This is not 53/66 feature parity: a family can exist with a deliberately limited
 contract, and several shadcn entries describe combinations of other parts.
 These counts do not measure performance, accessibility conformance, or completion
 of native desktop validation.
@@ -42,7 +42,7 @@ in the [form guide](form-controls.md),
 | Accordion | Available | Fixed items, one open section, independent header navigation, and active-only panels. |
 | Alert Dialog | Available | `AlertDialog` reuses Dialog state and focus; backdrop dismissal is blocked and confirmation belongs to the application. |
 | Breadcrumb | Available | Named native Navigation, List, and ListItem structure with `aria_current(Page)` on the current item. The application supplies its path, ancestor Buttons, navigation callbacks, separators, and styling; no routing or focus controller. |
-| Button | Available | Native pointer/keyboard activation, disabled state, focus, and accessible naming; content and styles belong to the application. |
+| Button | Available | Native pointer/keyboard activation, disabled state, focus, accessible naming, and explicit current-page metadata independent of selected styling; content and styles belong to the application. |
 | Checkbox | Available | Controlled checked/unchecked/mixed state; the application supplies its indicator and label presentation. |
 | Collapsible | Available | One retained disclosure, Button trigger, active-only content, and focus handling when content closes. |
 | Combobox | Available | Editable search over fixed options, one committed selection, keyboard/pointer commit, and draft cancellation on dismissal. Free-form values, async sources, multiple selection, and groups are not included. |
@@ -124,7 +124,7 @@ popup, focus, and scrolling machinery.
 | Message | Recipe | Read-only native Comment with application-supplied author/time Labels, a wrapping Paragraph body, and an optional existing action. Schedule presents the retained session note and its local edit time, with a Button returning focus to the shared Textarea. No message focus stop, delivery state, transport, history, streaming, or automatic live announcement. |
 | Message Scroller | Pending | Transcript anchoring and streaming/history scroll behavior are not implemented by the scrollbar support alone. |
 | Questionnaire | Pending | Individual form controls exist; multi-step question flow and response composition are missing. |
-| Sidebar | Pending | A navigation shell with disclosure and layout behavior is not yet provided. |
+| Sidebar | Recipe | Named navigation with ordinary Buttons, per-entry Tab traversal, explicit pointer/Enter/Space selection, and native current-page metadata over a dedicated retained TabsState. Settings renders only the selected named Region and stacks the Sidebar above it below 640 px; Compact keeps its separate tabbed presentation. No roving arrow selection, routing, collapse, nested groups, or reuse of a state previously bound by TabList. |
 | Trace | Recipe | Application-supplied summary, named read-only Paragraph details, and an optional existing action over retained Collapsible state. Shared Button activation, expanded/disabled metadata, active-only content, and focus on closure are preserved. Help presents current form values rather than recorded operations. No execution history, streaming, parser, separate disclosure state, or scroll controller. |
 
 ## Next priorities
@@ -132,11 +132,9 @@ popup, focus, and scrolling machinery.
 1. Extend data-table operations only where an application needs them, including
    typed ordering or row selection. Preserve shared focus and activation behavior
    instead of duplicating those public foundations.
-2. Extend the source-owned recipe set alongside working flows. Sidebar is a
-   candidate for a navigation shell around the existing settings sections,
-   composing shared Tabs, Buttons, and disclosure behavior where needed. Define
-   its layout and keyboard contract without adding a second navigation state.
-   This candidate is recorded for future work.
+2. Extend the remaining source-owned recipes alongside working flows. Keep
+   layout, navigation destinations, and data with the application, composing
+   shared state and controls with explicit keyboard contracts.
 3. Extend menu composition where real screens need it, starting with checked
    commands and submenus. Continue composing panes with Resizable/ScrollArea;
    virtualization and transcript anchoring remain separate work.
