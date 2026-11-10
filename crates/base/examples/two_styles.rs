@@ -17,7 +17,7 @@ use gpui_design::{
     Combobox, ComboboxList, ComboboxOption, ComboboxState, Command, CommandEvent, CommandInput,
     CommandList, CommandOption, CommandState, ContextMenu, DatePicker, DatePickerState, Dialog,
     DialogBackdrop, DialogClose, DialogDescription, DialogPopup, DialogState, DialogTitle,
-    DropdownMenu, Field, HoverCard, HoverCardState, Input, InputBase, MenuEvent, MenuItem,
+    DropdownMenu, Field, HoverCard, HoverCardState, Input, InputBase, Label, MenuEvent, MenuItem,
     MenuOption, MenuState, NaiveDate, Popover, PopoverState, Progress, RadioGroup, RadioGroupState,
     RadioItem, RadioOption, Resizable, ResizableState, ScrollArea, ScrollbarAxis, ScrollbarMode,
     SearchItem, Select, SelectItem, SelectOption, SelectState, Separator, Slider, SliderState,
@@ -1350,19 +1350,35 @@ impl Demo {
             })
             .child("Unknown progress");
         let preview = self.preview.read(cx);
+        let preview_label = SharedString::from("Preview percentage");
         let progress_preview = div()
             .flex()
             .flex_col()
             .gap_2()
             .px_2()
-            .child(if self.preview_indeterminate {
-                "Progress preview · Unknown".to_string()
-            } else {
-                format!("Progress preview · {:.0}%", preview.value())
-            })
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap_1()
+                    .child(
+                        Label::new(
+                            "preview-percentage-label",
+                            preview.focus_handle(),
+                            preview_label.clone(),
+                        )
+                        .disabled(preview.is_disabled()),
+                    )
+                    .child(if self.preview_indeterminate {
+                        "· Unknown".to_string()
+                    } else {
+                        format!("· {:.0}%", preview.value())
+                    }),
+            )
             .child(
                 Slider::new("preview-percentage", &self.preview)
-                    .accessibility_label("Preview percentage")
+                    .accessibility_label(preview_label)
                     .relative()
                     .h(palette.control_height)
                     .rounded(palette.radius)
@@ -1826,8 +1842,9 @@ impl Render for Demo {
             .flex_shrink_0()
             .gap_1()
             .child(preset);
+        let tool_label = SharedString::from("Drawing tool");
         let tool = Select::new("drawing-tool", &self.select)
-            .accessibility_label("Drawing tool")
+            .accessibility_label(tool_label.clone())
             .border_1()
             .border_color(palette.border)
             .rounded(palette.radius)
@@ -2083,7 +2100,10 @@ impl Render for Demo {
                     .flex_col()
                     .flex_shrink_0()
                     .gap_1()
-                    .child("Drawing tool")
+                    .child(
+                        Label::new("drawing-tool-label", select.focus_handle(), tool_label)
+                            .disabled(select.is_disabled()),
+                    )
                     .child(tool),
             )
             .child(panels)

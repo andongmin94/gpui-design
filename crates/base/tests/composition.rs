@@ -377,6 +377,31 @@ fn compact_controls_complete_the_keyboard_flow(cx: &mut TestAppContext) {
         assert_eq!(demo.read(cx).input.read(cx).value(), "미니캐스트");
     });
 
+    let label_point = cx.update(|window, _| {
+        let label = test_support::find(window, &[], &"drawing-tool-label".into()).unwrap();
+        assert_eq!(label.role(), Some(Role::Label));
+        assert_eq!(label.label(), Some("Drawing tool"));
+        assert_eq!(label.focused(), None);
+        label.bounds().center()
+    });
+    cx.simulate_click(label_point, Modifiers::default());
+    draw(cx);
+    cx.update(|window, cx| {
+        let select = demo.read(cx).select.read(cx);
+        assert!(select.focus_handle().is_focused(window));
+        assert!(
+            !select.is_open(),
+            "a label focuses without activating Select"
+        );
+        assert_eq!(select.selected_index(), Some(0));
+    });
+    assert!(changes.borrow().is_empty());
+    cx.simulate_keystrokes("shift-tab");
+    draw(cx);
+    cx.update(|window, cx| {
+        assert!(demo.read(cx).input.focus_handle(cx).is_focused(window));
+    });
+
     cx.simulate_keystrokes("tab");
     draw(cx);
     cx.update(|window, cx| {
@@ -2262,6 +2287,32 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
     });
     activate_key(cx, "space");
 
+    let label_point = cx.update(|window, _| {
+        let label = test_support::find(window, &[], &"preview-percentage-label".into()).unwrap();
+        assert_eq!(label.label(), Some("Preview percentage"));
+        assert_eq!(label.focused(), None);
+        label.bounds().center()
+    });
+    cx.simulate_click(label_point, Modifiers::default());
+    draw(cx);
+    cx.update(|window, cx| {
+        let preview = demo.read(cx).preview.read(cx);
+        assert!(preview.focus_handle().is_focused(window));
+        assert_eq!(preview.value(), 40.0, "a label does not adjust the Slider");
+    });
+    cx.simulate_keystrokes("shift-tab");
+    draw(cx);
+    cx.update(|window, cx| {
+        assert!(
+            demo.read(cx)
+                .preview_options
+                .read(cx)
+                .trigger_focus_handle()
+                .is_focused(window),
+            "the label adds no Tab stop"
+        );
+    });
+
     // The same retained Slider value drives the application's progress preview.
     cx.simulate_keystrokes("tab right");
     draw(cx);
@@ -3877,16 +3928,19 @@ fn disabled_select_and_composition_commit_do_not_leak_actions(cx: &mut TestAppCo
             Some(true)
         );
     });
-    let trigger_point = cx.update(|window, _| {
-        test_support::find(window, &[], &"drawing-tool".into())
-            .unwrap()
-            .bounds()
-            .center()
-    });
-    cx.simulate_click(trigger_point, Modifiers::default());
-    draw(cx);
-    cx.update(|_, cx| {
-        assert!(!demo.read(cx).select.read(cx).is_open());
-        assert!(demo.read(cx).dialog.read(cx).is_open());
-    });
+    for id in ["drawing-tool", "drawing-tool-label"] {
+        let point = cx.update(|window, _| {
+            let target = test_support::find(window, &[], &id.into()).unwrap();
+            assert_eq!(target.disabled(), Some(true));
+            target.bounds().center()
+        });
+        cx.simulate_click(point, Modifiers::default());
+        draw(cx);
+        cx.update(|window, cx| {
+            let demo = demo.read(cx);
+            assert!(!demo.select.read(cx).is_open());
+            assert!(demo.dialog.read(cx).is_open());
+            assert!(demo.tabs.read(cx).tab_focus_handle(0).is_focused(window));
+        });
+    }
 }

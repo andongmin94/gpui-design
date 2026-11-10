@@ -8,7 +8,7 @@ Headless separates control behavior from application-owned presentation; the
 examples render native GPUI windows.
 
 This is an early foundation for an independent component ecosystem. It currently
-includes 31 public library families and twenty-two copyable presentation recipes. An
+includes 32 public library families and twenty-two copyable presentation recipes. An
 executable example composes shared controls into compact tabbed and spacious
 sidebar presentations. The source is maintained in this repository, with GPUI
 kept as an exactly pinned rendering
@@ -27,6 +27,7 @@ dependency.
 | **Input** | Text editing state, selection, clipboard, focus, and the native text-input interface | Field container, text style, caret, and surrounding controls |
 | **Textarea** | Multiline editing over the same engine, retained text, wrapping, and normal form Tab traversal | Field container, dimensions, text style, and surrounding content |
 | **Field** | Label focus, help/error descriptions, and required/invalid metadata for existing Input/Textarea-based controls | Layout, label/help/error styles, control rendering, and validation rules |
+| **Label** | Named native text label that focuses an existing control when clicked, with an explicit disabled flag and no extra Tab stop | Text, layout, styling, target accessible name, and matching disabled state |
 | **Select** | Single selection from fixed options, keyboard navigation, disabled options, commit, and focus | Trigger, popup content, and option rendering |
 | **Combobox** | Editable search over fixed options, separate committed selection, keyboard/pointer commit, and draft cancellation on dismissal | Query frame, suggestion surface, result rows, and empty state |
 | **Calendar** | Single date selection, separate focused date, bounded month/year navigation, and a Monday-first grid | Month controls, weekday/date labels, grid layout, and day styling |
@@ -91,7 +92,7 @@ The breadth target is the range of screens and interactions supported by
 shadcn/ui. The [component coverage map](docs/component-coverage.md) compares all
 66 entries in its current main catalogue with the actual public scope here.
 It distinguishes behavior, source-owned presentation recipes, and larger
-compositions. The 31 library families and twenty-two recipes cover 53 catalogue entries
+compositions. The 32 library families and twenty-two recipes cover 54 catalogue entries
 within defined scopes. The map records each entry's limits and the work still
 needed; this count does not establish full shadcn/ui feature parity.
 
@@ -182,7 +183,10 @@ Session settings includes a retained multiline notes field and semantic separato
 its body scrolls when the available window height cannot hold all fields.
 An editable recording-preset Combobox filters choices while retaining the last
 committed preset. The session-name Field connects its visible label, help text,
-and application-supplied required/error state to the native input. A text Tooltip
+and application-supplied required/error state to the native input. Standalone
+Labels focus the Drawing tool Select and Preview percentage Slider without
+opening a popup or changing a value. The application supplies each target's
+accessible name and mirrors its disabled state on the Label. A text Tooltip
 on the existing Edit button explains what the settings screen changes.
 Schedule uses a DatePicker composed from Calendar and Popover, and a Table
 reflecting the retained session name, date, and recording preset. Marker reads the
@@ -228,7 +232,9 @@ Command reuses Input for its query and can be hosted in Dialog. Combobox reuses
 Command's filtering, result cursor, scrolling, and activation, with one committed
 value and a suggestion surface positioned by Popup. Textarea renders the existing
 multiline editing state. Field projects associated text into that native input's
-semantics. Tooltip reuses Button and GPUI's native tooltip layer while retaining
+semantics. Label uses the target's existing FocusHandle for click-to-focus;
+the pinned GPUI API does not expose a native labelled-by relationship between
+the sibling elements. Tooltip reuses Button and GPUI's native tooltip layer while retaining
 hover/focus visibility. HoverCard combines Button with Popup positioning and a
 retained hover/focus lifecycle without taking focus from the trigger.
 Calendar composes Button for day activation and uses the already locked Chrono

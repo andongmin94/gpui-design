@@ -33,6 +33,7 @@ mod geometry;
 mod global_state;
 mod hover_card;
 pub mod input;
+mod label;
 #[cfg(all(target_os = "macos", not(test)))]
 mod macos_accessibility;
 mod menu;
@@ -102,6 +103,7 @@ pub use input::{
     Input, InputAccessibility, InputBase, InputEditorStyle, InputState, InputStyles, Textarea,
     TextareaState,
 };
+pub use label::Label;
 #[cfg(all(target_os = "macos", not(test)))]
 pub(crate) use macos_accessibility::install_window_hit_test_forwarder;
 pub use menu::{MenuEvent, MenuItem, MenuOption, MenuState};

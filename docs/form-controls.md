@@ -3,7 +3,7 @@
 The [native settings example](../crates/base/examples/two_styles.rs) is a complete
 consumer of the public API. Run it in either appearance using the commands in the
 [README](../README.md#run-the-example). It combines Button, Input, Select,
-Textarea, Field, Combobox, Calendar, DatePicker, Checkbox, Switch, RadioGroup, Slider, Progress, Toggle, and ToggleGroup
+Textarea, Field, Label, Combobox, Calendar, DatePicker, Checkbox, Switch, RadioGroup, Slider, Progress, Toggle, and ToggleGroup
 with the navigation and overlay controls,
 without putting appearance in the library. The [navigation and overlay guide](navigation-overlays.md)
 describes its tabs and keyboard-help popover. The [layout and data guide](layout-and-data.md)
@@ -19,6 +19,7 @@ control a stable element ID and an accessible label.
 | --- | --- | --- |
 | Textarea | Retained `Entity<TextareaState>` | Observe for surrounding presentation; the existing Input events report edits |
 | Field | Application label, help, requirement, and validation error | Render current metadata around an existing Input, Textarea, or Combobox query; no new input state |
+| Label | Application text, target FocusHandle, and disabled flag | Focus the existing control on click; keep its accessible name and disabled state in sync |
 | Combobox | Retained `Entity<ComboboxState>` | Observe for rendering; `ComboboxEvent::Change` reports a different committed user choice |
 | Calendar | Retained `Entity<CalendarState>` | Observe for rendering; `CalendarEvent::Change` reports a different user-selected date |
 | DatePicker | Retained `Entity<DatePickerState>` composing existing Calendar/Popover state | Observe for date/popup rendering; `DatePickerEvent::Change` runs after a different date commits and the popup closes |
@@ -102,6 +103,48 @@ value-exposure policy, and popup expanded state are preserved. Passing
 `error(None)` clears invalid state. The supporting `InputAccessibility` builders
 are `with_description`, `with_required`, and `with_invalid`; the input remains
 the only editing and focus owner.
+
+## Label
+
+`Label::new(id, &focus_handle, text)` renders plain text with native Label
+semantics and an accessible name matching that text. Clicking it focuses the
+supplied existing control. The Label has no focus handle or Tab stop of its own,
+so ordinary keyboard traversal remains with the control. Its `Styled` interface
+supplies application-owned text style and layout; it accepts text rather than
+interactive child content.
+
+```rust
+let preview = self.preview.read(cx);
+let label = Label::new(
+    "preview-percentage-label",
+    preview.focus_handle(),
+    "Preview percentage",
+)
+.disabled(preview.is_disabled())
+.text_color(muted);
+let slider = Slider::new("preview-percentage", &self.preview)
+    .accessibility_label("Preview percentage");
+
+div().flex().flex_col().gap_1().child(label).child(slider)
+```
+
+Keep the referenced target mounted in the same window, and mirror its disabled
+state with `.disabled(bool)` on every render. A disabled Label does not move
+focus. The supplied FocusHandle identifies the target but does not tell Label
+whether the control is enabled; the application owns that policy and redraws
+when it changes. Label retains no second control state.
+
+The focus action does not activate the target: it does not open Select, adjust
+Slider, or toggle Checkbox/Switch. The native example uses it above Drawing tool
+and Preview percentage; clicking either label leaves the selection or value
+unchanged before the control receives ordinary keyboard input.
+
+Set the target's `accessibility_label(...)` independently. The pinned GPUI API
+does not expose a public labelled-by relationship for these sibling elements,
+so Label does not automatically name the target. Its native Label role and text
+name describe the label itself. For Input/Textarea label, help, and validation
+association, use Field, which projects metadata onto its retained input and
+checks the input's live disabled state when its label is clicked.
 
 ## Combobox
 

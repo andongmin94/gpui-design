@@ -6,9 +6,9 @@ Its main catalogue contains **66 entries**, each listed once below. The separate
 AI Elements catalogue is outside this comparison; conversation components already
 in the main catalogue remain included.
 
-GPUI Design currently documents **31 public library families and twenty-two copyable
-presentation/composition recipes**, covering **53 catalogue entries** within the scopes below.
-This is not 53/66 feature parity: a family can exist with a deliberately limited
+GPUI Design currently documents **32 public library families and twenty-two copyable
+presentation/composition recipes**, covering **54 catalogue entries** within the scopes below.
+This is not 54/66 feature parity: a family can exist with a deliberately limited
 contract, and several shadcn entries describe combinations of other parts.
 These counts do not measure performance, accessibility conformance, or completion
 of native desktop validation.
@@ -55,7 +55,7 @@ in the [form guide](form-controls.md),
 | Hover Card | Available | Noninteractive rich preview on delayed hover or trigger focus, delayed closing across trigger/card pointer travel, dismissal, disabled state, and retained-state unmount cleanup. Opening and dismissal preserve existing focus; interactive preview controls and touch long-press are not supplied. |
 | Input | Available | Single-line editing, selection, clipboard, focus, and the native input interface through the retained editing engine. |
 | Input OTP | Pending | Segmented entry and paste distribution are not provided by ordinary Input. |
-| Label | Pending | Field provides associated labels for text inputs. A standalone label component for the wider control set is not yet supplied. |
+| Label | Available | Named native plain-text label with click-to-focus through a supplied existing FocusHandle, an explicit disabled flag, and no additional Tab stop. The application keeps the target mounted and supplies its accessible name and matching disabled state. No activation forwarding or native labelled-by relationship; Field retains its richer text-input association. |
 | Menubar | Pending | Coordinated focus and menu switching across multiple top-level menus are not implemented. |
 | Native Select | Platform mapping | The reference is an HTML select. Define the required native GPUI experience before adding another family; do not duplicate Select under an alias. |
 | Navigation Menu | Pending | Navigation items and coordinated popup interaction are not supplied by Tabs or standalone DropdownMenu. |
