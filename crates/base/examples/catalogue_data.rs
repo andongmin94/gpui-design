@@ -184,7 +184,6 @@ impl DataCatalogue {
             }));
             carousel = carousel.child(
                 CarouselSlide::new(&self.carousel, index)
-                    .direction(self.direction)
                     .w_full()
                     .min_w_0()
                     .flex()

@@ -119,9 +119,11 @@ impl MessageScroller {
     }
 
     pub fn item(mut self, id: impl Into<ElementId>, content: impl IntoElement) -> Self {
+        let id = id.into();
         let layout = Rc::new(Cell::new(None));
-        self.items.push((id.into(), layout.clone()));
+        self.items.push((id.clone(), layout.clone()));
         self.area = self.area.child(MeasuredItem {
+            id,
             child: content.into_any_element(),
             layout,
         });
@@ -191,9 +193,8 @@ impl Element for AnchoredArea {
         window: &mut Window,
         cx: &mut App,
     ) {
-        self.state.update(cx, |state, cx| {
-            let was_following = state.following;
-            let old_unread = state.unread;
+        let previous = self.state.update(cx, |state, _| {
+            let previous = (state.following, state.unread);
             let offset = state.scroll.offset();
             let following = state.jump
                 || state.frame.is_none()
@@ -220,19 +221,25 @@ impl Element for AnchoredArea {
             }
             if following {
                 state.scroll.scroll_to_bottom();
-                state.unread = 0;
             }
-            state.following = following;
             state.jump = false;
             state.frame = Some(Frame {
                 ids: self.items.iter().map(|(id, _)| id.clone()).collect(),
                 top: bounds.top(),
             });
-            if old_unread != state.unread || was_following != state.following {
+            previous
+        });
+        self.area.prepaint(window, cx);
+        self.state.update(cx, |state, cx| {
+            state.following =
+                (state.scroll.offset().y + state.scroll.max_offset().y).abs() <= px(1.);
+            if state.following {
+                state.unread = 0;
+            }
+            if previous != (state.following, state.unread) {
                 cx.notify();
             }
         });
-        self.area.prepaint(window, cx);
     }
 
     fn paint(
@@ -250,6 +257,7 @@ impl Element for AnchoredArea {
 }
 
 struct MeasuredItem {
+    id: ElementId,
     child: AnyElement,
     layout: Rc<Cell<Option<LayoutId>>>,
 }
@@ -265,7 +273,7 @@ impl Element for MeasuredItem {
     type RequestLayoutState = ();
     type PrepaintState = ();
     fn id(&self) -> Option<ElementId> {
-        None
+        Some(self.id.clone())
     }
     fn source_location(&self) -> Option<&'static std::panic::Location<'static>> {
         None
@@ -314,13 +322,14 @@ mod tests {
     struct Conversation {
         state: Entity<MessageScrollerState>,
         items: Vec<(usize, f32)>,
+        height: f32,
     }
     impl Render for Conversation {
         fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
             self.items.iter().fold(
                 MessageScroller::new("messages", &self.state, cx)
                     .w(px(200.))
-                    .h(px(100.)),
+                    .h(px(self.height)),
                 |area, &(id, height)| area.item(id, div().h(px(height)).flex_shrink_0()),
             )
         }
@@ -332,6 +341,7 @@ mod tests {
         let (view, cx) = cx.add_window_view(|_, cx| Conversation {
             state: cx.new(MessageScrollerState::new),
             items: (0..5).map(|id| (id, 50.)).collect(),
+            height: 100.,
         });
         let state = view.read_with(cx, |view, _| view.state.clone());
         let scroll = state.read_with(cx, |state, _| state.scroll_handle().clone());
@@ -365,5 +375,90 @@ mod tests {
         cx.update(|window, cx| window.draw(cx).clear(cx));
         assert_eq!(scroll.offset().y, -scroll.max_offset().y);
         assert_eq!(state.read_with(cx, |state, _| state.unread_count()), 0);
+
+        // A resize can reveal all unread content without an extra scroll event.
+        scroll.set_offset(point(px(0.), px(-65.)));
+        view.update(cx, |view, cx| {
+            view.items.push((10, 50.));
+            cx.notify();
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        assert_eq!(state.read_with(cx, |state, _| state.unread_count()), 1);
+        cx.update(|window, cx| {
+            view.update(cx, |view, cx| {
+                view.height = 600.;
+                cx.notify();
+            });
+            window.refresh();
+            window.draw(cx).clear(cx);
+            assert_eq!(scroll.offset().y, px(0.));
+            assert_eq!(scroll.max_offset().y, px(0.));
+            assert!(state.read(cx).is_following());
+            assert_eq!(state.read(cx).unread_count(), 0);
+        });
+    }
+
+    #[cfg(feature = "test-support")]
+    #[gpui::test]
+    fn message_ids_scope_child_focus_across_reordering(cx: &mut TestAppContext) {
+        use crate::{Button, test_support};
+        use gpui::{InteractiveElement as _, Modifiers};
+
+        struct Replies {
+            state: Entity<MessageScrollerState>,
+            ids: Vec<usize>,
+        }
+        impl Render for Replies {
+            fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+                div().tab_group().child(
+                    self.ids.iter().fold(
+                        MessageScroller::new("messages", &self.state, cx)
+                            .w(px(200.))
+                            .h(px(100.)),
+                        |area, &id| {
+                            area.item(
+                                id,
+                                Button::new("reply")
+                                    .accessibility_label(format!("Reply {id}"))
+                                    .h(px(50.))
+                                    .flex_shrink_0()
+                                    .child("Reply"),
+                            )
+                        },
+                    ),
+                )
+            }
+        }
+
+        let (view, cx) = cx.add_window_view(|_, cx| Replies {
+            state: cx.new(MessageScrollerState::new),
+            ids: vec![0, 1],
+        });
+        let first = cx.update(|window, cx| {
+            window.draw(cx).clear(cx);
+            let replies = test_support::find_all(window, &[], &"reply".into());
+            assert_eq!(replies.len(), 2);
+            replies[0].bounds().center()
+        });
+        cx.simulate_click(first, Modifiers::default());
+        view.update(cx, |view, cx| {
+            view.ids.reverse();
+            cx.notify();
+        });
+        cx.update(|window, cx| {
+            window.draw(cx).clear(cx);
+            let replies = test_support::find_all(window, &[], &"reply".into());
+            assert_eq!(replies[0].label(), Some("Reply 1"));
+            assert_eq!(replies[0].focused(), Some(false));
+            assert_eq!(replies[1].label(), Some("Reply 0"));
+            assert_eq!(replies[1].focused(), Some(true));
+            window.focus_next(cx);
+        });
+        cx.update(|window, cx| {
+            window.draw(cx).clear(cx);
+            let replies = test_support::find_all(window, &[], &"reply".into());
+            assert_eq!(replies[0].focused(), Some(true));
+            assert_eq!(replies[1].focused(), Some(false));
+        });
     }
 }

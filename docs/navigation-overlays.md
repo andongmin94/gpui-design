@@ -387,6 +387,7 @@ Create child `MenuState` entities before their parent. A parent item declares
 The submenu host owns popup positioning and reuses the child's existing Popover
 lifecycle. Menu trees must be acyclic, and a child belongs to one parent.
 
+Native focus on a submenu row synchronizes the parent menu's highlighted item.
 The expansion arrow opens the highlighted submenu; the opposite arrow or Escape
 closes one submenu and restores the parent menu scope. Pointer hover opens the
 corresponding child and closes sibling branches. Plain leaf activation closes
@@ -465,7 +466,8 @@ The Menu key is available when the platform delivers it. Imperative
 `MenuState::open(window, cx)` also uses target-relative placement. Pointer
 placement uses the existing Popup/Positioner measurement and viewport clamping;
 it does not replace their geometry engine. Outside clicks and parent Dialog
-containment use the same Popover lifecycle.
+containment use the same Popover lifecycle. A new context request closes any
+existing submenu branch and focuses the root menu at its first enabled item.
 
 `set_disabled(true, window, cx)` closes the menu and blocks target entry and
 activation. An already focused disabled target retains its binding so Tab can
@@ -683,7 +685,9 @@ pauses on hover, contained focus and window inactivity, then resumes from its
 remaining duration. `dismiss`, Escape and the close button are explicit dismissals;
 timeout is reported separately by `ToastEvent`. If an explicit dismissal removes
 the focused notification, its captured prior focus is restored. Unfocused
-dismissal preserves whatever control the user is using. Native live metadata is
+dismissal preserves whatever control the user is using. Removing the entire host
+closes it without restoring captured focus; the application must move focus to a
+surviving control when removing focused content. Native live metadata is
 polite by default and assertive for `.urgent(true)`; actual screen-reader delivery
 must still be checked on each platform.
 

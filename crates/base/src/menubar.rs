@@ -753,19 +753,32 @@ mod tests {
             assert_eq!(bar.items[0].menu.read(cx).highlighted_index(), Some(2));
         });
         // Native accessibility clients can focus the submenu row itself.
+        press(cx, "home");
         cx.update(|window, cx| {
             let focus = view.read(cx).nested.read(cx).focus_handle().clone();
             focus.focus(window, cx);
         });
         settle(cx);
         press(cx, "left");
+        cx.update(|_, cx| assert!(view.read(cx).nested.read(cx).is_open(cx)));
         press(cx, "escape");
         cx.update(|_, cx| {
             let harness = view.read(cx);
             assert!(!harness.nested.read(cx).is_open(cx));
             assert_eq!(harness.bar.read(cx).open_index(cx), Some(0));
         });
-        press(cx, "left");
+        press(cx, "home");
+        cx.update(|window, cx| {
+            let focus = view.read(cx).nested.read(cx).focus_handle().clone();
+            focus.focus(window, cx);
+        });
+        settle(cx);
+        press(cx, "enter");
+        cx.update(|_, cx| {
+            let harness = view.read(cx);
+            assert!(harness.nested.read(cx).is_open(cx));
+            assert_eq!(harness.commands, ["File-first"]);
+        });
         press(cx, "down");
         press(cx, "enter");
         cx.update(|window, cx| {

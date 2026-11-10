@@ -35,6 +35,8 @@ pub struct CarouselState {
     labels: Vec<SharedString>,
     selected: Option<usize>,
     looping: bool,
+    axis: Axis,
+    direction: Direction,
     focus: FocusHandle,
     slide_focus: Vec<FocusHandle>,
     drag_origin: Point<Pixels>,
@@ -52,6 +54,8 @@ impl CarouselState {
             slide_focus: labels.iter().map(|_| cx.focus_handle()).collect(),
             labels,
             looping: false,
+            axis: Axis::Horizontal,
+            direction: Direction::Ltr,
             focus: cx.focus_handle(),
             drag_origin: Point::default(),
             drag_committed: false,
@@ -124,6 +128,30 @@ impl CarouselState {
         };
         self.select(next, window, cx)
     }
+    fn swipe_at_pointer(
+        &mut self,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.drag_committed {
+            return;
+        }
+        let delta = match self.axis {
+            Axis::Horizontal => position.x - self.drag_origin.x,
+            Axis::Vertical => position.y - self.drag_origin.y,
+        };
+        if delta.abs() < px(40.) {
+            return;
+        }
+        self.drag_committed = true;
+        let forward = match self.axis {
+            Axis::Horizontal => self.direction.horizontal_forward(delta < px(0.)),
+            Axis::Vertical => delta < px(0.),
+        };
+        self.advance(forward, window, cx);
+    }
+
     fn key_advance(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
         if self.focus.is_focused(window) {
             self.advance(forward, window, cx);
@@ -190,6 +218,10 @@ impl ParentElement for Carousel {
 impl RenderOnce for Carousel {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let direction = self.direction.unwrap_or_else(|| Direction::current(cx));
+        self.state.update(cx, |state, _| {
+            state.axis = self.axis;
+            state.direction = direction;
+        });
         let focus = self.state.read(cx).focus.clone();
         let first = self.state.clone();
         let last = self.state.clone();
@@ -241,16 +273,14 @@ impl Render for DragCarousel {
 
 /// One active-only slide with position/count metadata and a stable focus scope.
 /// Dragging its content by 40 logical pixels snaps once per gesture. GPUI owns
-/// drag cancellation and suppresses click activation after a drag begins. The
-/// slide and region must use the same axis/direction. There is no inertia or
+/// drag cancellation and suppresses click activation after a drag begins.
+/// Axis and direction come from the enclosing [`Carousel`]. There is no inertia or
 /// autoplay; use application animation only when the product calls for it.
 #[derive(IntoElement)]
 pub struct CarouselSlide {
     base: crate::ObservedElement<gpui::Stateful<gpui::Div>>,
     state: Entity<CarouselState>,
     index: usize,
-    axis: Axis,
-    direction: Option<Direction>,
 }
 impl CarouselSlide {
     pub fn new(state: &Entity<CarouselState>, index: usize) -> Self {
@@ -263,17 +293,7 @@ impl CarouselSlide {
                 .test_support(),
             state: state.clone(),
             index,
-            axis: Axis::Horizontal,
-            direction: None,
         }
-    }
-    pub fn axis(mut self, axis: Axis) -> Self {
-        self.axis = axis;
-        self
-    }
-    pub fn direction(mut self, direction: Direction) -> Self {
-        self.direction = Some(direction);
-        self
     }
 }
 impl Styled for CarouselSlide {
@@ -296,8 +316,6 @@ impl RenderOnce for CarouselSlide {
         if model.selected != Some(self.index) {
             return Empty.into_any_element();
         }
-        let direction = self.direction.unwrap_or_else(|| Direction::current(cx));
-        let axis = self.axis;
         let id = self.state.entity_id();
         let drag = self.state.clone();
         self.base
@@ -314,29 +332,21 @@ impl RenderOnce for CarouselSlide {
                     state.drag_committed = false;
                 }),
             )
-            .on_drag(DragCarousel(id), move |value, _, _, cx| {
-                drag.update(cx, |state, _| state.drag_committed = false);
+            .on_drag(DragCarousel(id), move |value, _, window, cx| {
+                // GPUI starts dragging after this move's capture phase, so the
+                // first displacement does not reach on_drag_move. Handle it now.
+                drag.update(cx, |state, cx| {
+                    state.drag_committed = false;
+                    state.swipe_at_pointer(window.mouse_position(), window, cx);
+                });
                 cx.stop_propagation();
                 cx.new(|_| value.clone())
             })
             .on_drag_move(window.listener_for(
                 &self.state,
                 move |state, event: &DragMoveEvent<DragCarousel>, window, cx| {
-                    if event.drag(cx).0 != id || state.drag_committed {
-                        return;
-                    }
-                    let delta = match axis {
-                        Axis::Horizontal => event.event.position.x - state.drag_origin.x,
-                        Axis::Vertical => event.event.position.y - state.drag_origin.y,
-                    };
-                    if delta.abs() >= px(40.) {
-                        state.drag_committed = true;
-                        let forward = if axis == Axis::Horizontal {
-                            direction.horizontal_forward(delta < px(0.))
-                        } else {
-                            delta < px(0.)
-                        };
-                        state.advance(forward, window, cx);
+                    if event.drag(cx).0 == id {
+                        state.swipe_at_pointer(event.event.position, window, cx);
                     }
                 },
             ))
@@ -403,11 +413,15 @@ mod tests {
     struct Harness {
         state: Entity<CarouselState>,
         button: FocusHandle,
+        axis: Axis,
+        direction: Direction,
         _subscription: Subscription,
     }
     impl Render for Harness {
         fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
             Carousel::new("carousel", &self.state, "Screenshots")
+                .axis(self.axis)
+                .direction(self.direction)
                 .w(px(300.))
                 .child(
                     CarouselSlide::new(&self.state, 0)
@@ -439,6 +453,8 @@ mod tests {
                 Harness {
                     state,
                     button: cx.focus_handle(),
+                    axis: Axis::Horizontal,
+                    direction: Direction::Ltr,
                     _subscription: subscription,
                 }
             });
@@ -469,7 +485,7 @@ mod tests {
             });
             window.draw(cx).clear(cx);
         });
-        // A single native drag snaps once, even if the pointer continues moving.
+        // A fast swipe can arrive as one coalesced move followed by release.
         cx.simulate_mouse_down(
             point(px(180.), px(50.)),
             MouseButton::Left,
@@ -480,17 +496,72 @@ mod tests {
             Some(MouseButton::Left),
             Modifiers::default(),
         );
-        cx.simulate_mouse_move(
-            point(px(90.), px(50.)),
-            Some(MouseButton::Left),
-            Modifiers::default(),
-        );
         cx.simulate_mouse_up(
-            point(px(90.), px(50.)),
+            point(px(130.), px(50.)),
             MouseButton::Left,
             Modifiers::default(),
         );
         cx.run_until_parked();
+        cx.update(|_, cx| {
+            assert_eq!(view.read(cx).state.read(cx).selected_index(), Some(1));
+        });
+        for (axis, direction, key, end) in [
+            (
+                Axis::Horizontal,
+                Direction::Rtl,
+                "left",
+                point(px(240.), px(90.)),
+            ),
+            (
+                Axis::Vertical,
+                Direction::Rtl,
+                "down",
+                point(px(180.), px(40.)),
+            ),
+        ] {
+            view.update(cx, |view, cx| {
+                view.axis = axis;
+                view.direction = direction;
+                cx.notify();
+            });
+            cx.update(|window, cx| {
+                view.read(cx).state.clone().update(cx, |state, cx| {
+                    state.select(0, window, cx);
+                    state.focus.focus(window, cx);
+                });
+                window.draw(cx).clear(cx);
+            });
+            cx.simulate_keystrokes(key);
+            cx.update(|window, cx| {
+                view.read(cx).state.clone().update(cx, |state, cx| {
+                    assert_eq!(state.selected_index(), Some(1));
+                    state.select(0, window, cx);
+                });
+                window.draw(cx).clear(cx);
+            });
+            // Slides have no separate axis/direction configuration to drift.
+            cx.simulate_mouse_down(
+                point(px(180.), px(90.)),
+                MouseButton::Left,
+                Modifiers::default(),
+            );
+            cx.simulate_mouse_move(end, Some(MouseButton::Left), Modifiers::default());
+            // A second move must not advance again, even with looping enabled.
+            cx.update(|_, cx| {
+                view.read(cx)
+                    .state
+                    .clone()
+                    .update(cx, |state, _| state.looping = true)
+            });
+            cx.simulate_mouse_move(end, Some(MouseButton::Left), Modifiers::default());
+            cx.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
+            cx.update(|_, cx| {
+                view.read(cx).state.clone().update(cx, |state, _| {
+                    assert_eq!(state.selected_index(), Some(1));
+                    state.looping = false;
+                })
+            });
+        }
         cx.update(|window, cx| {
             let state = view.read(cx).state.clone();
             assert_eq!(state.read(cx).selected_index(), Some(1));

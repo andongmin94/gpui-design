@@ -62,6 +62,7 @@ pub struct ChartState {
     categories: Vec<SharedString>,
     series: Vec<ChartSeries>,
     visible: Vec<bool>,
+    range: (f64, f64),
     inspected: Option<usize>,
     focus: FocusHandle,
     bounds: Bounds<Pixels>,
@@ -80,9 +81,12 @@ impl ChartState {
                 .all(|series| series.values.len() == categories.len()),
             "Each chart series needs one value per category"
         );
+        let visible = vec![true; series.len()];
+        let range = Self::data_range(&series, &visible);
         Self {
             inspected: (!categories.is_empty()).then_some(0),
-            visible: vec![true; series.len()],
+            visible,
+            range,
             categories,
             series,
             focus: cx.focus_handle(),
@@ -116,6 +120,7 @@ impl ChartState {
             return false;
         }
         self.visible[index] = visible;
+        self.range = Self::data_range(&self.series, &self.visible);
         cx.emit(ChartEvent::Visibility(index, visible));
         cx.notify();
         window.refresh();
@@ -131,11 +136,16 @@ impl ChartState {
         window.refresh();
         true
     }
+    /// The visible domain is recomputed only when series visibility changes,
+    /// so normalizing every plotted point remains linear in the dataset size.
     pub fn range(&self) -> (f64, f64) {
-        let (min, max) = self
-            .series
+        self.range
+    }
+
+    fn data_range(series: &[ChartSeries], visible: &[bool]) -> (f64, f64) {
+        let (min, max) = series
             .iter()
-            .zip(&self.visible)
+            .zip(visible)
             .filter(|(_, visible)| **visible)
             .flat_map(|(series, _)| series.values.iter())
             .fold((0_f64, 0_f64), |(min, max), &value| {
@@ -351,6 +361,10 @@ mod tests {
                 assert_eq!(state.inspected_description().as_ref(), "Wed: Mobile: 15");
                 state.set_visible(1, false, window, cx);
                 assert_eq!(state.range(), (0., 1.));
+                assert_eq!(state.normalized_value(0.), 0.);
+                state.set_visible(0, true, window, cx);
+                assert_eq!(state.range(), (-10., 20.));
+                assert_eq!(state.normalized_value(20.), 1.);
             });
         });
         cx.simulate_mouse_down(

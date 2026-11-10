@@ -210,8 +210,9 @@ retains slide data and supplies media, sizing, content and indicator presentatio
 
 Left/Right act while the horizontal region itself holds focus, Up/Down for a
 vertical region; Home/End select the ends. Slide descendants keep their own keys.
-The scope and slides accept matching axis and direction settings, with inherited
-Direction by default. A pointer drag of 40 logical pixels snaps once per gesture.
+Configure axis and direction on `Carousel`; every slide uses that same state for
+swipes. Direction is inherited by default. A pointer drag of 40 logical pixels
+snaps once per gesture, including a single move followed immediately by release.
 Changing away from a slide containing focus returns focus to the carousel scope
 before unmounting it; external previous/next controls retain focus. There is no
 autoplay, inertia, animated motion or multi-slide sizing system.
@@ -221,7 +222,9 @@ autoplay, inertia, animated motion or multi-slide sizing system.
 `ChartState` accepts category labels and `ChartSeries` values. Each series has one
 finite value per category. The retained state supplies visible series, inspected
 category, exact-value descriptions, and a zero-inclusive signed numeric range.
-Hiding all series or using all-zero data yields a usable `0..1` range. `Chart`
+Hiding all series or using all-zero data yields a usable `0..1` range. The range
+is retained until visibility changes; normalizing a point does not rescan the
+dataset. `Chart`
 provides a named plot focus region: pointer travel and Left/Right/Home/End inspect
 evenly spaced categories, including RTL. It emits inspection/visibility events
 without prescribing colors or draw paths.
@@ -239,8 +242,9 @@ pie/radar charts, zoom, streaming data ingestion or a separate rendering engine.
 `MessageScrollerState::new(cx)` owns the existing ScrollHandle plus the previous
 frame's stable message keys and reading position. Give
 `MessageScroller::new(id, &state, cx)` a bounded height and add each message with
-`.item(stable_id, content)`. IDs must be unique within a conversation; create a
-new state when changing to another conversation. Existing ScrollArea performs
+`.item(stable_id, content)`. IDs must be unique within a conversation and also
+scope each message's child controls, preserving their identity across reordering.
+Create a new state when changing to another conversation. Existing ScrollArea performs
 wheel/trackpad scrolling, clipping and scrollbar interaction.
 
 The first frame starts at the bottom. Appending messages, streaming edits and
@@ -249,7 +253,8 @@ away, the first visible message keeps its pixel position as history is prepended
 or earlier items change height; correction happens in the same layout frame.
 Removing the anchor uses ordinary native offset clamping. Appends while
 away increase `unread_count`, and `jump_to_latest` resumes following without
-moving focus from the caller's control. Returning to the bottom clears unread.
+moving focus from the caller's control. Returning to the bottom clears unread,
+including when a resize or content removal reveals the bottom in the same frame.
 There is no virtualization or chat transport.
 
 ## Verification boundary

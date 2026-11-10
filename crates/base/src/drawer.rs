@@ -233,6 +233,8 @@ impl RenderOnce for Drawer {
             .flex()
             .flex_col()
             .w_full()
+            .max_w_full()
+            .max_h_full()
             .refine_style(&self.style)
             .top(offset)
             .on_prepaint(move |bounds, _, cx| {
@@ -398,5 +400,16 @@ mod tests {
             assert!(!view.read(cx).state.read(cx).is_dragging());
             assert!(view.read(cx).trigger.is_focused(window));
         });
+        cx.simulate_resize(gpui::size(px(260.), px(180.)));
+        cx.update(|window, cx| {
+            let state = view.read(cx).state.clone();
+            state.update(cx, |state, cx| state.open(window, cx));
+            window.draw(cx).clear(cx);
+            assert!(
+                state.read(cx).height <= window.viewport_size().height,
+                "the drawer must fit the viewport so its grip stays reachable"
+            );
+        });
+        assert!(cx.debug_bounds("drawer-grip").unwrap().top() >= px(0.));
     }
 }

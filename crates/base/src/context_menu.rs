@@ -33,10 +33,10 @@ pub(crate) fn init(cx: &mut App) {
 /// children in collection order. `target_label` names the focusable region;
 /// `accessibility_label` names its menu. Styles and interactive style builders
 /// apply to the target. Keep this component mounted while closed and use a
-/// distinct MenuState for each mounted target. Options can expose an
-/// application-controlled boolean through [`crate::MenuOption::checked`].
-/// Touch long-press, submenus, mixed checked values, and radio groups are not
-/// provided.
+/// distinct MenuState for each mounted target. Use [`crate::MenuSubmenu`] for
+/// nested commands, and [`crate::MenuOption::check_state`] or
+/// [`crate::MenuOption::radio_checked`] for application-controlled selections.
+/// Touch long-press is not provided.
 #[derive(IntoElement)]
 pub struct ContextMenu {
     id: ElementId,
@@ -164,7 +164,7 @@ mod tests {
         Render, Subscription, TestAppContext, VisualTestContext, point, px, size,
     };
 
-    use crate::{Button, MenuEvent, MenuItem, MenuOption, Root};
+    use crate::{Button, MenuEvent, MenuItem, MenuOption, MenuSubmenu, Root};
 
     struct Harness {
         menu: Entity<MenuState>,
@@ -177,20 +177,31 @@ mod tests {
 
     impl Render for Harness {
         fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-            let options = self
-                .menu
-                .read(cx)
-                .items()
-                .iter()
-                .enumerate()
-                .map(|(index, item)| {
-                    MenuOption::new(&self.menu, index).h(px(28.)).child(
-                        div()
+            let options =
+                self.menu
+                    .read(cx)
+                    .items()
+                    .iter()
+                    .enumerate()
+                    .map(|(index, item)| {
+                        let label = div()
                             .debug_selector(move || format!("context-command-{index}"))
                             .size_full()
-                            .child(item.label().clone()),
-                    )
-                });
+                            .child(item.label().clone());
+                        if let Some(submenu) = item.submenu_state() {
+                            MenuSubmenu::new(&self.menu, index)
+                                .trigger(|option| option.h(px(28.)).child(label))
+                                .content(div().w(px(180.)).child(
+                                    MenuOption::new(submenu, 0).h(px(28.)).child("Copy link"),
+                                ))
+                                .into_any_element()
+                        } else {
+                            MenuOption::new(&self.menu, index)
+                                .h(px(28.))
+                                .child(label)
+                                .into_any_element()
+                        }
+                    });
             div()
                 .size_full()
                 .p(px(16.))
@@ -254,12 +265,14 @@ mod tests {
         cx.update(crate::init);
         let (root, cx) = cx.add_window_view(|window, cx| {
             let content = cx.new(|cx| {
+                let submenu =
+                    cx.new(|cx| MenuState::new([MenuItem::new("copy-link", "Copy link")], cx));
                 let menu = cx.new(|cx| {
                     MenuState::new(
                         [
                             MenuItem::new("disabled", "Disabled").disabled(true),
                             MenuItem::new("open", "Open"),
-                            MenuItem::new("share", "Share"),
+                            MenuItem::new("share", "Share").submenu(&submenu),
                         ],
                         cx,
                     )
@@ -330,9 +343,32 @@ mod tests {
             assert!(view.read(cx).commands.is_empty());
         });
 
+        press(cx, "end");
+        press(cx, "right");
+        cx.update(|_, cx| {
+            assert!(
+                view.read(cx).menu.read(cx).items()[2]
+                    .submenu_state()
+                    .unwrap()
+                    .read(cx)
+                    .is_open(cx)
+            );
+        });
         // A second request on the target moves the same menu; near the window
         // edge the existing Positioner keeps the whole command surface inside.
         secondary_click(cx, target.bottom_right() - point(px(2.), px(2.)));
+        cx.update(|window, cx| {
+            let state = view.read(cx).menu.read(cx);
+            assert!(
+                !state.items()[2]
+                    .submenu_state()
+                    .unwrap()
+                    .read(cx)
+                    .is_open(cx)
+            );
+            assert_eq!(state.highlighted_index(), Some(1));
+            assert!(state.content_focus_handle().is_focused(window));
+        });
         let popup = cx.debug_bounds("context-surface").unwrap();
         assert!(popup.origin.x > first.x);
         cx.update(|window, _| {

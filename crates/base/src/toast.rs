@@ -358,6 +358,8 @@ impl RenderOnce for Toast {
                 let _ = owner_window.update(cx, |_, window, cx| {
                     let _ = weak.update(cx, |state, cx| {
                         state.mounted = false;
+                        // Removing the host can also remove its return target.
+                        state.previous_focus = None;
                         state.dismiss(window, cx);
                     });
                 });
@@ -454,11 +456,15 @@ mod tests {
         trigger: FocusHandle,
         close: FocusHandle,
         urgent: bool,
+        show_host: bool,
         _subscription: Subscription,
     }
 
     impl Render for Harness {
         fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            if !self.show_host {
+                return div().into_any_element();
+            }
             let close = self.close.clone();
             let surface = Toast::new("notice", &self.state)
                 .accessibility_label("Saved locally")
@@ -510,6 +516,7 @@ mod tests {
                         .h(px(60.))
                         .child(surface),
                 )
+                .into_any_element()
         }
     }
 
@@ -526,6 +533,7 @@ mod tests {
                     trigger: cx.focus_handle(),
                     close: cx.focus_handle(),
                     urgent: false,
+                    show_host: true,
                 }
             });
             crate::Root::new(view, window, cx)
@@ -581,6 +589,25 @@ mod tests {
         cx.update(|window, cx| {
             assert!(!view.read(cx).state.read(cx).is_open());
             assert!(view.read(cx).trigger.is_focused(window));
+        });
+        cx.update(|window, cx| {
+            let state = view.read(cx).state.clone();
+            state.update(cx, |state, cx| state.show(window, cx));
+            state.read(cx).focus.clone().focus(window, cx);
+            window.draw(cx).clear(cx);
+            view.update(cx, |view, cx| {
+                view.show_host = false;
+                cx.notify();
+            });
+            window.draw(cx).clear(cx);
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            assert!(!view.read(cx).state.read(cx).is_open());
+            assert!(
+                !view.read(cx).trigger.is_focused(window),
+                "unmounting a notification must not focus its hidden trigger"
+            );
         });
     }
 }

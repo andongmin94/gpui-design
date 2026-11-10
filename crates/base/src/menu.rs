@@ -107,6 +107,7 @@ pub struct MenuState {
     content_focus: FocusHandle,
     _popover_subscription: Subscription,
     _submenu_subscriptions: Vec<Subscription>,
+    submenu_focus_subscriptions: Vec<Subscription>,
     parent: Option<WeakEntity<MenuState>>,
     direction: Direction,
 }
@@ -164,6 +165,7 @@ impl MenuState {
             content_focus,
             _popover_subscription: subscription,
             _submenu_subscriptions: submenu_subscriptions,
+            submenu_focus_subscriptions: Vec::new(),
             parent: None,
             direction: Direction::Ltr,
         }
@@ -193,6 +195,33 @@ impl MenuState {
     /// The menu's focus handle; keyboard navigation moves its active descendant.
     pub fn content_focus_handle(&self) -> &FocusHandle {
         &self.content_focus
+    }
+
+    fn bind_submenu_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Native accessibility focus can move to a submenu row independently
+        // of the menu's current active descendant.
+        if !self.submenu_focus_subscriptions.is_empty() {
+            return;
+        }
+        self.submenu_focus_subscriptions = self
+            .items
+            .iter()
+            .enumerate()
+            .filter_map(|(index, item)| {
+                let focus = item.submenu.as_ref()?.read(cx).focus.clone();
+                Some(cx.on_focus(&focus, window, move |_, window, cx| {
+                    cx.defer_in(window, move |state, window, cx| {
+                        if state.items[index]
+                            .submenu
+                            .as_ref()
+                            .is_some_and(|submenu| submenu.read(cx).focus.is_focused(window))
+                        {
+                            state.highlight(index, window, cx);
+                        }
+                    });
+                }))
+            })
+            .collect();
     }
 
     pub fn set_disabled(&mut self, disabled: bool, window: &mut Window, cx: &mut Context<Self>) {
@@ -355,9 +384,11 @@ impl MenuState {
         if self.is_disabled(cx) {
             return;
         }
+        self.close_descendants(None, window, cx);
         self.position = Some(position);
         self.highlighted = self.edge(false);
         self.popover.update(cx, |state, cx| state.open(window, cx));
+        self.content_focus.focus(window, cx);
         cx.notify();
         window.refresh();
     }
@@ -757,7 +788,9 @@ impl Styled for MenuSubmenu {
 }
 
 impl RenderOnce for MenuSubmenu {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        self.parent
+            .update(cx, |parent, cx| parent.bind_submenu_focus(window, cx));
         let parent = self.parent.read(cx);
         let item = parent
             .items

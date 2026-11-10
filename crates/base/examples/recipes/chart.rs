@@ -194,8 +194,8 @@ impl Plot {
 impl RenderOnce for ChartRecipe {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let model = self.state.read(cx);
-        let categories = model.categories().to_vec();
-        let data = model.series().to_vec();
+        let categories = model.categories();
+        let data = model.series();
         let range = model.range();
         let baseline = model.normalized_value(0.);
         let inspected = model.inspected_index();
@@ -331,13 +331,13 @@ impl RenderOnce for ChartRecipe {
         let labels = direction
             .row(div())
             .w_full()
-            .children(categories.into_iter().map(|category| {
+            .children(categories.iter().map(|category| {
                 div()
                     .flex_1()
                     .min_w_0()
                     .text_center()
                     .text_size(px(12.))
-                    .child(category)
+                    .child(category.clone())
             }));
         div().w_full().min_w_0().flex().flex_col().gap_2()
             .child(legend)
