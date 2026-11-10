@@ -654,6 +654,18 @@ Use ordinary GPUI styles for its dimensions and color, such as
 `.h(px(1.)).w_full().bg(border)` for a horizontal line. Axis does not impose a
 visual layout. Separators have no children or Tab stop.
 
+## Dialog
+
+`Dialog::new(&state)` is modal: it exposes native modal metadata and blocks
+background pointer/wheel input even without a decorative backdrop. The
+application supplies the accessible name, popup and visual backdrop. Keep it
+mounted under Root so Tab and Shift-Tab remain in the active dialog.
+
+The existing state owns opening, initial focus, Escape and return focus. Backdrop
+press dismissal is provided when a backdrop is supplied and enabled; omitting
+that visual element still keeps background controls inert. Popover is non-modal
+and does not set the modal flag. AlertDialog, Drawer and Sheet reuse Dialog.
+
 ## AlertDialog
 
 `AlertDialog::new(&dialog_state)` composes the existing Dialog host for a short

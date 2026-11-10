@@ -682,6 +682,25 @@ mod tests {
     fn native_trigger_and_content_activation_remain_separate(cx: &mut TestAppContext) {
         let (cx, controls) = harness(cx, true);
         open(cx, &controls);
+        #[cfg(feature = "test-support")]
+        cx.update(|window, cx| {
+            let controls = controls.read(cx);
+            let modal = crate::test_support::find(
+                window,
+                &[],
+                &("dialog", controls.dialog.entity_id()).into(),
+            )
+            .unwrap();
+            let popover = crate::test_support::find(
+                window,
+                &[],
+                &("popover-content", controls.popover.entity_id()).into(),
+            )
+            .unwrap();
+            assert!(modal.modal());
+            assert_eq!(popover.role(), Some(Role::Dialog));
+            assert!(!popover.modal());
+        });
         cx.update(|window, cx| assert!(controls.read(cx).first.is_focused(window)));
         press(cx, "enter");
         press(cx, "space");

@@ -52,7 +52,7 @@ in the [form guide](form-controls.md),
 | Combobox | Available | Editable single/multiple selection, grouped results, removable selected values and replaceable items that preserve native query/focus/IME and surviving choices. Fetching/request ordering remain application-owned; no free-form values or network manager. |
 | Command | Available | Replaceable command items, named result groups, text filtering, keyboard/pointer actions and Dialog composition. Native query and a surviving highlight are preserved on item replacement; fetching and fuzzy ranking are not supplied. |
 | Context Menu | Available | Secondary-click and keyboard opening, focusable target, shared plain/checked/mixed/radio commands and nested submenus with leaf dispatch, dismissal and focus restoration. Values are application-owned. Target content is noninteractive; touch long-press is not supplied. |
-| Dialog | Available | Modal open/close, initial focus, containment, dismissal, and return focus; the application supplies its surface and contents. |
+| Dialog | Available | Modal open/close, native modal flag, background pointer/wheel isolation with or without a decorative backdrop, initial focus, containment, dismissal and return focus; the application supplies its surface and contents. |
 | Direction | Available | Scoped `DirectionProvider`, nested overrides, logical row layout, and inherited horizontal navigation for Tabs, RadioGroup, ToggleGroup, Slider, Carousel, Chart, Menubar and NavigationMenu. Slider pointer geometry also mirrors. Application layout uses `Direction::row`; GPUI owns text shaping and editing. |
 | Dropdown Menu | Available | Button entry to shared menus, application-controlled checked/mixed/radio semantics, enabled-item navigation, single-character search and nested submenu navigation. Leaf activation closes the menu tree before emitting one root action; no second selection store. |
 | Field | Available | Label focus, help/error descriptions, and required/invalid metadata for existing Input/Textarea-based controls, including a Combobox query. Validation remains application-owned; arbitrary control types are not yet covered. |
@@ -146,51 +146,39 @@ documented. Platform observations are recorded separately from automated checks.
 | Priority | Work | Exit condition | Current state |
 | --- | --- | --- | --- |
 | 1 | Existing correctness and core interaction gaps | Fix observed failures; support single-selection ToggleGroup and multiple-open Accordion; verify native values, keyboard/pointer activation, disabled state, and focus on closure | Implemented with focused tests and catalogue consumers |
-| 2 | Remaining common component contracts | Audit the official component examples against each scope above; implement manual Tabs activation, popup side/alignment, range inputs/date selection, and the remaining consumer-required selection/table/navigation capabilities with focused tests and examples | Listed core gaps implemented, including Calendar configuration/RTL, Select typeahead/programmatic value and four-edge Sheet. Targeted Drawer/Toast/Resizable/Carousel audit found no additional defect in their documented scope; broader readiness audit remains open |
+| 2 | Remaining common component contracts | Audit the official component examples against each scope above; implement manual Tabs activation, popup side/alignment, range inputs/date selection, and the remaining consumer-required selection/table/navigation capabilities with focused tests and examples | Listed common gaps implemented; core retained-value, composition, source-distribution and native-metadata audits completed. Feature limits remain explicit in the scope table |
 | 3 | Visual defaults and accessibility | Consistent visible keyboard focus, disabled/hover/selected/error states, reusable application-owned tokens, narrow-window layout, and usable light/dark presentations | Catalogue focus and copyable light/dark tokens implemented; native Calendar/Sheet smoke performed; unnamed catalogue buttons/links corrected with regression coverage; wider native review pending |
 | 4 | Source distribution and developer experience | A small complete starter, compilable public examples, explicit supported API boundary, and a source-copy workflow that resolves recipe dependencies and tokens | Starter, doctest gate, application tokens and dependency-aware source CLI implemented; supported input/control boundary and consumer test feature documented; unused ThemeAppearance removed |
 | 5 | Release validation | Existing formatting, lint, full behavior suite and native example builds pass; representative native IME, screen-reader, DPI, and visual flows have platform-specific observations | Not complete |
 
-Implemented work includes priority 1, catalogue focus presentation, the starter,
-manual Tabs, collision-aware side/alignment popups, single/range/multiple Slider
-thumbs, single/multiple/range dates, grouped multiple Combobox, selectable tables
-with column visibility, grouped collapsible Sidebar, Calendar configuration/RTL,
-Select typeahead and programmatic value, four-edge Sheets, and a local dependency-aware
-source CLI with standalone application tokens. These
-capabilities do not close the overall goal.
-The current Windows checkpoint passed 701 behavior/integration tests, five source
-CLI tests and 16 doctests (two existing doctests remain ignored). Formatting,
-workspace Clippy, the source CLI binary and three default-feature example builds
-passed. All 24 current CLI recipe modules compiled in a standalone consumer with
-default features and with their copied tests enabled for compilation through
-test-support; repeated add after consumer rustfmt preserved files.
-The combined catalogue flow exercises range completion, grouped multiple targets,
-chip removal, item replacement and nested Sidebar closure/focus. The preset-table
-flow exercises column visibility, independent checkbox selection and native sort
-metadata. Narrow/wide Sidebar layout is checked at 320/980 px; four Sheet edges
-are checked at 320×520 and 980×840 with fixed header/footer and scrolling body.
-The catalogue flow also checks Sunday-first RTL headers, unavailable weekend
-focus/activation and named buttons across all five views.
-Native observation covered the starter's
-initial input focus, editing, disabled-to-enabled button, Tab focus indication,
-and Enter activation. The newer catalogue smoke observed the Selection layout,
-range popup, Sunday Home focus on an unavailable date with a visible focus ring,
-blocked Enter selection, and the top Sheet's layout, body scrolling, fixed
-header/footer, initial Close help focus and Escape return to its trigger.
-Windows UI Automation exposed the expected Calendar day and Sheet roles/names;
-it also revealed unnamed catalogue actions, which were corrected and re-observed
-in the rebuilt Navigation and Selection views.
-Earlier catalogue pointer checks were interrupted by concurrent desktop input. These observations
-do not establish Korean/CJK IME, screen-reader delivery, DPI or other-platform
-validation. Remaining controls and the other Sheet edges have automated coverage;
-the native smoke does not establish the complete visual surface.
+The current Windows checkpoint passed 702 behavior/integration tests, five CLI
+tests, 16 doctests (two existing ignored), formatting, Clippy and affected native
+example/CLI builds. The [three-platform run for 8c538034](https://github.com/andongmin94/gpui-design/actions/runs/42852815564)
+also passed: full checks on Linux, representative composition/CLI tests and native
+builds on Windows/macOS. Modal metadata/input-isolation follow-up is being verified.
+All 24 copied recipe modules and their test-feature compilation have standalone
+consumer coverage; source dependencies, exports, assets and 59 local document
+links were audited. [Draft PR #1](https://github.com/andongmin94/gpui-design/pull/1)
+contains the implementation commits and current validation status.
 
-The readiness audit confirmed the source-copy dependency/export/asset paths and
-59 local documentation links. It found and closed retained-value setter gaps in
-RadioGroup/ToggleGroup, unnamed weekday headers in the session Calendar, missing
-native read-only input metadata, and incorrect native UTF-16 point lookup across
-physical/wrapped/scrolled text lines. Existing GPUI regressions cover these
-changes; text-handler checks do not establish platform IME candidate behavior.
+Existing tests cover the documented selection/overlay contracts, retained-value
+setters, unavailable Calendar days/RTL, table selection/visibility, Sidebar closure,
+native read-only metadata, multiline/scrolled UTF-16 point lookup and modal flags
+(including non-modal Popover), plus background pointer/wheel isolation without
+a decorative backdrop. Composition
+checks include Sidebar at 320/980 px and all Sheet edges at 320×520/980×840.
+
+Native Windows observations cover starter editing/Tab/Enter, the Selection view
+and range popup, unavailable Sunday focus/blocked activation, and top Sheet
+layout/body scrolling/focus return. UI Automation names were inspected, corrected
+where absent, and re-observed in Navigation/Selection. These are limited visual
+and metadata observations, not screen-reader speech verification.
+
+Still open: actual Korean/CJK IME composition/candidates/commit/cancel, screen-reader
+speech and actions, mixed DPI, and wider desktop visual review. The automation
+tool does not support the Hangul key, so that native flow needs manual Korean
+mode selection. Headless handler tests do
+not establish native IME behavior. The overall goal remains incomplete.
 The official [Accordion multiple example](https://ui.shadcn.com/docs/components/base/accordion#multiple),
 [Toggle Group usage](https://ui.shadcn.com/docs/components/base/toggle-group#usage),
 [Slider range](https://ui.shadcn.com/docs/components/base/slider#range),

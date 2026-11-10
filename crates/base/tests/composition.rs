@@ -2456,7 +2456,9 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
         assert_eq!(demo.preview.read(cx).values()[0], 100.0);
         assert!(demo.preview_indeterminate);
         assert!(test_support::snapshots(window).iter().any(|item| {
-            item.role() == Some(Role::AlertDialog) && item.label() == Some("Reset preview?")
+            item.role() == Some(Role::AlertDialog)
+                && item.label() == Some("Reset preview?")
+                && item.modal()
         }));
     });
     cx.simulate_click(

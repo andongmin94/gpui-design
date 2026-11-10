@@ -209,62 +209,63 @@ impl RenderOnce for Dialog {
         let backdrop_state = self.state;
         let overlay_closable = self.overlay_closable;
 
-        deferred(
-            anchored().position(point(px(0.), px(0.))).child(
-                div()
-                    .id(("dialog", entity_id))
-                    .test_support()
-                    .absolute()
-                    .top_0()
-                    .left_0()
-                    .w(viewport.width)
-                    .h(viewport.height)
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .role(self.role)
-                    .when_some(self.label, |this, label| this.aria_label(label))
-                    .when_some(self.description, |this, description| {
-                        this.aria_description(description)
+        let host = div()
+            .id(("dialog", entity_id))
+            .absolute()
+            .top_0()
+            .left_0()
+            .w(viewport.width)
+            .h(viewport.height)
+            .flex()
+            .items_center()
+            .justify_center()
+            .occlude()
+            .role(self.role)
+            .when_some(self.label, |this, label| this.aria_label(label))
+            .when_some(self.description, |this, description| {
+                this.aria_description(description)
+            })
+            .focus_trap(("dialog", entity_id), &focus)
+            .when(self.keyboard, |this| {
+                this.key_context(CONTEXT)
+                    .on_action(move |_: &Cancel, window, cx| {
+                        cx.stop_propagation();
+                        escape_state.update(cx, |state, cx| {
+                            state.close_with_reason(DialogChangeReason::Cancel, window, cx);
+                        });
                     })
-                    .track_focus(&focus)
-                    .focus_trap(("dialog", entity_id), &focus)
-                    .when(self.keyboard, |this| {
-                        this.key_context(CONTEXT)
-                            .on_action(move |_: &Cancel, window, cx| {
-                                cx.stop_propagation();
-                                escape_state.update(cx, |state, cx| {
-                                    state.close_with_reason(DialogChangeReason::Cancel, window, cx);
+            })
+            .when_some(self.backdrop, |this, backdrop| {
+                this.child(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .on_scroll(|_, _, cx| cx.stop_propagation())
+                        .on_any_mouse_down(move |event, window, cx| {
+                            cx.stop_propagation();
+                            if event.button == MouseButton::Left && overlay_closable {
+                                backdrop_state.update(cx, |state, cx| {
+                                    state.close_with_reason(
+                                        DialogChangeReason::BackdropPress,
+                                        window,
+                                        cx,
+                                    );
                                 });
-                            })
-                    })
-                    .when_some(self.backdrop, |this, backdrop| {
-                        this.child(
-                            div()
-                                .absolute()
-                                .inset_0()
-                                .on_scroll(|_, _, cx| cx.stop_propagation())
-                                .on_any_mouse_down(move |event, window, cx| {
-                                    cx.stop_propagation();
-                                    if event.button == MouseButton::Left && overlay_closable {
-                                        backdrop_state.update(cx, |state, cx| {
-                                            state.close_with_reason(
-                                                DialogChangeReason::BackdropPress,
-                                                window,
-                                                cx,
-                                            );
-                                        });
-                                    }
-                                })
-                                .child(backdrop),
-                        )
-                    })
-                    .children(self.popup)
-                    .refine_style(&self.style),
-            ),
-        )
-        .with_priority(10)
-        .into_any_element()
+                            }
+                        })
+                        .child(backdrop),
+                )
+            })
+            .children(self.popup)
+            .refine_style(&self.style);
+        let host = crate::a11y_disabled::A11yDisabled::new(host, false)
+            .with_modal(true)
+            .test_support()
+            .track_focus(&focus);
+
+        deferred(anchored().position(point(px(0.), px(0.))).child(host))
+            .with_priority(10)
+            .into_any_element()
     }
 }
 
@@ -391,7 +392,110 @@ mod tests {
     };
 
     use super::*;
-    use crate::{Root, ScrollArea};
+    use crate::{Button, Root, ScrollArea};
+
+    struct NoBackdropHarness {
+        dialog: Entity<DialogState>,
+        background_activations: Rc<Cell<usize>>,
+        background_scrolls: Rc<Cell<usize>>,
+        popup_activations: Rc<Cell<usize>>,
+    }
+
+    impl Render for NoBackdropHarness {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            let background = self.background_activations.clone();
+            let background_scrolls = self.background_scrolls.clone();
+            let popup = self.popup_activations.clone();
+            div()
+                .size_full()
+                .child(
+                    Button::new("background-button")
+                        .size_full()
+                        .on_scroll(move |_, _, _| {
+                            background_scrolls.set(background_scrolls.get() + 1)
+                        })
+                        .on_click(move |_, _, _| background.set(background.get() + 1)),
+                )
+                .child(
+                    Dialog::new(&self.dialog)
+                        .accessibility_label("Undecorated dialog")
+                        .popup(
+                            DialogPopup::new().w(px(200.)).h(px(120.)).child(
+                                Button::new("popup-button")
+                                    .size_full()
+                                    .on_click(move |_, _, _| popup.set(popup.get() + 1)),
+                            ),
+                        ),
+                )
+        }
+    }
+
+    #[gpui::test]
+    fn modal_without_a_backdrop_blocks_background_pointer_activation(cx: &mut TestAppContext) {
+        cx.update(crate::init);
+        let dialog = cx.new(DialogState::new);
+        let background_activations = Rc::new(Cell::new(0));
+        let background_scrolls = Rc::new(Cell::new(0));
+        let popup_activations = Rc::new(Cell::new(0));
+        let (_, cx) = cx.add_window_view({
+            let dialog = dialog.clone();
+            let background_activations = background_activations.clone();
+            let background_scrolls = background_scrolls.clone();
+            let popup_activations = popup_activations.clone();
+            move |window, cx| {
+                let content = cx.new(|_| NoBackdropHarness {
+                    dialog,
+                    background_activations,
+                    background_scrolls,
+                    popup_activations,
+                });
+                Root::new(content, window, cx)
+            }
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+
+        let background_position = point(px(8.), px(8.));
+        cx.simulate_click(background_position, Modifiers::default());
+        assert_eq!(background_activations.get(), 1);
+        let wheel = || ScrollEvent {
+            position: background_position,
+            delta: ScrollDelta::Pixels(point(px(0.), px(-20.))),
+            ..Default::default()
+        };
+        cx.simulate_event(wheel());
+        assert_eq!(background_scrolls.get(), 1);
+        cx.update(|window, cx| {
+            dialog.update(cx, |state, cx| state.open(window, cx));
+            window.draw(cx).clear(cx);
+        });
+        cx.simulate_click(background_position, Modifiers::default());
+        cx.update(|window, cx| {
+            window.draw(cx).clear(cx);
+            assert!(dialog.read(cx).is_open());
+        });
+        assert_eq!(background_activations.get(), 1);
+        cx.simulate_event(wheel());
+        assert_eq!(
+            background_scrolls.get(),
+            1,
+            "the undecorated modal also blocks background wheel input"
+        );
+
+        let popup_position = cx.update(|window, _| {
+            let viewport = window.viewport_size();
+            point(viewport.width / 2., viewport.height / 2.)
+        });
+        cx.simulate_click(popup_position, Modifiers::default());
+        assert_eq!(popup_activations.get(), 1);
+        #[cfg(feature = "test-support")]
+        cx.update(|window, _| {
+            let node =
+                crate::test_support::find(window, &[], &("dialog", dialog.entity_id()).into())
+                    .unwrap();
+            assert_eq!(node.role(), Some(Role::Dialog));
+            assert!(node.modal());
+        });
+    }
 
     struct ScrollIsolationHarness {
         dialog: Entity<DialogState>,
