@@ -3185,6 +3185,14 @@ fn date_picker_and_split_panes_preserve_nested_form_state(cx: &mut TestAppContex
         let grid = test_support::find(window, &[], &"recording-calendar".into()).unwrap();
         assert_eq!(grid.role(), Some(Role::Grid));
         assert_eq!(grid.label(), Some("Recording date, December 2026"));
+        for (column, label) in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+            .into_iter()
+            .enumerate()
+        {
+            let heading = test_support::find(window, &[], &("weekday", column).into()).unwrap();
+            assert_eq!(heading.role(), Some(Role::ColumnHeader));
+            assert_eq!(heading.label(), Some(label));
+        }
         assert_eq!(
             test_support::find(window, &[], &marker_label_id)
                 .unwrap()

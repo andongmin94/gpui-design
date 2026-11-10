@@ -5111,13 +5111,17 @@ impl<M: InputModeKind> EntityInputHandler for InputBaseState<M> {
         _cx: &mut Context<Self>,
     ) -> Option<usize> {
         let last_layout = self.last_layout.as_ref()?;
-        let line_point = self.last_bounds?.localize(&point)?;
+        self.input_bounds.localize(&point)?;
+        let inner_position = point - self.last_bounds?.origin;
+        let mut y_offset = last_layout.visible_top;
 
         for (vi, line) in last_layout.lines.iter().enumerate() {
             let offset = last_layout.visible_line_byte_offsets[vi];
+            let line_point = inner_position - gpui::point(last_layout.line_number_width, y_offset);
             if let Some(utf8_index) = line.index_for_position(line_point, last_layout) {
-                return Some(self.offset_to_utf16(offset + utf8_index));
+                return Some(self.offset_to_utf16(self.resolve_index(offset + utf8_index)));
             }
+            y_offset += line.size(last_layout.line_height).height;
         }
 
         None
@@ -5350,6 +5354,7 @@ impl<M: InputModeKind> Render for InputBaseState<M> {
             M::register_actions(element, &entity, window),
             self.disabled,
         )
+        .with_readonly(self.readonly)
         .with_validation(
             self.accessibility
                 .as_ref()
@@ -5366,6 +5371,50 @@ impl<M: InputModeKind> Render for InputBaseState<M> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[gpui::test]
+    fn native_input_node_tracks_readonly_state(cx: &mut TestAppContext) {
+        use gpui::Element as _;
+
+        fn check<M: InputModeKind>(
+            state: &mut InputBaseState<M>,
+            window: &mut Window,
+            cx: &mut Context<InputBaseState<M>>,
+        ) {
+            for readonly in [false, true, false] {
+                state.set_readonly(readonly, cx);
+                let element = state.render(window, cx).into_element();
+                let mut node = gpui::accesskit::Node::new(element.a11y_role().unwrap());
+                element.write_a11y_info(&mut node);
+                assert_eq!(node.is_read_only(), readonly);
+                assert!(!node.is_disabled());
+                assert_eq!(
+                    node.supports_action(gpui::AccessibleAction::SetValue),
+                    !readonly
+                );
+            }
+        }
+
+        cx.update(crate::init);
+        let window = cx.add_empty_window();
+        window.update(|window, cx| {
+            let input = cx.new(|cx| {
+                let mut state = crate::input::InputState::new(window, cx);
+                state.set_accessibility(InputAccessibility::new(Some(gpui::Role::TextInput)));
+                state
+            });
+            input.update(cx, |state, cx| check(state, window, cx));
+
+            let textarea = cx.new(|cx| {
+                let mut state = crate::input::TextareaState::new(window, cx);
+                state.set_accessibility(InputAccessibility::new(Some(
+                    gpui::Role::MultilineTextInput,
+                )));
+                state
+            });
+            textarea.update(cx, |state, cx| check(state, window, cx));
+        });
+    }
 
     #[gpui::test]
     fn accessibility_actions_recheck_live_editability(cx: &mut TestAppContext) {
@@ -12535,6 +12584,64 @@ mod tests {
             });
         });
         assert_ne!(input.read_with(&cx, |state, _| state.paste_target()), moved);
+    }
+
+    #[gpui::test]
+    fn native_input_point_lookup_follows_multiline_layout_and_scroll(cx: &mut TestAppContext) {
+        let value = format!(
+            "Heading🙂\n{}\nLast line",
+            "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega ".repeat(20)
+        );
+        let second_line = value.find("beta").unwrap();
+        let wrapped_line = value.find("iota").unwrap();
+        let scrolled_line = value.rfind("iota").unwrap();
+        let view = InputView::build_textarea(cx, move |state| state.rows(6).default_value(value));
+        cx.simulate_window_resize(view.window_handle.into(), size(px(240.), px(120.)));
+        let mut cx = VisualTestContext::from_window(view.window_handle.into(), cx);
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+
+        let lookup = |offset: usize, cx: &mut VisualTestContext| {
+            cx.update(|window, cx| {
+                view.input.update(cx, |state, cx| {
+                    let text = state.value();
+                    let utf16 = text[..offset].encode_utf16().count();
+                    let bounds = state
+                        .bounds_for_range(
+                            utf16..utf16 + 1,
+                            state.text_bounds().unwrap(),
+                            window,
+                            cx,
+                        )
+                        .unwrap();
+                    let point = bounds.center();
+                    assert!(
+                        state.input_bounds().contains(&point),
+                        "probe must be visible"
+                    );
+                    assert_eq!(
+                        state.character_index_for_point(point, window, cx),
+                        Some(utf16)
+                    );
+                    bounds.top()
+                })
+            })
+        };
+        let second_top = lookup(second_line, &mut cx);
+        let wrapped_top = lookup(wrapped_line, &mut cx);
+        assert!(wrapped_top > second_top, "the second probe must be wrapped");
+
+        cx.update(|window, cx| {
+            view.input.update(cx, |state, cx| {
+                let text = state.value();
+                let utf16 = text[..scrolled_line].encode_utf16().count();
+                state.set_selected_text_range(utf16..utf16, window, cx);
+            });
+            window.draw(cx).clear(cx);
+        });
+        view.input.read_with(&cx, |state, _| {
+            assert!(state.scroll_offset().y < -state.input_bounds().size.height);
+        });
+        lookup(scrolled_line, &mut cx);
     }
 
     #[gpui::test]

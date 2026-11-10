@@ -61,6 +61,8 @@ remains separate. `set_disabled(bool, cx)` prevents edits and ordinary Tab entry
 A field disabled while focused keeps its binding so Tab can leave. Re-enabling
 restores entry. `set_readonly(bool, cx)` prevents edits while retaining focus and
 selection. Programmatic `set_value` remains available for application updates.
+The native input node exposes its read-only state explicitly, alongside its
+available editing actions.
 
 Keep the state outside a collapsible section, tab panel, or Dialog's render path
 so closing that surface preserves the text. The example retains Session notes
@@ -445,6 +447,12 @@ the whole group. Disabling preserves the selected value and emits no selection
 event. `RadioGroupEvent::Change(value)` is emitted once when a user selects a
 different value. Selecting the current value does not emit another change.
 
+`set_selected_value(Some(value), window, cx)` applies an enabled application value;
+`None` clears it. Unknown/disabled values return false without changing the
+selection. Accepted updates emit no user event and preserve focus, including
+while the whole group is disabled. If an option currently owns focus, it remains
+the one Tab stop until focus leaves; reentry uses the new selected/first option.
+
 ## Keyboard and disabled behavior
 
 | Input | Checkbox / Switch | RadioGroup |
@@ -557,6 +565,13 @@ separately. Read `items()`, `is_pressed(index)`, and `selected_values()` for the
 current presentation. Observe the entity and subscribe to
 `ToggleGroupEvent::Change(values)` for changes to the selected set; values follow
 the original item order.
+
+`set_selected_values(values, window, cx)` replaces the pressed set without a user
+event, focus change or cursor change. Duplicate values are deduplicated; an empty
+iterator clears it. Unknown/disabled values or multiple distinct values in single
+mode return false without changing anything. Application updates remain allowed
+while the group is disabled. The session example applies its initial radio and
+formatting values through these retained-state setters.
 
 The group has one Tab stop, at its last focused enabled option or initially its
 first enabled option. Horizontal Left/Right or vertical Up/Down move between

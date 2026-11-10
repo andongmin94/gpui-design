@@ -5,8 +5,8 @@
 //! assistive technology as one that accepts input. [`A11yDisabledExt`] wraps the
 //! control's root element without adding a layout node, a focus stop or an
 //! accessibility node. The same adapter exposes required and invalid input
-//! state, multiselectable containers, and table-header sort direction, which
-//! GPUI does not expose through its fluent builders.
+//! state, read-only inputs, multiselectable containers, and table-header sort
+//! direction, which GPUI does not expose through its fluent builders.
 use gpui::{
     App, Bounds, Element, ElementId, GlobalElementId, InspectorElementId, InteractiveElement,
     Interactivity, IntoElement, LayoutId, Pixels, Window, accesskit,
@@ -16,6 +16,7 @@ use gpui::{
 pub(crate) struct A11yDisabled<E> {
     inner: E,
     disabled: bool,
+    readonly: bool,
     required: bool,
     invalid: bool,
     multiselectable: bool,
@@ -27,11 +28,17 @@ impl<E> A11yDisabled<E> {
         Self {
             inner,
             disabled,
+            readonly: false,
             required: false,
             invalid: false,
             multiselectable: false,
             sort_direction: None,
         }
+    }
+
+    pub(crate) fn with_readonly(mut self, readonly: bool) -> Self {
+        self.readonly = readonly;
+        self
     }
 
     pub(crate) fn with_validation(mut self, required: bool, invalid: bool) -> Self {
@@ -183,6 +190,9 @@ impl<E: Element> Element for A11yDisabled<E> {
         self.inner.write_a11y_info(node);
         if self.disabled {
             node.set_disabled();
+        }
+        if self.readonly {
+            node.set_read_only();
         }
         if self.required {
             node.set_required();

@@ -169,6 +169,40 @@ impl ToggleGroupState {
             .collect()
     }
 
+    /// Sets pressed values without emitting Change or moving focus or its cursor.
+    ///
+    /// Unknown or disabled options, and more than one distinct value in single
+    /// mode, are rejected without changing the selection. Empty values clear the
+    /// group. Returns whether all values were accepted, including unchanged values.
+    /// Application updates remain available while the group itself is disabled.
+    pub fn set_selected_values<V: AsRef<str>>(
+        &mut self,
+        values: impl IntoIterator<Item = V>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let mut pressed = vec![false; self.items.len()];
+        for value in values {
+            let Some(index) = self
+                .items
+                .iter()
+                .position(|item| item.value.as_ref() == value.as_ref() && !item.disabled)
+            else {
+                return false;
+            };
+            pressed[index] = true;
+        }
+        if self.single_selection && pressed.iter().filter(|pressed| **pressed).count() > 1 {
+            return false;
+        }
+        if self.pressed != pressed {
+            self.pressed = pressed;
+            cx.notify();
+            window.refresh();
+        }
+        true
+    }
+
     pub fn option_focus_handle(&self, index: usize) -> &FocusHandle {
         &self.focus[index]
     }
@@ -854,6 +888,81 @@ mod tests {
                 .map(SharedString::from)
                 .collect::<Vec<_>>())
         );
+    }
+
+    #[gpui::test]
+    fn programmatic_selection_preserves_cursor_and_validates_without_user_events(
+        cx: &mut TestAppContext,
+    ) {
+        for single in [false, true] {
+            let (cx, view, changes) = harness(cx, Axis::Horizontal, single);
+            cx.simulate_keystrokes("tab right");
+            draw(cx);
+            cx.update(|window, cx| {
+                let state = view.read(cx).state.clone();
+                state.update(cx, |state, cx| {
+                    assert!(state.set_selected_values(["strike", "strike"], window, cx));
+                    assert!(!state.set_selected_values(["bold", "missing"], window, cx));
+                    assert!(!state.set_selected_values(["bold", "underline"], window, cx));
+                    assert_eq!(state.selected_values(), [SharedString::from("strike")]);
+                    let accepted = state.set_selected_values(["strike", "bold"], window, cx);
+                    assert_eq!(accepted, !single);
+                    let expected = if single {
+                        vec!["strike"]
+                    } else {
+                        vec!["bold", "strike"]
+                    };
+                    assert_eq!(
+                        state.selected_values(),
+                        expected
+                            .into_iter()
+                            .map(SharedString::from)
+                            .collect::<Vec<_>>()
+                    );
+                    assert!(state.option_focus_handle(2).is_focused(window));
+                });
+                for index in [0, 2, 3] {
+                    let option = ToggleOption::new(&state, index)
+                        .render(window, cx)
+                        .into_element();
+                    let mut node = accesskit::Node::new(option.a11y_role().unwrap());
+                    option.write_a11y_info(&mut node);
+                    let pressed = index == 3 || (index == 0 && !single);
+                    assert_eq!(
+                        node.toggled(),
+                        Some(if pressed {
+                            Toggled::True
+                        } else {
+                            Toggled::False
+                        })
+                    );
+                }
+            });
+            draw(cx);
+            cx.simulate_keystrokes("tab");
+            draw(cx);
+            cx.update(|window, cx| {
+                assert!(view.read(cx).after.is_focused(window));
+                let state = view.read(cx).state.clone();
+                state.update(cx, |state, cx| {
+                    state.set_disabled(true, window, cx);
+                    assert!(state.set_selected_values(std::iter::empty::<&str>(), window, cx));
+                    assert!(state.selected_values().is_empty());
+                    assert!(state.set_selected_values(["bold"], window, cx));
+                    state.set_disabled(false, window, cx);
+                });
+                assert!(view.read(cx).after.is_focused(window));
+            });
+            draw(cx);
+            cx.simulate_keystrokes("shift-tab");
+            draw(cx);
+            cx.update(|window, cx| {
+                let state = view.read(cx).state.read(cx);
+                assert!(state.option_focus_handle(2).is_focused(window));
+                assert_eq!(state.selected_values(), [SharedString::from("bold")]);
+            });
+            assert!(changes.borrow().is_empty());
+        }
     }
 
     #[gpui::test]

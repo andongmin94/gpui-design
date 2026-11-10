@@ -193,15 +193,16 @@ impl Demo {
             .default_value("pen")
         });
         let stroke = cx.new(|cx| {
-            RadioGroupState::new(
+            let mut state = RadioGroupState::new(
                 [
                     RadioItem::new("fine", "Fine"),
                     RadioItem::new("medium", "Medium (unavailable)").disabled(true),
                     RadioItem::new("bold", "Bold"),
                 ],
                 cx,
-            )
-            .default_value("fine")
+            );
+            state.set_selected_value(Some("fine"), window, cx);
+            state
         });
         let tabs = cx.new(|cx| {
             TabsState::new(
@@ -260,15 +261,16 @@ impl Demo {
         let reset_dialog =
             cx.new(|cx| DialogState::new(cx).with_initial_focus(&reset_cancel_focus));
         let formatting = cx.new(|cx| {
-            ToggleGroupState::new(
+            let mut state = ToggleGroupState::new(
                 [
                     ToggleItem::new("bold", "Bold"),
                     ToggleItem::new("underline", "Underline (unavailable)").disabled(true),
                     ToggleItem::new("italic", "Italic"),
                 ],
                 cx,
-            )
-            .default_values(["bold"])
+            );
+            state.set_selected_values(["bold"], window, cx);
+            state
         });
         // The form summary and its presentation read these retained states.
         let subscriptions = vec![
@@ -480,8 +482,10 @@ impl Demo {
                             .map(|(column, day)| {
                                 div()
                                     .id(("weekday", column))
+                                    .test_support()
                                     .role(Role::ColumnHeader)
                                     .aria_column_index(column)
+                                    .aria_label(day)
                                     .flex_1()
                                     .min_w_0()
                                     .text_center()

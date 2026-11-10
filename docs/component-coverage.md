@@ -158,7 +158,7 @@ with column visibility, grouped collapsible Sidebar, Calendar configuration/RTL,
 Select typeahead and programmatic value, four-edge Sheets, and a local dependency-aware
 source CLI with standalone application tokens. These
 capabilities do not close the overall goal.
-The current Windows checkpoint passed 697 behavior/integration tests, five source
+The current Windows checkpoint passed 701 behavior/integration tests, five source
 CLI tests and 16 doctests (two existing doctests remain ignored). Formatting,
 workspace Clippy, the source CLI binary and three default-feature example builds
 passed. All 24 current CLI recipe modules compiled in a standalone consumer with
@@ -184,6 +184,13 @@ Earlier catalogue pointer checks were interrupted by concurrent desktop input. T
 do not establish Korean/CJK IME, screen-reader delivery, DPI or other-platform
 validation. Remaining controls and the other Sheet edges have automated coverage;
 the native smoke does not establish the complete visual surface.
+
+The readiness audit confirmed the source-copy dependency/export/asset paths and
+59 local documentation links. It found and closed retained-value setter gaps in
+RadioGroup/ToggleGroup, unnamed weekday headers in the session Calendar, missing
+native read-only input metadata, and incorrect native UTF-16 point lookup across
+physical/wrapped/scrolled text lines. Existing GPUI regressions cover these
+changes; text-handler checks do not establish platform IME candidate behavior.
 The official [Accordion multiple example](https://ui.shadcn.com/docs/components/base/accordion#multiple),
 [Toggle Group usage](https://ui.shadcn.com/docs/components/base/toggle-group#usage),
 [Slider range](https://ui.shadcn.com/docs/components/base/slider#range),

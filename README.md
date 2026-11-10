@@ -24,10 +24,10 @@ validation. Catalogue coverage alone is not a claim of shadcn/ui-level completen
 | --- | --- | --- |
 | **Button** | Pointer and keyboard activation, disabled state, focus, accessible name and role, and optional current-page metadata | Content, spacing, shape, and state styling |
 | **Toggle** | Controlled pressed state over Button's activation, focus, and disabled behavior | Content and pressed-state styling |
-| **ToggleGroup** | Multiple or optional single pressed value, one Tab stop, orientation-aware navigation, and disabled items | Group layout and Toggle option styling |
+| **ToggleGroup** | Multiple or optional single pressed value, programmatic replacement, one Tab stop, orientation-aware navigation, and disabled items | Group layout and Toggle option styling |
 | **Checkbox** | Controlled unchecked/checked/mixed state, activation, disabled state, and focus | Indicator, label, layout, and state styling |
 | **Switch** | Controlled on/off state, activation, disabled state, and focus | Track, thumb, label, and state styling |
-| **RadioGroup** | Single selection, one Tab stop, arrow navigation, disabled options, and focus | Group layout and option rendering |
+| **RadioGroup** | Single selection, programmatic set/clear, one Tab stop, arrow navigation, disabled options, and focus | Group layout and option rendering |
 | **Input** | Text editing state, selection, clipboard, focus, and the native text-input interface | Field container, text style, caret, and surrounding controls |
 | **Textarea** | Multiline editing over the same engine, retained text, wrapping, and normal form Tab traversal | Field container, dimensions, text style, and surrounding content |
 | **Field** | Label focus, help/error descriptions, and required/invalid metadata for existing Input/Textarea-based controls | Layout, label/help/error styles, control rendering, and validation rules |
