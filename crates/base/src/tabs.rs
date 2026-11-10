@@ -691,9 +691,7 @@ mod tests {
     }
 
     #[gpui::test]
-    fn programmatic_selection_preserves_focus_and_emits_only_real_changes(
-        cx: &mut TestAppContext,
-    ) {
+    fn programmatic_selection_preserves_focus_and_emits_only_real_changes(cx: &mut TestAppContext) {
         let (cx, view, changes) = harness(cx, Axis::Horizontal, items());
         cx.update(|window, cx| {
             let state = view.read(cx).state.clone();
@@ -843,6 +841,7 @@ mod tests {
         assert_tab(cx, &view, 2);
         cx.simulate_click(point(px(250.), px(48.)), Modifiers::default());
         draw(cx);
+        assert_tab(cx, &view, 2);
         cx.simulate_click(point(px(130.), px(48.)), Modifiers::default());
         draw(cx);
         press(cx, "space");
