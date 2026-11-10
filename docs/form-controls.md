@@ -20,16 +20,16 @@ control a stable element ID and an accessible label.
 | Textarea | Retained `Entity<TextareaState>` | Observe for surrounding presentation; the existing Input events report edits |
 | Field | Application label, help, requirement, and validation error | Render current metadata around an existing Input, Textarea, or Combobox query; no new input state |
 | Label | Application text, target FocusHandle, and disabled flag | Focus the existing control on click; keep its accessible name and disabled state in sync |
-| Combobox | Retained `Entity<ComboboxState>` | Observe for rendering; `ComboboxEvent::Change` reports a different committed user choice |
-| Calendar | Retained `Entity<CalendarState>` | Observe for rendering; `CalendarEvent::Change` reports a different user-selected date |
-| DatePicker | Retained `Entity<DatePickerState>` composing existing Calendar/Popover state | Observe for date/popup rendering; `DatePickerEvent::Change` runs after a different date commits and the popup closes |
+| Combobox | Retained `Entity<ComboboxState>` | Observe for rendering; `ComboboxEvent::Change` reports the committed user-selected values |
+| Calendar | Retained `Entity<CalendarState>` | Observe for rendering; `CalendarEvent::Change` reports the changed single/multiple/range selection |
+| DatePicker | Retained `Entity<DatePickerState>` composing existing Calendar/Popover state | Observe for selection/popup rendering; single and complete-range events follow popup closure, partial/multiple events retain it |
 | Checkbox | Application field of type `CheckboxState` or `bool` | `on_change` reports the next state; store it and call `cx.notify()` |
 | Toggle | Application `bool` | `on_change` requests the next pressed value; render it back with `pressed` |
 | ToggleGroup | Retained `Entity<ToggleGroupState>` | Observe for rendering; `ToggleGroupEvent::Change` reports selected values in item order |
 | Switch | Application `bool` | `on_change` reports the next value; store it and call `cx.notify()` |
 | RadioGroup | Retained `Entity<RadioGroupState>` | Observe the entity for rendering; subscribe to `RadioGroupEvent::Change` for user selection changes |
 | Select | Retained `Entity<SelectState>` | Observe the entity for rendering; subscribe to `SelectEvent::Change` for committed user changes |
-| Slider | Retained `Entity<SliderState>` | Observe for rendering; `SliderEvent::Change` reports a changed, normalized value |
+| Slider | Retained `Entity<SliderState>` | Observe for rendering; `SliderEvent::Change` reports the changed ordered values |
 | Progress | Application percentage and indeterminate flag | Pass the current value and state on each render; no interaction callback |
 
 Checkbox and Switch are controlled. Rendering them never changes application
@@ -61,6 +61,8 @@ remains separate. `set_disabled(bool, cx)` prevents edits and ordinary Tab entry
 A field disabled while focused keeps its binding so Tab can leave. Re-enabling
 restores entry. `set_readonly(bool, cx)` prevents edits while retaining focus and
 selection. Programmatic `set_value` remains available for application updates.
+The native input node exposes its read-only state explicitly, alongside its
+available editing actions.
 
 Keep the state outside a collapsible section, tab panel, or Dialog's render path
 so closing that surface preserves the text. The example retains Session notes
@@ -117,13 +119,14 @@ interactive child content.
 let preview = self.preview.read(cx);
 let label = Label::new(
     "preview-percentage-label",
-    preview.focus_handle(),
+    preview.thumb_focus_handle(0),
     "Preview percentage",
 )
 .disabled(preview.is_disabled())
 .text_color(muted);
 let slider = Slider::new("preview-percentage", &self.preview)
-    .accessibility_label("Preview percentage");
+    .accessibility_label("Preview percentage")
+    .child(SliderThumb::new(&self.preview, 0).accessibility_label("Preview percentage"));
 
 div().flex().flex_col().gap_1().child(label).child(slider)
 ```
@@ -146,58 +149,93 @@ name describe the label itself. For Input/Textarea label, help, and validation
 association, use Field, which projects metadata onto its retained input and
 checks the input's live disabled state when its label is clicked.
 
+## Select
+
+`SelectState::new(items, cx)` owns a fixed ordered set of unique values, one
+committed value and a separate open-popup cursor. Disabled options are skipped.
+Observe the state for presentation and subscribe to `SelectEvent::Change` for
+committed user changes. `set_selected_value(Some(value), window, cx)` sets an
+enabled value; `None` clears it. Accepted updates close the popup without a user
+event, using its normal focus restoration. Unknown/disabled values return false
+without changing the value, pending cursor or popup. App updates remain available
+while the whole control is disabled.
+
+| Input | Result |
+| --- | --- |
+| Enter / Space | Open the popup, or commit its highlighted option |
+| Up / Down | Open and move among enabled options |
+| Home / End while open | Highlight the first / last enabled option without committing |
+| Printable characters | Commit a matching option while closed; highlight it while open |
+| Escape | Discard the pending choice, close and restore trigger focus |
+
+Typeahead matches case-insensitive label prefixes and resets after one second.
+Repeated letters cycle matching options. Modified shortcuts, native
+character-preferred events and keys from descendant editors do not search.
+Opening/closing clears the prefix. This is a non-editable select; use Combobox
+for a visible native text query, grouped results or multiple selection.
+
 ## Combobox
 
-Construct `ComboboxState::new(items, window, cx)` with fixed ordered
-`SearchItem::new(value, label)` entries. Values must be unique; `.keywords(...)`
-adds aliases and `.disabled(true)` marks an unavailable choice. This descriptor
-is shared with Command, as are input editing, filtering, highlight, and list
-scrolling. Combobox adds one committed selection and its popup lifecycle.
+Construct `ComboboxState::new(items, window, cx)` with ordered, unique
+`SearchItem::new(value, label)` entries. `.keywords(...)` adds aliases,
+`.disabled(true)` marks an unavailable choice, and `.group(label)` assigns a
+named result group. Keep each group's items contiguous in the source order.
+The shared Command engine owns native query editing, filtering, highlight and
+scrolling; Combobox owns committed selection and its popup lifecycle.
 
-Use `set_selected_value(Some(value), window, cx)` to initialize or update the
-selection, or `None` to clear it. The method rejects unknown/disabled values and
-returns whether the request was accepted. Programmatic changes emit no Change
-event. User Enter or pointer commits emit `ComboboxEvent::Change(value)` only
-when the selected value actually changes.
+Single selection is the default. `.multiple(true)` allows several committed
+values. `set_selected_values([values...], window, cx)` initializes or replaces
+selection without a user event; an empty iterator clears it. Unknown/disabled
+values and more than one distinct value in single mode are rejected. Read
+`selected_indices()`, `is_selected(index)`, `selected_items(cx)` or
+`selected_values(cx)` for application presentation. User activation emits
+`ComboboxEvent::Change(values)` in item order only when the selection changes.
 
 Render `Combobox::new(id, &state).input(|input| ...).content(surface)`. The input
-builder configures its frame, name, placeholder, and `InputStyles`. Put a named
-`ComboboxList::new(id, &state)` in the surface and render direct
-`ComboboxOption::new(&state, index)` children in `visible_indices(cx)` order.
-Use `items(cx)` for labels, `highlighted_index(cx)` for the current search cursor,
-and `selected_index()` for the committed choice. Keep empty text outside the
-list. Supply a bounded list height and all visual styles in the application.
+builder owns its frame, name, placeholder and `InputStyles`. A named
+`ComboboxList` contains `ComboboxOption` children in `visible_indices(cx)` order,
+optionally inside `ComboboxGroup::new(id, &state, label)` wrappers. Obtain group
+names with `visible_groups(cx)` and matching item indices with
+`visible_group_indices(Some(label), cx)`; `None` gives ungrouped items. Each group
+supplies a named native Group and Heading; `.heading(...)` styles its heading.
+Empty groups disappear, and headings do not enter keyboard navigation. Give the
+list a bounded height and keep empty text outside it.
 
 | Interaction | Result |
 | --- | --- |
-| Pointer or arrow opens a closed input | Shows all options with the committed choice highlighted; the query clears |
-| Typing | Filters suggestions while keeping the previous committed value |
-| Up / Down | Moves through enabled results without changing selection |
-| Enter / result click | Commits the highlighted/clicked enabled choice and restores its label |
-| Escape | Discards the draft and restores the label; an enclosing Dialog stays open |
-| Tab / Shift-Tab, blur, outside press | Discards the draft while preserving normal focus movement |
+| Pointer or arrow opens a closed input | Shows all options, highlighting the first selected or enabled choice |
+| Typing | Filters suggestions without changing committed values |
+| Up / Down | Moves through enabled results, across groups |
+| Enter / result click, single mode | Commits one choice, closes suggestions and restores its label |
+| Enter / result click, multiple mode | Toggles that choice while keeping the query and suggestions open |
+| Escape, Tab, blur or outside press | Ends the draft; single mode restores its label, multiple mode clears the query |
 
-Only the input is a Tab stop. `set_disabled(bool, window, cx)` closes the popup
-and disables ordinary entry. `set_query(text, window, cx)` starts a focused draft.
-While the native input has marked text, Enter cannot commit an option; Escape
-unmarks that composition first and leaves the suggestions open. These are
-automated native-handler contracts, not desktop IME validation.
+Only the query is the control's Tab stop. Render selected chips with ordinary
+application Buttons and call `remove_value(value, window, cx)` or
+`clear(window, cx)` for user removal. These operations emit the changed selection,
+return focus to the query and reject disabled controls or active IME composition.
+`set_disabled` closes the popup and blocks ordinary entry. `set_query` starts a
+focused draft. Marked text takes precedence over suggestion navigation/commit;
+Escape unmarks composition first. Headless checks do not establish desktop IME
+behavior.
 
-The input exposes ComboBox role, name, value, expanded state, and any Field
-metadata. Listbox options expose the committed selection independently of the
-pending highlight. The pinned GPUI API cannot express an input-to-sibling-list
-active-descendant relationship. This implementation covers fixed single
-selection; asynchronous sources, grouping, multiple selection, and free-form
-committed values remain outside its scope.
+`set_items(items, window, cx)` replaces source items without a Change event.
+Current selection follows stable values; missing or newly disabled values are
+removed. Active query text, focus and native composition are retained. Closed
+single selection refreshes its display label. Applications own fetching, loading,
+request ordering and errors; no network controller is installed.
 
-The example's recording preset uses this control inside the settings Dialog.
-The form responds to Input's existing reveal requests so keyboard focus can
-reach fields below its scrolling viewport. Closing and reopening the Dialog
-preserves the committed preset.
+Native semantics include the ComboBox query, expanded state, named groups,
+committed selected values and a multiselectable listbox in multiple mode. The
+pinned GPUI API cannot express an input-to-sibling-list active-descendant
+relationship. Free-form committed values and fuzzy ranking are not supplied.
+The settings example retains a single preset inside Dialog. The catalogue's
+Selection view demonstrates grouped multiple targets, chip removal and a local
+source update without a second input or selection engine.
 
 ## Calendar
 
-`CalendarState` retains a single optional `NaiveDate`, the focused date, and the
+`CalendarState` retains a `CalendarSelection`, the focused date, and the
 visible month. `NaiveDate` is re-exported from Chrono; no second date model or
 timezone conversion is introduced. Create the state once:
 
@@ -209,14 +247,22 @@ let calendar = cx.new(|cx| {
             NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
             NaiveDate::from_ymd_opt(2027, 12, 31).unwrap(),
         )
-        .default_value(initial)
+        .default_selection(CalendarSelection::Single(Some(initial)))
 });
 ```
 
-Without `default_value`, selection starts empty. Default bounds cover years
+Without `default_selection`, selection starts as `CalendarSelection::Single(None)`. Default bounds cover years
 1–9999; `bounds` narrows the inclusive selectable range before mounting. The
-grid exposes six complete Monday-first weeks through `days()`. Adjacent-month
+grid exposes six complete weeks through `days()`, Monday-first by default. Adjacent-month
 dates remain visible; dates outside the configured bounds are disabled.
+
+Before mounting, `.week_starts_on(Weekday::Sun)` changes the grid and Home/End
+boundaries. Use `weekdays()` for matching header order; `Weekday` is re-exported
+alongside `NaiveDate`. `.disabled_dates(|date| ...)` supplies application rules
+such as weekends or booked dates. It filters existing single/multiple values and
+clears ranges with unavailable endpoints. Default and programmatic setters reject
+unavailable dates/endpoints; a range may include unavailable interior days.
+Keep the predicate's result stable throughout the state's lifetime.
 
 Render `Calendar::new(id, &calendar)` with an accessible month/year label. Use
 ordinary identified `div().id(...).role(Role::Row)` containers for one seven-cell weekday header
@@ -235,10 +281,10 @@ See `Demo::calendar_content` in the native example for the complete composition.
 
 | Input | Result |
 | --- | --- |
-| Tab / Shift+Tab | Enter the grid at its one enabled day stop, or leave it |
-| Left / Right | Move focus by one day |
+| Tab / Shift+Tab | Enter at the one retained day stop, or leave the grid |
+| Left / Right | Move focus one physical cell, reversing chronological direction in RTL |
 | Up / Down | Move focus by one week |
-| Home / End | Move to Monday / Sunday of the current week |
+| Home / End | Move to the configured first / last day of the current week |
 | Page Up / Page Down | Move by one month, clamping month-end dates |
 | Shift+Page Up / Shift+Page Down | Move by one year |
 | Enter / Space / click | Commit the enabled date; emit Change only if it changed |
@@ -251,16 +297,36 @@ Those methods retain an external navigation button's focus. Read `focus_handle()
 when explicitly moving focus into the calendar; its grid slot can change as the
 visible month changes, so do not cache that handle as a permanent date identity.
 
-`set_selected_date(Some(date), window, cx)` updates selection and visible month
-without a user event, and rejects out-of-range values. Passing `None` clears
-selection while retaining navigation. `set_disabled` blocks user navigation and
-selection and removes normal Tab entry while preserving the selected date.
+Unavailable dates within bounds remain keyboard-focusable for discovery but
+cannot be activated by pointer, Enter or Space. Even an entirely unavailable
+calendar keeps one grid Tab stop; disabling the whole Calendar removes normal
+entry and navigation. Out-of-bounds cells stay outside focus traversal.
 
-This contract covers a single Gregorian date and bounded selection. Range or
-multiple selection, arbitrary disabled-day predicates, locale/week-start
-configuration, clocks, and timezone handling are outside the current family.
-DatePicker adds a popup composition over this same single-date contract. The
-example demonstrates a retained plan, not a recording scheduler.
+Calendar inherits `DirectionProvider` or accepts `.direction(Direction::Rtl)`.
+The application must apply the same `Direction::row` to weekday/date rows and
+mirror weekday header column indices. CalendarDay projects physical columns and
+horizontal keyboard direction from its enclosing Calendar. Labels and text
+formatting remain application-owned; the Selection catalogue shows this layout.
+
+`CalendarSelection` also supports `Multiple(Vec<NaiveDate>)` and
+`Range { start: Option<NaiveDate>, end: Option<NaiveDate> }`. Configure an empty
+range with `.default_selection(CalendarSelection::Range { start: None, end: None })`.
+The first activation chooses its start; the second completes inclusive ordered
+endpoints, including reverse or same-day selection. Activating a completed range
+starts a new partial range. Multiple selection toggles dates, stored in ascending
+order without duplicates. `is_selected(date)` covers every selected date in a range.
+
+`selection()` returns the complete value, and `selection().first_date()` supports
+summaries. `set_selection(selection, window, cx)` changes mode/value without a
+user event; it rejects out-of-bounds dates, reversed ranges and an end without a
+start. A nonempty value also updates the visible month and cursor; clearing
+selection retains navigation. `CalendarEvent::Change(selection)` reports user
+changes. `set_disabled` blocks user navigation/selection and normal Tab entry.
+
+The calendar remains Gregorian. Non-Gregorian arithmetic, clocks and timezone
+conversion are not provided. The Selection catalogue demonstrates Sunday-first,
+weekend-disabled range/multiple dates and RTL; the session example retains its
+Monday-first single recording date.
 
 ## DatePicker
 
@@ -275,7 +341,7 @@ let picker = cx.new(|cx| DatePickerState::new(&calendar, window, cx));
 
 Observe the picker for rendering: it observes both its Calendar and Popover, so
 a separate Calendar observation is unnecessary for the same view. Access the
-date with `selected_date(cx)` and the nested date state with `calendar()`.
+selection with `selection(cx)` and the nested date state with `calendar()`.
 Render the Calendar only inside this picker's popup, not simultaneously in a
 second standalone grid.
 
@@ -303,27 +369,31 @@ enclosing Dialog's focus containment.
 | Open with a selected date | Reset navigation to that date and focus its current grid slot |
 | Open without selection | Retain and focus the Calendar's last navigation date |
 | Navigate days/months | Change navigation without changing the committed date |
-| Click / Enter / Space on an enabled day | Select it, close, and restore the trigger; reselecting the same date also closes |
+| Single date activation | Select, close and restore the trigger; the same date also closes |
+| Partial range / multiple date activation | Update selection and keep the popup open |
+| Complete range activation | Close and restore the trigger before emitting the changed range |
 | Escape | Close the picker before an enclosing Dialog, retaining selection |
 | Tab / Shift+Tab past popup contents | Close and continue from the trigger's position |
 | Click outside | Close while preserving the outside control's new focus |
 
 The day focus is resolved immediately before opening because month changes can
 move the selected date to a different focus slot. `DatePickerEvent::Change` is
-emitted only for a different user-selected value and only after the popup closes.
-Subscribers can therefore focus another control or open a new surface without
-the finishing picker taking focus back. Public Calendar Change behavior remains
+emitted only for a changed user selection. Single and complete-range values close
+the popup before the event, so a subscriber can open another surface without
+losing its new focus. Partial-range and multiple values are published while open.
+Public Calendar Change behavior remains
 deduplicated; the composition also observes successful same-date activation.
 
 `open` and `close` provide imperative lifecycle control. `set_disabled` closes
 an open popup and disables both its trigger and Calendar. Use this method to
 coordinate disabled state instead of modifying the nested calendar independently.
-`set_selected_date(Some(date), window, cx)` validates the bounds, closes the
-popup, and changes the value without emitting Change. Invalid dates leave the
-picker unchanged; `None` clears selection and retains Calendar navigation.
+`set_selection(selection, window, cx)` validates the full selection, closes the
+popup and updates Calendar without emitting Change. Invalid values leave the
+picker unchanged. Applications can use this same setter for preset Buttons; the
+Selection catalogue supplies a complete range preset.
 
-This picker supports one date and an application-formatted Button trigger. It
-does not parse text, choose date ranges/multiple dates, supply presets, or add
+The picker supports single, multiple and range dates with an application-formatted
+Button trigger. It does not parse text, fetch presets, or add
 locale/timezone rules beyond the Calendar contract.
 
 ## Checkbox and Switch
@@ -377,6 +447,12 @@ the whole group. Disabling preserves the selected value and emits no selection
 event. `RadioGroupEvent::Change(value)` is emitted once when a user selects a
 different value. Selecting the current value does not emit another change.
 
+`set_selected_value(Some(value), window, cx)` applies an enabled application value;
+`None` clears it. Unknown/disabled values return false without changing the
+selection. Accepted updates emit no user event and preserve focus, including
+while the whole group is disabled. If an option currently owns focus, it remains
+the one Tab stop until focus leaves; reentry uses the new selected/first option.
+
 ## Keyboard and disabled behavior
 
 | Input | Checkbox / Switch | RadioGroup |
@@ -397,42 +473,49 @@ so Tab and Shift-Tab can still reach the neighboring control.
 
 ## Slider
 
-Create `SliderState::new(min..=max, step, cx)` once and optionally set an initial
-value with `.default_value(value)`. Bounds and values must be finite, `min < max`,
-and `step` must be positive. Values are clamped to the range and snapped to a
-step grid starting at the minimum. The range is inclusive at both ends.
+Create `SliderState::new(min..=max, step, [values...], cx)` once. A single value
+creates a single-thumb slider; two values describe a range, and more values add
+ordered stops. The nonempty collection fixes the thumb count. Bounds and values
+must be finite, `min < max`, and `step` must be positive. Values are clamped and
+snapped to a step grid starting at the minimum. The range includes both ends.
 
-Render `Slider::new(id, &state).accessibility_label(...)` and supply the track,
-fill, and thumb as children. `percentage()` gives the current position from 0 to
-1. The slider's root bounds define the thumb-center travel rail; place the thumb
+Render `Slider::new(id, &state).accessibility_label(...)` as the named group and
+rail. Supply the track and fill, and one
+`SliderThumb::new(&state, index).accessibility_label(...)` per value, in order.
+Each thumb owns its native Slider role, focus, keys, and value actions. Give range
+ends distinct names, such as "Trim start" and "Trim end". `percentage(index)`
+gives that thumb's position from 0 to 1. The root bounds define its travel rail; place the thumb
 center at that fraction of the root and offset by half the application's thumb
 size. The example uses a comfortable-height hit area and a thin track centered
 inside it. Neither colors nor control dimensions are imposed by the library.
 
-The state exposes `value`, `min_value`, `max_value`, `step_value`, `percentage`,
-`focus_handle`, and `is_disabled`. Use `set_value(value, window, cx)` for a
-programmatic update and `set_disabled(disabled, window, cx)` to change whether the
-user can interact. Programmatic value updates remain possible while disabled.
-Both programmatic and user changes emit `SliderEvent::Change(value)` only when
-the normalized value actually changes; observe the state to update the view.
+The state exposes `values`, `min_value`, `max_value`, `step_value`, `percentage`,
+`thumb_focus_handle(index)`, and `is_disabled`. Use
+`set_thumb_value(index, value, window, cx)` or `set_values(values, window, cx)`
+for programmatic updates and `set_disabled(disabled, window, cx)` to control user
+interaction. Programmatic updates remain possible while disabled. Individual
+thumbs stop at their neighbors without exchanging identities; equal values are
+allowed. `SliderEvent::Change(values)` reports the complete ordered values once
+when a normalized value changes. Observe the state to update application visuals.
 
-Pointer presses choose a position, and dragging continues until release even
-outside the rail. `axis(Axis::Vertical)` changes the geometric direction so the
-minimum is at the bottom; horizontal sliders increase from left to right.
-The control exposes a Slider role, accessible name, orientation, numeric bounds,
-current value, and step through native GPUI accessibility metadata.
+Rail presses choose the nearest thumb, and dragging keeps that thumb until
+release, including outside the rail. `axis(Axis::Vertical)` places the minimum
+at the bottom; horizontal values follow the logical direction. Each thumb
+exposes its accessible name, orientation, current value, step and numeric bounds
+limited by neighboring thumbs. Applications supply thumb focus presentation.
 
 | Input | Behavior |
 | --- | --- |
 | Left / Down | Decrease by one step |
 | Right / Up | Increase by one step |
-| Home / End | Set the minimum / maximum |
+| Home / End | Set the focused thumb's allowed minimum / maximum |
 | PageDown / PageUp | Decrease / increase by ten steps |
-| Tab / Shift-Tab | Follow normal focus traversal |
+| Tab / Shift-Tab | Visit each enabled thumb in value order, then leave the group |
 
 Disabled sliders ignore user changes and are skipped by Tab. A slider that is
 disabled while focused keeps its focus binding long enough for Tab to leave.
-This version provides a single linear value and one thumb.
+The session preview uses one thumb; the catalogue's media trim control uses two
+independent ends and switches between horizontal/vertical geometry and RTL.
 
 ## Progress
 
@@ -470,6 +553,10 @@ For independent options that can be pressed together, create
 `ToggleItem::new(value, label)` entries with unique values. Mark unavailable items
 with `.disabled(true)` and optionally set `.default_values([values])`. Defaults
 must identify enabled items. Selection starts empty when no defaults are supplied.
+Use `.single_selection()` for optional exclusive choice. Activating another option
+replaces the previous value; activating the pressed option clears selection.
+Single-selection defaults may contain at most one distinct value, regardless of
+the order of `.single_selection()` and `.default_values(...)`.
 
 Render `ToggleGroup::new(id, &state).accessibility_label(...)` and one
 `ToggleOption::new(&state, index)` for each item. Each option composes Toggle.
@@ -479,17 +566,25 @@ current presentation. Observe the entity and subscribe to
 `ToggleGroupEvent::Change(values)` for changes to the selected set; values follow
 the original item order.
 
+`set_selected_values(values, window, cx)` replaces the pressed set without a user
+event, focus change or cursor change. Duplicate values are deduplicated; an empty
+iterator clears it. Unknown/disabled values or multiple distinct values in single
+mode return false without changing anything. Application updates remain allowed
+while the group is disabled. The session example applies its initial radio and
+formatting values through these retained-state setters.
+
 The group has one Tab stop, at its last focused enabled option or initially its
 first enabled option. Horizontal Left/Right or vertical Up/Down move between
 enabled options and wrap. Home/End reach the first/last enabled option. The other
 axis propagates. Moving focus never changes the selected set; click, Enter, and
-Space independently toggle the focused option. Tab leaves the group.
+Space toggle the focused option according to the selection mode. Tab leaves the group.
 
 `set_disabled(disabled, window, cx)` disables the whole group while preserving
-selection. `option_focus_handle(index)` exposes stable option focus. This version
-supports multiple selection; RadioGroup supplies exclusive choice. The example
-uses Toggle for unknown progress and ToggleGroup for independent bold/italic
-summary-text styling.
+selection. `option_focus_handle(index)` exposes stable option focus. RadioGroup
+provides exclusive choice with immediate selection during arrow navigation;
+ToggleGroup keeps focus movement independent of selection in either mode.
+The session example uses independent bold/italic summary-text styling, and the
+catalogue uses single selection for optional Center/End document alignment.
 
 ## InputOtp
 

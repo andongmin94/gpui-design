@@ -5,25 +5,26 @@ use std::sync::Arc;
 
 use chrono::Datelike as _;
 use gpui::{
-    AppContext as _, Axis, Context, Entity, FocusHandle, Focusable as _, FontWeight, Hsla, Image,
-    ImageFormat, InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Rems, Render,
-    Role, ScrollHandle, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription,
-    Window, div, prelude::FluentBuilder as _, px, relative, rems, rgb,
+    AppContext as _, Axis, Context, Entity, FocusHandle, Focusable as _, FontWeight, Image,
+    ImageFormat, InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render, Role,
+    ScrollHandle, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Window,
+    div, prelude::FluentBuilder as _, px, relative, rems,
 };
 use gpui_design::{
     Accordion, AccordionHeader, AccordionItem, AccordionPanel, AccordionState, AlertDialog,
-    Breadcrumb, BreadcrumbItem, BreadcrumbList, Button, Calendar, CalendarDay, CalendarState,
-    Checkbox, CheckboxState, Collapsible, CollapsibleContent, CollapsibleState, CollapsibleTrigger,
-    Combobox, ComboboxList, ComboboxOption, ComboboxState, Command, CommandEvent, CommandInput,
-    CommandList, CommandOption, CommandState, ContextMenu, DatePicker, DatePickerState, Dialog,
-    DialogBackdrop, DialogClose, DialogDescription, DialogPopup, DialogState, DialogTitle,
-    DropdownMenu, Field, HoverCard, HoverCardState, Input, InputBase, Label, MenuEvent, MenuItem,
-    MenuOption, MenuState, NaiveDate, Popover, PopoverState, Progress, RadioGroup, RadioGroupState,
-    RadioItem, RadioOption, Resizable, ResizableState, ScrollArea, ScrollbarAxis, ScrollbarMode,
-    SearchItem, Select, SelectItem, SelectOption, SelectState, Separator, Slider, SliderState,
-    Switch, Tab, TabItem, TabList, TabPanel, Table, TableCaption, TableCell, TableColumn, TableRow,
-    TabsState, TestSupportExt as _, TestTextExt as _, Textarea, TextareaState, Toggle, ToggleGroup,
-    ToggleGroupState, ToggleItem, ToggleOption, Tooltip, TooltipState,
+    Breadcrumb, BreadcrumbItem, BreadcrumbList, Button, Calendar, CalendarDay, CalendarSelection,
+    CalendarState, Checkbox, CheckboxState, Collapsible, CollapsibleContent, CollapsibleState,
+    CollapsibleTrigger, Combobox, ComboboxList, ComboboxOption, ComboboxState, Command,
+    CommandEvent, CommandInput, CommandList, CommandOption, CommandState, ContextMenu, DatePicker,
+    DatePickerState, Dialog, DialogBackdrop, DialogClose, DialogDescription, DialogPopup,
+    DialogState, DialogTitle, DropdownMenu, Field, HoverCard, HoverCardState, Input, InputBase,
+    Label, MenuEvent, MenuItem, MenuOption, MenuState, NaiveDate, Popover, PopoverState, Progress,
+    RadioGroup, RadioGroupState, RadioItem, RadioOption, Resizable, ResizableState, ScrollArea,
+    ScrollbarAxis, ScrollbarMode, SearchItem, Select, SelectItem, SelectOption, SelectState,
+    Separator, Slider, SliderState, SliderThumb, Switch, Tab, TabItem, TabList, TabPanel, Table,
+    TableCaption, TableCell, TableColumn, TableRow, TabsState, TestSupportExt as _,
+    TestTextExt as _, Textarea, TextareaState, Toggle, ToggleGroup, ToggleGroupState, ToggleItem,
+    ToggleOption, Tooltip, TooltipState,
     input::{InputAccessibility, InputEditorStyle, InputEvent, InputState},
 };
 
@@ -32,89 +33,13 @@ mod recipes;
 use recipes::{
     Alert, AspectRatio, Attachment, Avatar, Badge, ButtonGroup, Card, CodeBlock, DataTable,
     DataTableColumn, DataTableRow, DataTableState, EmptyState, Heading, InlineCode, InputGroup,
-    Item, Kbd, KbdGroup, Marker, Message, Paragraph, Sheet, Sidebar, Skeleton, Spinner, Trace,
+    Item, Kbd, KbdGroup, Marker, Message, Paragraph, Sheet, SheetSide, Sidebar, Skeleton, Spinner,
+    Trace,
 };
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum Appearance {
-    Compact,
-    Settings,
-}
-
-// These tokens belong to this consumer, not the primitive library.
-#[derive(Clone, Copy)]
-pub(crate) struct Palette {
-    canvas: Hsla,
-    surface: Hsla,
-    field: Hsla,
-    foreground: Hsla,
-    muted: Hsla,
-    border: Hsla,
-    accent: Hsla,
-    accent_foreground: Hsla,
-    highlight: Hsla,
-    error: Hsla,
-    padding: Rems,
-    gap: Rems,
-    control_height: Rems,
-    font_size: Rems,
-    code_font_family: &'static str,
-    radius: Pixels,
-    dialog_width: Rems,
-}
-
-impl Appearance {
-    fn palette(self) -> Palette {
-        // The consumer chooses the code font for its supported desktop targets.
-        let code_font_family = if cfg!(target_os = "macos") {
-            "Menlo"
-        } else if cfg!(target_os = "windows") {
-            "Consolas"
-        } else {
-            "DejaVu Sans Mono"
-        };
-        match self {
-            Self::Compact => Palette {
-                canvas: rgb(0x10141c).into(),
-                surface: rgb(0x1a2130).into(),
-                field: rgb(0x121a28).into(),
-                foreground: rgb(0xf1f5f9).into(),
-                muted: rgb(0xa9b6c8).into(),
-                border: rgb(0x445269).into(),
-                accent: rgb(0x93c5fd).into(),
-                accent_foreground: rgb(0x10223d).into(),
-                highlight: rgb(0x2b4160).into(),
-                error: rgb(0xfca5a5).into(),
-                padding: rems(1.),
-                gap: rems(0.75),
-                control_height: rems(1.875),
-                font_size: rems(0.8125),
-                code_font_family,
-                radius: px(4.),
-                dialog_width: rems(22.),
-            },
-            Self::Settings => Palette {
-                canvas: rgb(0xf3f2ee).into(),
-                surface: rgb(0xffffff).into(),
-                field: rgb(0xfafaf8).into(),
-                foreground: rgb(0x243328).into(),
-                muted: rgb(0x606c63).into(),
-                border: rgb(0xa6b2a7).into(),
-                accent: rgb(0x286447).into(),
-                accent_foreground: rgb(0xffffff).into(),
-                highlight: rgb(0xe1eee3).into(),
-                error: rgb(0xb42318).into(),
-                padding: rems(1.75),
-                gap: rems(1.25),
-                control_height: rems(2.625),
-                font_size: rems(0.9375),
-                code_font_family,
-                radius: px(10.),
-                dialog_width: rems(28.),
-            },
-        }
-    }
-}
+#[path = "presentation.rs"]
+mod presentation;
+pub(crate) use presentation::{Appearance, Palette};
 
 pub(crate) struct Demo {
     appearance: Appearance,
@@ -211,7 +136,7 @@ impl Demo {
                 window,
                 cx,
             );
-            state.set_selected_value(Some("balanced"), window, cx);
+            state.set_selected_values(["balanced"], window, cx);
             state
         });
         preset.read(cx).input().clone().update(cx, |state, _| {
@@ -268,15 +193,16 @@ impl Demo {
             .default_value("pen")
         });
         let stroke = cx.new(|cx| {
-            RadioGroupState::new(
+            let mut state = RadioGroupState::new(
                 [
                     RadioItem::new("fine", "Fine"),
                     RadioItem::new("medium", "Medium (unavailable)").disabled(true),
                     RadioItem::new("bold", "Bold"),
                 ],
                 cx,
-            )
-            .default_value("fine")
+            );
+            state.set_selected_value(Some("fine"), window, cx);
+            state
         });
         let tabs = cx.new(|cx| {
             TabsState::new(
@@ -298,7 +224,7 @@ impl Demo {
                     NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
                     NaiveDate::from_ymd_opt(2027, 12, 31).unwrap(),
                 )
-                .default_value(initial)
+                .default_selection(CalendarSelection::Single(Some(initial)))
         });
         let date_picker = cx.new(|cx| DatePickerState::new(&calendar, window, cx));
         let schedule_split = cx.new(|cx| {
@@ -326,24 +252,25 @@ impl Demo {
                 ],
                 cx,
             )
-            .default_open("keyboard")
+            .default_open(["keyboard"])
         });
-        let preview = cx.new(|cx| SliderState::new(0.0..=100.0, 5.0, cx).default_value(40.0));
+        let preview = cx.new(|cx| SliderState::new(0.0..=100.0, 5.0, [40.0], cx));
         let preview_options = cx.new(CollapsibleState::new);
         let settings_trace = cx.new(CollapsibleState::new);
         let reset_cancel_focus = cx.focus_handle();
         let reset_dialog =
             cx.new(|cx| DialogState::new(cx).with_initial_focus(&reset_cancel_focus));
         let formatting = cx.new(|cx| {
-            ToggleGroupState::new(
+            let mut state = ToggleGroupState::new(
                 [
                     ToggleItem::new("bold", "Bold"),
                     ToggleItem::new("underline", "Underline (unavailable)").disabled(true),
                     ToggleItem::new("italic", "Italic"),
                 ],
                 cx,
-            )
-            .default_values(["bold"])
+            );
+            state.set_selected_values(["bold"], window, cx);
+            state
         });
         // The form summary and its presentation read these retained states.
         let subscriptions = vec![
@@ -536,7 +463,7 @@ impl Demo {
     ) -> impl IntoElement + use<> {
         let state = self.calendar.read(cx);
         let month = state.month();
-        let selected = state.selected_date();
+
         let calendar = Calendar::new("recording-calendar", &self.calendar)
             .accessibility_label(format!("Recording date, {}", month.format("%B %Y")))
             .flex()
@@ -555,8 +482,10 @@ impl Demo {
                             .map(|(column, day)| {
                                 div()
                                     .id(("weekday", column))
+                                    .test_support()
                                     .role(Role::ColumnHeader)
                                     .aria_column_index(column)
+                                    .aria_label(day)
                                     .flex_1()
                                     .min_w_0()
                                     .text_center()
@@ -592,7 +521,7 @@ impl Demo {
                             .hover(|style| style.bg(palette.highlight))
                             .focus_visible(|style| style.border_color(palette.accent))
                             .styles(|styles| styles.disabled(|style| style.opacity(0.35)))
-                            .when(selected == Some(date), |day| {
+                            .when(state.is_selected(date), |day| {
                                 day.bg(palette.accent).text_color(palette.accent_foreground)
                             })
                             .child(date.day().to_string())
@@ -649,7 +578,7 @@ impl Demo {
         window: &Window,
         cx: &Context<Self>,
     ) -> impl IntoElement + use<> {
-        let selected_date = self.calendar.read(cx).selected_date();
+        let selected_date = self.calendar.read(cx).selection().first_date();
         let date_label = selected_date
             .map(|date| date.format("%Y-%m-%d").to_string())
             .unwrap_or_else(|| "Pick a date".to_string());
@@ -699,7 +628,8 @@ impl Demo {
         let preset = self
             .preset
             .read(cx)
-            .selected_item(cx)
+            .selected_items(cx)
+            .next()
             .map(|item| item.label().clone())
             .unwrap_or_else(|| "Choose a preset".into());
         let plan = Table::new(
@@ -827,15 +757,22 @@ impl Demo {
     fn render_preset_preview(&self, palette: Palette, cx: &Context<Self>) -> gpui::AnyElement {
         let preset_state = self.preset.read(cx);
         let preset_label = preset_state
-            .selected_item(cx)
+            .selected_items(cx)
+            .next()
             .map(|item| item.label().clone())
             .unwrap_or_else(|| "None".into());
         let preset_description = Self::preset_description(
             preset_state
-                .selected_value(cx)
+                .selected_items(cx)
+                .next()
+                .map(|item| item.value())
                 .map_or("", |value| value.as_ref()),
         );
-        let preset_value = preset_state.selected_value(cx).map(|value| value.as_ref());
+        let preset_value = preset_state
+            .selected_items(cx)
+            .next()
+            .map(|item| item.value())
+            .map(|value| value.as_ref());
         let (preset_initials, frame_ratio, frame_label) = match preset_value {
             Some("presentation") => ("PR", 4. / 3., "4:3"),
             Some("quality") => ("HQ", 16. / 9., "16:9"),
@@ -938,7 +875,7 @@ impl Demo {
                         "Recording date: {}",
                         self.calendar
                             .read(cx)
-                            .selected_date()
+                            .selection().first_date()
                             .map(|date| date.format("%Y-%m-%d").to_string())
                             .unwrap_or_else(|| "Not scheduled".to_string())
                     )))
@@ -1129,14 +1066,14 @@ impl Demo {
         let configuration = serde_json::json!({
             "session_name": self.input.read(cx).value().as_ref(),
             "notes": self.notes.read(cx).value().as_ref(),
-            "recording_preset": self.preset.read(cx).selected_value(cx).map(|value| value.as_ref()),
+            "recording_preset": self.preset.read(cx).selected_items(cx).next().map(|item| item.value()).map(|value| value.as_ref()),
             "drawing": {
                 "tool": self.select.read(cx).selected_item().map(|item| item.value().as_ref()),
                 "stroke": self.stroke.read(cx).selected_item().map(|item| item.value().as_ref()),
                 "show_cursor": self.show_cursor,
             },
             "toolbar": { "pinned": self.keep_toolbar },
-            "preview_percent": self.preview.read(cx).value(),
+            "preview_percent": self.preview.read(cx).values()[0],
         });
         serde_json::to_string_pretty(&configuration)
             .expect("example settings are JSON values")
@@ -1204,7 +1141,7 @@ impl Demo {
                 .focus_visible(|style| style.border_color(palette.accent))
                 .when(item.is_disabled(), |header| header.opacity(0.45))
                 .child(item.label().clone())
-                .child(if accordion_state.open_index() == Some(index) {
+                .child(if accordion_state.is_open(index) {
                     "−"
                 } else {
                     "+"
@@ -1290,13 +1227,15 @@ impl Demo {
         let date = self
             .calendar
             .read(cx)
-            .selected_date()
+            .selection()
+            .first_date()
             .map(|date| date.format("%Y-%m-%d").to_string())
             .unwrap_or_else(|| "Not selected".to_string());
         let preset = self
             .preset
             .read(cx)
-            .selected_item(cx)
+            .selected_items(cx)
+            .next()
             .map(|item| item.label().clone())
             .unwrap_or_else(|| "Not selected".into());
         let tool = self
@@ -1379,7 +1318,7 @@ impl Demo {
                     .child(
                         Label::new(
                             "preview-percentage-label",
-                            preview.focus_handle(),
+                            preview.thumb_focus_handle(0),
                             preview_label.clone(),
                         )
                         .disabled(preview.is_disabled()),
@@ -1387,16 +1326,15 @@ impl Demo {
                     .child(if self.preview_indeterminate {
                         "· Unknown".to_string()
                     } else {
-                        format!("· {:.0}%", preview.value())
+                        format!("· {:.0}%", preview.values()[0])
                     }),
             )
             .child(
                 Slider::new("preview-percentage", &self.preview)
-                    .accessibility_label(preview_label)
+                    .accessibility_label(preview_label.clone())
                     .relative()
                     .h(palette.control_height)
                     .rounded(palette.radius)
-                    .focus_visible(|style| style.bg(palette.highlight))
                     .child(
                         div()
                             .absolute()
@@ -1415,19 +1353,25 @@ impl Demo {
                             .top(relative(0.5))
                             .mt(px(-2.))
                             .h(px(4.))
-                            .w(relative(preview.percentage()))
+                            .w(relative(preview.percentage(0)))
                             .rounded_full()
                             .bg(palette.accent),
                     )
                     .child(
-                        div()
+                        SliderThumb::new(&self.preview, 0)
+                            .accessibility_label(preview_label)
                             .absolute()
-                            .left(relative(preview.percentage()))
+                            .left(relative(preview.percentage(0)))
                             .top(relative(0.5))
                             .ml(px(-7.))
                             .mt(px(-7.))
                             .size(px(14.))
                             .rounded_full()
+                            .border_2()
+                            .border_color(palette.accent)
+                            .focus_visible(|style| {
+                                style.border_color(palette.foreground).bg(palette.highlight)
+                            })
                             .bg(palette.accent),
                     ),
             )
@@ -1454,7 +1398,7 @@ impl Demo {
                         row.child(
                             Progress::new("preview-progress")
                                 .accessibility_label("Preview progress")
-                                .value(preview.value())
+                                .value(preview.values()[0])
                                 .w_full()
                                 .h_2()
                                 .rounded_full()
@@ -1464,7 +1408,7 @@ impl Demo {
                                     div()
                                         .debug_selector(|| "preview-progress-fill".into())
                                         .h_full()
-                                        .w(relative(preview.percentage()))
+                                        .w(relative(preview.percentage(0)))
                                         .rounded_full()
                                         .bg(palette.accent),
                                 ),
@@ -1576,7 +1520,7 @@ impl Demo {
                             .on_click(move |_, window, cx| {
                                 owner.update(cx, |this, cx| {
                                     this.preview.update(cx, |state, cx| {
-                                        state.set_value(40.0, window, cx);
+                                        state.set_thumb_value(0, 40.0, window, cx);
                                     });
                                     this.preview_indeterminate = false;
                                     this.reset_dialog
@@ -1800,9 +1744,7 @@ impl Render for Demo {
                 )
                 .when(item.is_disabled(), |option| option.opacity(0.45))
                 .child(item.label().clone())
-                .when(preset_state.selected_index() == Some(index), |option| {
-                    option.child("✓")
-                })
+                .when(preset_state.is_selected(index), |option| option.child("✓"))
         });
         let preset = Combobox::new("recording-preset", &self.preset)
             .input(|input| {
@@ -1844,7 +1786,8 @@ impl Render for Demo {
                     }),
             );
         let preset_label = preset_state
-            .selected_item(cx)
+            .selected_items(cx)
+            .next()
             .map(|item| item.label().clone())
             .unwrap_or_else(|| "None".into());
         let preset_preview = self.render_preset_preview(palette, cx);
@@ -1986,6 +1929,8 @@ impl Render for Demo {
         let stacked_sections = window.viewport_size().width < px(640.);
         let navigation = if sidebar {
             Sidebar::new("session-sections", &self.tabs, "Session sections", palette)
+                .group("Workspace", ["preferences", "sync", "help"])
+                .group("Session", ["schedule", "presets"])
                 .flex_shrink_0()
                 .when(stacked_sections, |sidebar| sidebar.w_full())
                 .into_any_element()
@@ -2017,10 +1962,16 @@ impl Render for Demo {
         let preset_table = DataTable::new("preset-catalogue", &self.preset_table, palette)
             .accessibility_label("Recording presets")
             .action_label("Use preset")
-            .selected_value(preset_state.selected_value(cx).cloned())
+            .selected_value(
+                preset_state
+                    .selected_items(cx)
+                    .next()
+                    .map(|item| item.value())
+                    .cloned(),
+            )
             .on_action(move |value, window, cx| {
                 table_preset.update(cx, |state, cx| {
-                    state.set_selected_value(Some(value.as_ref()), window, cx);
+                    state.set_selected_values([value.as_ref()], window, cx);
                 });
             });
         let sections = [
@@ -2105,6 +2056,7 @@ impl Render for Demo {
                 "Session settings",
                 palette,
             )
+            .side(SheetSide::Right)
             .when(sidebar, |sheet| sheet.w(rems(46.)))
             .description("Choose the session's drawing and toolbar settings.")
             .child(name_field)
@@ -2274,7 +2226,7 @@ impl Render for Demo {
                                 "Recording date: {}",
                                 self.calendar
                                     .read(cx)
-                                    .selected_date()
+                                    .selection().first_date()
                                     .map(|date| date.format("%Y-%m-%d").to_string())
                                     .unwrap_or_else(|| "Not scheduled".to_string())
                             )))
@@ -2363,7 +2315,7 @@ impl Render for Demo {
 
 #[cfg(not(test))]
 fn main() {
-    use gpui::{WindowBounds, WindowOptions, size};
+    use gpui::{TitlebarOptions, WindowBounds, WindowOptions, size};
     use gpui_design::Root;
 
     let appearance = match std::env::args().nth(1).as_deref() {
@@ -2384,6 +2336,10 @@ fn main() {
         .detach();
         cx.open_window(
             WindowOptions {
+                titlebar: Some(TitlebarOptions {
+                    title: Some("GPUI Design · Session settings".into()),
+                    ..Default::default()
+                }),
                 window_bounds: Some(WindowBounds::centered(size(px(760.), px(780.)), cx)),
                 ..WindowOptions::default()
             },

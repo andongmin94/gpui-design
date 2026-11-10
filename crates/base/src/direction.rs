@@ -59,7 +59,7 @@ impl Global for DirectionScope {}
 
 /// Supplies inherited direction to descendant controls, including nested views.
 ///
-/// Tabs, radio/toggle groups, sliders, carousels, and coordinated menus resolve
+/// Calendars, tabs, radio/toggle groups, sliders, carousels, and coordinated menus resolve
 /// this scope when rendered. A control's explicit `.direction(...)` wins.
 /// Nested providers restore the outer direction for following siblings.
 ///
@@ -158,8 +158,8 @@ impl Element for DirectionProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Root, Slider, SliderState, Tab, TabItem, TabList, TabsState};
-    use gpui::{AppContext as _, Axis, Context, Entity, Render, TestAppContext, px};
+    use crate::{Root, Slider, SliderState, SliderThumb, Tab, TabItem, TabList, TabsState};
+    use gpui::{AppContext as _, Axis, Context, Entity, Render, TestAppContext, px, relative};
     use std::{cell::RefCell, rc::Rc};
 
     #[derive(IntoElement)]
@@ -178,7 +178,7 @@ mod tests {
         directions: Rc<RefCell<Vec<Direction>>>,
     }
     impl Render for Harness {
-        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
             div()
                 .child(Probe(self.directions.clone()))
                 .child(
@@ -198,14 +198,38 @@ mod tests {
                         )
                         .child(
                             Slider::new("rtl-slider", &self.slider)
+                                .relative()
                                 .w(px(200.))
-                                .h(px(30.)),
+                                .h(px(30.))
+                                .child(
+                                    SliderThumb::new(&self.slider, 0)
+                                        .absolute()
+                                        .left(relative(
+                                            Direction::Rtl.physical_fraction(
+                                                self.slider.read(cx).percentage(0),
+                                            ),
+                                        ))
+                                        .ml(px(-10.))
+                                        .w(px(20.))
+                                        .h(px(30.)),
+                                ),
                         )
                         .child(
                             Slider::new("rtl-vertical-slider", &self.vertical_slider)
                                 .axis(Axis::Vertical)
+                                .relative()
                                 .w(px(30.))
-                                .h(px(120.)),
+                                .h(px(120.))
+                                .child(
+                                    SliderThumb::new(&self.vertical_slider, 0)
+                                        .absolute()
+                                        .bottom(relative(
+                                            self.vertical_slider.read(cx).percentage(0),
+                                        ))
+                                        .mb(px(-10.))
+                                        .w(px(30.))
+                                        .h(px(20.)),
+                                ),
                         ),
                 )
                 .child(Probe(self.directions.clone()))
@@ -225,9 +249,8 @@ mod tests {
                         cx,
                     )
                 }),
-                slider: cx.new(|cx| SliderState::new(0.0..=100.0, 10., cx).default_value(50.)),
-                vertical_slider: cx
-                    .new(|cx| SliderState::new(0.0..=100.0, 10., cx).default_value(50.)),
+                slider: cx.new(|cx| SliderState::new(0.0..=100.0, 10., [50.], cx)),
+                vertical_slider: cx.new(|cx| SliderState::new(0.0..=100.0, 10., [50.], cx)),
                 directions,
             });
             Root::new(view, window, cx)
@@ -257,26 +280,26 @@ mod tests {
         cx.run_until_parked();
         cx.update(|window, cx| {
             assert_eq!(view.read(cx).tabs.read(cx).selected_index(), Some(1));
-            let focus = view.read(cx).slider.read(cx).focus_handle().clone();
+            let focus = view.read(cx).slider.read(cx).thumb_focus_handle(0).clone();
             focus.focus(window, cx);
             window.draw(cx).clear(cx);
         });
         cx.simulate_keystrokes("left");
         cx.update(|window, cx| {
-            assert_eq!(view.read(cx).slider.read(cx).value(), 60.);
+            assert_eq!(view.read(cx).slider.read(cx).values()[0], 60.);
             assert_eq!(Direction::current(cx), Direction::Ltr);
             view.read(cx)
                 .vertical_slider
                 .read(cx)
-                .focus_handle()
+                .thumb_focus_handle(0)
                 .clone()
                 .focus(window, cx);
             window.draw(cx).clear(cx);
         });
         cx.simulate_keystrokes("left");
-        cx.update(|_, cx| assert_eq!(view.read(cx).vertical_slider.read(cx).value(), 40.));
+        cx.update(|_, cx| assert_eq!(view.read(cx).vertical_slider.read(cx).values()[0], 40.));
         cx.simulate_keystrokes("right up");
-        cx.update(|_, cx| assert_eq!(view.read(cx).vertical_slider.read(cx).value(), 60.));
+        cx.update(|_, cx| assert_eq!(view.read(cx).vertical_slider.read(cx).values()[0], 60.));
         #[cfg(feature = "test-support")]
         {
             let bounds = cx.update(|window, _| {
@@ -294,7 +317,7 @@ mod tests {
                 gpui::MouseButton::Left,
                 gpui::Modifiers::default(),
             );
-            cx.update(|_, cx| assert_eq!(view.read(cx).slider.read(cx).value(), 100.));
+            cx.update(|_, cx| assert_eq!(view.read(cx).slider.read(cx).values()[0], 100.));
         }
     }
 }

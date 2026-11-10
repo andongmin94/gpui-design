@@ -11,9 +11,6 @@ publish.workspace = true
 readme = "../../README.md"
 keywords = ["gpui", "gui", "headless", "desktop"]
 
-[lib]
-doctest = false
-
 [[example]]
 name = "two_styles"
 path = "examples/two_styles.rs"
@@ -21,6 +18,10 @@ path = "examples/two_styles.rs"
 [[example]]
 name = "catalogue"
 path = "examples/catalogue.rs"
+
+[[example]]
+name = "starter"
+path = "examples/starter.rs"
 
 [[test]]
 name = "composition"

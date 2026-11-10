@@ -53,16 +53,17 @@ jobs:
 
       - name: Lint library, tests, and examples
         if: runner.os == 'Linux'
-        run: cargo clippy -p gpui-design --all-targets --features test-support --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --features gpui-design/test-support --locked -- -D warnings
 
       - name: Test behavior and headless interactions
         if: runner.os == 'Linux'
-        run: cargo test -p gpui-design --features test-support --locked
+        run: cargo test --workspace --features gpui-design/test-support --locked
 
       - name: Test composed controls on native platforms
         if: runner.os != 'Linux'
         run: |
           cargo test -p gpui-design --features test-support --locked --test composition -- --skip two_styles::recipes::
+          cargo test -p gpui-design-cli --locked
 
-      - name: Build native examples with default features
-        run: cargo build -p gpui-design --examples --locked
+      - name: Build native examples and source CLI with default features
+        run: cargo build --workspace --bins --examples --locked

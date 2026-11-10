@@ -72,7 +72,8 @@ pub enum RadioGroupEvent {
 /// Tab enters at the selected option, or the first enabled option when nothing
 /// is selected. Arrow keys select and focus the next enabled option, wrapping at
 /// either end. Space/Enter or a pointer click select without deselecting an
-/// already selected option. Disabled options are skipped.
+/// already selected option. Disabled options are skipped. Application value
+/// updates preserve a focused option until Tab exits; reentry uses the selection.
 pub struct RadioGroupState {
     items: Vec<RadioItem>,
     selected: Option<usize>,
@@ -120,6 +121,38 @@ impl RadioGroupState {
         self.selected.map(|ix| &self.items[ix])
     }
 
+    /// Sets or clears the selected value without emitting Change or moving focus.
+    ///
+    /// Unknown or disabled options are rejected without changing the selection.
+    /// Returns whether the value was accepted, including an unchanged value.
+    /// Application updates remain available while the group itself is disabled.
+    pub fn set_selected_value(
+        &mut self,
+        value: Option<&str>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let selected = match value {
+            Some(value) => {
+                let Some(index) = self
+                    .items
+                    .iter()
+                    .position(|item| item.value.as_ref() == value && !item.disabled)
+                else {
+                    return false;
+                };
+                Some(index)
+            }
+            None => None,
+        };
+        if self.selected != selected {
+            self.selected = selected;
+            cx.notify();
+            window.refresh();
+        }
+        true
+    }
+
     pub fn is_disabled(&self) -> bool {
         self.disabled
     }
@@ -140,11 +173,15 @@ impl RadioGroupState {
         window.refresh();
     }
 
-    fn tab_stop_index(&self) -> Option<usize> {
+    fn tab_stop_index(&self, window: &Window) -> Option<usize> {
         if self.disabled {
             return None;
         }
-        self.selected
+        self.focus
+            .iter()
+            .position(|focus| focus.is_focused(window))
+            .filter(|&index| !self.items[index].disabled)
+            .or(self.selected)
             .or_else(|| self.items.iter().position(|item| !item.disabled))
     }
 
@@ -350,7 +387,7 @@ impl RenderOnce for RadioOption {
             .expect("RadioOption index must identify an item");
         let disabled = model.disabled || item.disabled;
         let checked = model.selected == Some(self.index);
-        let tab_stop = model.tab_stop_index() == Some(self.index);
+        let tab_stop = model.tab_stop_index(window) == Some(self.index);
         let focus = model.option_focus_handle(self.index).clone();
         let label = item.label.clone();
         let size = model.items.len();
@@ -389,8 +426,8 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use gpui::{
-        AppContext as _, KeyDownEvent, KeyUpEvent, Keystroke, Modifiers, Render, Subscription,
-        TestAppContext, VisualTestContext, point, px,
+        AppContext as _, Element as _, KeyDownEvent, KeyUpEvent, Keystroke, Modifiers, Render,
+        Subscription, TestAppContext, VisualTestContext, point, px,
     };
 
     use super::*;
@@ -596,6 +633,85 @@ mod tests {
             *changes.borrow(),
             [SharedString::from("small"), SharedString::from("medium")]
         );
+    }
+
+    #[gpui::test]
+    fn programmatic_selection_preserves_focus_and_validates_without_user_events(
+        cx: &mut TestAppContext,
+    ) {
+        let (cx, view, changes) = harness(cx, items(), Some("small"));
+        cx.update(|window, cx| {
+            let state = view.read(cx).state.clone();
+            state.update(cx, |state, cx| {
+                assert!(state.set_selected_value(Some("large"), window, cx));
+                assert!(!state.set_selected_value(Some("missing"), window, cx));
+                assert!(!state.set_selected_value(Some("unavailable"), window, cx));
+                assert_eq!(state.selected_index(), Some(3));
+            });
+            assert!(view.read(cx).before.is_focused(window));
+        });
+        draw(cx);
+        cx.simulate_keystrokes("tab");
+        draw(cx);
+        assert_option(cx, &view, 3);
+
+        cx.update(|window, cx| {
+            let state = view.read(cx).state.clone();
+            state.update(cx, |state, cx| {
+                assert!(state.set_selected_value(Some("small"), window, cx));
+                assert!(state.set_selected_value(Some("small"), window, cx));
+                assert!(state.option_focus_handle(3).is_focused(window));
+            });
+            for index in [0, 3] {
+                let option = RadioOption::new(&state, index)
+                    .render(window, cx)
+                    .into_element();
+                let mut node = accesskit::Node::new(option.a11y_role().unwrap());
+                option.write_a11y_info(&mut node);
+                assert_eq!(
+                    node.toggled(),
+                    Some(if index == 0 {
+                        Toggled::True
+                    } else {
+                        Toggled::False
+                    })
+                );
+            }
+        });
+        draw(cx);
+        // An application update keeps one Tab stop while another option is focused.
+        cx.simulate_keystrokes("tab");
+        draw(cx);
+        cx.update(|window, cx| assert!(view.read(cx).after.is_focused(window)));
+        cx.simulate_keystrokes("shift-tab");
+        draw(cx);
+        assert_option(cx, &view, 0);
+
+        cx.update(|window, cx| {
+            let state = view.read(cx).state.clone();
+            state.update(cx, |state, cx| {
+                assert!(state.set_selected_value(None, window, cx));
+                assert_eq!(state.selected_index(), None);
+                assert!(state.option_focus_handle(0).is_focused(window));
+                state.set_disabled(true, window, cx);
+                assert!(state.set_selected_value(Some("medium"), window, cx));
+                assert_eq!(state.selected_index(), Some(2));
+                assert!(state.option_focus_handle(0).is_focused(window));
+            });
+        });
+        draw(cx);
+        cx.simulate_keystrokes("tab");
+        draw(cx);
+        cx.update(|window, cx| {
+            assert!(view.read(cx).after.is_focused(window));
+            let state = view.read(cx).state.clone();
+            state.update(cx, |state, cx| state.set_disabled(false, window, cx));
+        });
+        draw(cx);
+        cx.simulate_keystrokes("shift-tab");
+        draw(cx);
+        assert_option(cx, &view, 2);
+        assert!(changes.borrow().is_empty());
     }
 
     #[gpui::test]

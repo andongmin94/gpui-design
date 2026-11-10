@@ -63,6 +63,7 @@ pub struct ResolvedPosition {
 pub struct Positioner {
     strategy: Strategy,
     corner_position: Option<Rc<Cell<Point<Pixels>>>>,
+    trigger_bounds: Option<Rc<Cell<Bounds<Pixels>>>>,
     on_position: Option<Box<dyn Fn(ResolvedPosition)>>,
     margin: Pixels,
     occlude: bool,
@@ -85,6 +86,7 @@ impl Positioner {
                 offset: px(0.),
             },
             corner_position: None,
+            trigger_bounds: None,
             on_position: None,
             margin: px(4.),
             occlude: false,
@@ -101,6 +103,7 @@ impl Positioner {
         Self {
             strategy: Strategy::Corner { anchor, position },
             corner_position: None,
+            trigger_bounds: None,
             on_position: None,
             margin: px(4.),
             occlude: false,
@@ -154,6 +157,12 @@ impl Positioner {
     // Read after trigger prepaint so an open popup follows a moving trigger.
     pub(crate) fn tracked_corner_position(mut self, position: Rc<Cell<Point<Pixels>>>) -> Self {
         self.corner_position = Some(position);
+        self
+    }
+
+    // Read after trigger prepaint so side placement follows this frame's bounds.
+    pub(crate) fn tracked_trigger_bounds(mut self, bounds: Rc<Cell<Bounds<Pixels>>>) -> Self {
+        self.trigger_bounds = Some(bounds);
         self
     }
 
@@ -405,6 +414,11 @@ impl Element for Positioner {
             (&mut strategy, &self.corner_position)
         {
             *position = tracked.get();
+        }
+        if let (Strategy::Side { trigger_bounds, .. }, Some(tracked)) =
+            (&mut strategy, &self.trigger_bounds)
+        {
+            *trigger_bounds = tracked.get();
         }
         let mut position = resolve(
             strategy,

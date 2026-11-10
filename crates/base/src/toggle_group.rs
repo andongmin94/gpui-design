@@ -1,6 +1,6 @@
-//! Multiple selection composed from Toggle, with one roving Tab stop.
+//! Single or multiple selection composed from Toggle, with one roving Tab stop.
 //! GPUI Kit v0.9.0 supplied an unstyled toggle-group container; GPUI Design adds
-//! retained multiple selection and independent, orientation-aware focus movement.
+//! retained selection and independent, orientation-aware focus movement.
 
 use gpui::{
     AnyElement, App, Axis, Context, ElementId, Entity, EntityId, EventEmitter, FocusHandle,
@@ -77,14 +77,16 @@ pub enum ToggleGroupEvent {
     Change(Vec<SharedString>),
 }
 
-/// Retained multiple selection and focus for one group in one window.
+/// Retained selection and focus for one group in one window.
 ///
 /// Tab enters the last focused enabled option, initially the first enabled item.
-/// Arrow keys move focus without changing pressed values. Activation toggles just
-/// the focused or clicked option; any number of items can be pressed, including none.
+/// Arrow keys move focus without changing pressed values. By default any number
+/// of items can be pressed. [`Self::single_selection`] limits this to one; pressing
+/// another option releases the previous one, and pressing it again clears the group.
 pub struct ToggleGroupState {
     items: Vec<ToggleItem>,
     pressed: Vec<bool>,
+    single_selection: bool,
     cursor: Option<usize>,
     disabled: bool,
     focus: Vec<FocusHandle>,
@@ -104,6 +106,7 @@ impl ToggleGroupState {
         let focus = items.iter().map(|_| cx.focus_handle()).collect();
         Self {
             pressed: vec![false; items.len()],
+            single_selection: false,
             items,
             cursor,
             disabled: false,
@@ -112,10 +115,27 @@ impl ToggleGroupState {
         }
     }
 
+    /// Limits the group to zero or one pressed item, before it is first rendered.
+    ///
+    /// Focus movement still leaves selection unchanged. Activating a pressed
+    /// option releases it.
+    ///
+    /// # Panics
+    /// Panics if previously supplied defaults contain more than one distinct value.
+    pub fn single_selection(mut self) -> Self {
+        assert!(
+            self.pressed.iter().filter(|pressed| **pressed).count() <= 1,
+            "ToggleGroupState single_selection allows at most one default value"
+        );
+        self.single_selection = true;
+        self
+    }
+
     /// Sets initially pressed values without emitting an event.
     ///
     /// # Panics
-    /// Every value must identify an enabled item in the fixed collection.
+    /// Every value must identify an enabled item in the fixed collection. In
+    /// single-selection mode, at most one distinct value may be supplied.
     pub fn default_values<V: AsRef<str>>(mut self, values: impl IntoIterator<Item = V>) -> Self {
         self.pressed.fill(false);
         for value in values {
@@ -126,6 +146,10 @@ impl ToggleGroupState {
                 .expect("ToggleGroupState default_values must identify enabled ToggleItems");
             self.pressed[index] = true;
         }
+        assert!(
+            !self.single_selection || self.pressed.iter().filter(|pressed| **pressed).count() <= 1,
+            "ToggleGroupState single_selection allows at most one default value"
+        );
         self
     }
 
@@ -143,6 +167,40 @@ impl ToggleGroupState {
             .zip(&self.pressed)
             .filter_map(|(item, pressed)| pressed.then(|| item.value.clone()))
             .collect()
+    }
+
+    /// Sets pressed values without emitting Change or moving focus or its cursor.
+    ///
+    /// Unknown or disabled options, and more than one distinct value in single
+    /// mode, are rejected without changing the selection. Empty values clear the
+    /// group. Returns whether all values were accepted, including unchanged values.
+    /// Application updates remain available while the group itself is disabled.
+    pub fn set_selected_values<V: AsRef<str>>(
+        &mut self,
+        values: impl IntoIterator<Item = V>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let mut pressed = vec![false; self.items.len()];
+        for value in values {
+            let Some(index) = self
+                .items
+                .iter()
+                .position(|item| item.value.as_ref() == value.as_ref() && !item.disabled)
+            else {
+                return false;
+            };
+            pressed[index] = true;
+        }
+        if self.single_selection && pressed.iter().filter(|pressed| **pressed).count() > 1 {
+            return false;
+        }
+        if self.pressed != pressed {
+            self.pressed = pressed;
+            cx.notify();
+            window.refresh();
+        }
+        true
     }
 
     pub fn option_focus_handle(&self, index: usize) -> &FocusHandle {
@@ -217,6 +275,9 @@ impl ToggleGroupState {
         if self.pressed[index] == pressed {
             return;
         }
+        if self.single_selection && pressed {
+            self.pressed.fill(false);
+        }
         self.pressed[index] = pressed;
         cx.emit(ToggleGroupEvent::Change(self.selected_values()));
         cx.notify();
@@ -275,7 +336,7 @@ fn option_id(state: EntityId, index: usize) -> ElementId {
     (ElementId::from(("toggle-option", state)), index.to_string()).into()
 }
 
-/// An unstyled multiple-selection group composed from [`ToggleOption`] children.
+/// An unstyled selection group composed from [`ToggleOption`] children.
 /// Render one option per item in collection order; axis changes keyboard and
 /// accessibility orientation, while application styles choose the actual layout.
 #[derive(IntoElement)]
@@ -468,6 +529,7 @@ mod tests {
     struct Harness {
         state: Entity<ToggleGroupState>,
         axis: Axis,
+        direction: crate::Direction,
         before: FocusHandle,
         after: FocusHandle,
         unhandled: Rc<RefCell<Vec<String>>>,
@@ -493,6 +555,7 @@ mod tests {
                 .child(
                     ToggleGroup::new("group", &self.state)
                         .axis(self.axis)
+                        .direction(self.direction)
                         .accessibility_label("Text emphasis")
                         .flex()
                         .when(self.axis == Axis::Vertical, |this| this.flex_col())
@@ -520,12 +583,13 @@ mod tests {
     fn harness(
         cx: &mut TestAppContext,
         axis: Axis,
+        single_selection: bool,
     ) -> (&mut VisualTestContext, Entity<Harness>, Changes) {
         cx.update(crate::init);
         let (root, cx) = cx.add_window_view(move |window, cx| {
             let content = cx.new(|cx| {
                 let state = cx.new(|cx| {
-                    ToggleGroupState::new(
+                    let state = ToggleGroupState::new(
                         [
                             ToggleItem::new("bold", "Bold"),
                             ToggleItem::new("underline", "Unavailable").disabled(true),
@@ -533,13 +597,19 @@ mod tests {
                             ToggleItem::new("strike", "Strike"),
                         ],
                         cx,
-                    )
+                    );
+                    if single_selection {
+                        state.single_selection()
+                    } else {
+                        state
+                    }
                     .default_values(["bold"])
                 });
                 let subscription = cx.observe(&state, |_, _, cx| cx.notify());
                 Harness {
                     state,
                     axis,
+                    direction: crate::Direction::Ltr,
                     before: cx.focus_handle().tab_stop(true),
                     after: cx.focus_handle().tab_stop(true),
                     unhandled: Rc::new(RefCell::new(Vec::new())),
@@ -587,7 +657,7 @@ mod tests {
 
     #[gpui::test]
     fn focus_navigation_is_independent_of_multiple_selection(cx: &mut TestAppContext) {
-        let (cx, view, changes) = harness(cx, Axis::Horizontal);
+        let (cx, view, changes) = harness(cx, Axis::Horizontal, false);
         cx.simulate_keystrokes("tab right");
         draw(cx);
         cx.update(|window, cx| {
@@ -647,7 +717,7 @@ mod tests {
     fn vertical_and_programmatic_focus_preserve_one_tab_entry_and_disabled_values(
         cx: &mut TestAppContext,
     ) {
-        let (cx, view, changes) = harness(cx, Axis::Vertical);
+        let (cx, view, changes) = harness(cx, Axis::Vertical, false);
         cx.simulate_keystrokes("tab down");
         draw(cx);
         cx.update(|window, cx| {
@@ -738,5 +808,194 @@ mod tests {
             );
         });
         assert_eq!(changes.borrow().len(), 1);
+    }
+
+    #[gpui::test]
+    fn single_selection_replaces_and_clears_pressed_values_with_shared_navigation(
+        cx: &mut TestAppContext,
+    ) {
+        let (cx, view, changes) = harness(cx, Axis::Horizontal, true);
+        view.update(cx, |view, cx| {
+            view.direction = crate::Direction::Rtl;
+            cx.notify();
+        });
+        draw(cx);
+        cx.simulate_keystrokes("tab left");
+        draw(cx);
+        cx.update(|window, cx| {
+            let state = view.read(cx).state.read(cx);
+            assert!(state.option_focus_handle(2).is_focused(window));
+            assert_eq!(state.selected_values(), [SharedString::from("bold")]);
+        });
+        assert!(changes.borrow().is_empty());
+
+        press(cx, "enter");
+        cx.update(|window, cx| {
+            let state = view.read(cx).state.clone();
+            assert_eq!(
+                state.read(cx).selected_values(),
+                [SharedString::from("italic")]
+            );
+            for (index, toggled) in [(0, Toggled::False), (2, Toggled::True)] {
+                let option = ToggleOption::new(&state, index)
+                    .render(window, cx)
+                    .into_element();
+                let mut node = accesskit::Node::new(option.a11y_role().unwrap());
+                option.write_a11y_info(&mut node);
+                assert_eq!(node.role(), Role::Button);
+                assert_eq!(node.toggled(), Some(toggled));
+            }
+        });
+        press(cx, "space");
+        cx.update(|_, cx| assert!(view.read(cx).state.read(cx).selected_values().is_empty()));
+
+        let bold = cx.debug_bounds("option-0").unwrap().center();
+        cx.simulate_click(bold, Modifiers::default());
+        draw(cx);
+        let disabled = cx.debug_bounds("option-1").unwrap().center();
+        cx.simulate_click(disabled, Modifiers::default());
+        draw(cx);
+        cx.update(|window, cx| {
+            let state = view.read(cx).state.clone();
+            state.update(cx, |state, cx| state.set_disabled(true, window, cx));
+            let option = ToggleOption::new(&state, 0)
+                .render(window, cx)
+                .into_element();
+            let mut node = accesskit::Node::new(option.a11y_role().unwrap());
+            option.write_a11y_info(&mut node);
+            assert_eq!(node.label(), Some("Bold"));
+            assert_eq!(node.toggled(), Some(Toggled::True));
+            assert!(node.is_disabled());
+        });
+        draw(cx);
+        press(cx, "space");
+        let italic = cx.debug_bounds("option-2").unwrap().center();
+        cx.simulate_click(italic, Modifiers::default());
+        draw(cx);
+        cx.simulate_keystrokes("tab");
+        draw(cx);
+        cx.update(|window, cx| {
+            assert!(view.read(cx).after.is_focused(window));
+            assert_eq!(
+                view.read(cx).state.read(cx).selected_values(),
+                [SharedString::from("bold")]
+            );
+        });
+        assert_eq!(
+            *changes.borrow(),
+            [vec!["italic"], vec![], vec!["bold"]].map(|values| values
+                .into_iter()
+                .map(SharedString::from)
+                .collect::<Vec<_>>())
+        );
+    }
+
+    #[gpui::test]
+    fn programmatic_selection_preserves_cursor_and_validates_without_user_events(
+        cx: &mut TestAppContext,
+    ) {
+        for single in [false, true] {
+            let (cx, view, changes) = harness(cx, Axis::Horizontal, single);
+            cx.simulate_keystrokes("tab right");
+            draw(cx);
+            cx.update(|window, cx| {
+                let state = view.read(cx).state.clone();
+                state.update(cx, |state, cx| {
+                    assert!(state.set_selected_values(["strike", "strike"], window, cx));
+                    assert!(!state.set_selected_values(["bold", "missing"], window, cx));
+                    assert!(!state.set_selected_values(["bold", "underline"], window, cx));
+                    assert_eq!(state.selected_values(), [SharedString::from("strike")]);
+                    let accepted = state.set_selected_values(["strike", "bold"], window, cx);
+                    assert_eq!(accepted, !single);
+                    let expected = if single {
+                        vec!["strike"]
+                    } else {
+                        vec!["bold", "strike"]
+                    };
+                    assert_eq!(
+                        state.selected_values(),
+                        expected
+                            .into_iter()
+                            .map(SharedString::from)
+                            .collect::<Vec<_>>()
+                    );
+                    assert!(state.option_focus_handle(2).is_focused(window));
+                });
+                for index in [0, 2, 3] {
+                    let option = ToggleOption::new(&state, index)
+                        .render(window, cx)
+                        .into_element();
+                    let mut node = accesskit::Node::new(option.a11y_role().unwrap());
+                    option.write_a11y_info(&mut node);
+                    let pressed = index == 3 || (index == 0 && !single);
+                    assert_eq!(
+                        node.toggled(),
+                        Some(if pressed {
+                            Toggled::True
+                        } else {
+                            Toggled::False
+                        })
+                    );
+                }
+            });
+            draw(cx);
+            cx.simulate_keystrokes("tab");
+            draw(cx);
+            cx.update(|window, cx| {
+                assert!(view.read(cx).after.is_focused(window));
+                let state = view.read(cx).state.clone();
+                state.update(cx, |state, cx| {
+                    state.set_disabled(true, window, cx);
+                    assert!(state.set_selected_values(std::iter::empty::<&str>(), window, cx));
+                    assert!(state.selected_values().is_empty());
+                    assert!(state.set_selected_values(["bold"], window, cx));
+                    state.set_disabled(false, window, cx);
+                });
+                assert!(view.read(cx).after.is_focused(window));
+            });
+            draw(cx);
+            cx.simulate_keystrokes("shift-tab");
+            draw(cx);
+            cx.update(|window, cx| {
+                let state = view.read(cx).state.read(cx);
+                assert!(state.option_focus_handle(2).is_focused(window));
+                assert_eq!(state.selected_values(), [SharedString::from("bold")]);
+            });
+            assert!(changes.borrow().is_empty());
+        }
+    }
+
+    #[gpui::test]
+    fn single_selection_defaults_accept_zero_or_one_distinct_value_in_either_order(
+        cx: &mut TestAppContext,
+    ) {
+        cx.new(|cx| {
+            let items = || {
+                [
+                    ToggleItem::new("bold", "Bold"),
+                    ToggleItem::new("italic", "Italic"),
+                ]
+            };
+            for defaults_first in [false, true] {
+                let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let state = ToggleGroupState::new(items(), cx);
+                    if defaults_first {
+                        state.default_values(["bold", "italic"]).single_selection()
+                    } else {
+                        state.single_selection().default_values(["bold", "italic"])
+                    }
+                }));
+                assert!(rejected.is_err());
+            }
+            let empty = ToggleGroupState::new(items(), cx)
+                .single_selection()
+                .default_values(std::iter::empty::<&str>());
+            assert!(empty.selected_values().is_empty());
+            let state = ToggleGroupState::new(items(), cx)
+                .default_values(["bold", "bold"])
+                .single_selection();
+            assert_eq!(state.selected_values(), [SharedString::from("bold")]);
+            state
+        });
     }
 }

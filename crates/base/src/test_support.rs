@@ -25,7 +25,9 @@ pub struct ElementSnapshot {
     checked: Option<bool>,
     indeterminate: Option<bool>,
     selected: Option<bool>,
+    sort_direction: Option<gpui::accesskit::SortDirection>,
     expanded: Option<bool>,
+    modal: bool,
     value: Option<SharedString>,
     bounds: Bounds<Pixels>,
     visible: bool,
@@ -55,7 +57,9 @@ impl fmt::Debug for ElementSnapshot {
             .field("checked", &self.checked)
             .field("indeterminate", &self.indeterminate)
             .field("selected", &self.selected)
+            .field("sort_direction", &self.sort_direction)
             .field("expanded", &self.expanded)
+            .field("modal", &self.modal)
             .field("value", &self.value)
             .field("bounds", &self.bounds)
             .field("visible", &self.visible)
@@ -85,8 +89,16 @@ impl ElementSnapshot {
     pub fn selected(&self) -> Option<bool> {
         self.selected
     }
+    /// The column header's native sort direction, if one is active.
+    pub fn sort_direction(&self) -> Option<gpui::accesskit::SortDirection> {
+        self.sort_direction
+    }
     pub fn expanded(&self) -> Option<bool> {
         self.expanded
+    }
+    /// Whether the native node explicitly identifies a modal dialog.
+    pub fn modal(&self) -> bool {
+        self.modal
     }
     /// The native accessibility value, not rendered text or pixels.
     pub fn value(&self) -> Option<&str> {
@@ -215,7 +227,9 @@ impl Registration {
             checked: semantics.checked,
             indeterminate: semantics.indeterminate,
             selected: semantics.selected,
+            sort_direction: semantics.sort_direction,
             expanded: semantics.expanded,
+            modal: semantics.modal,
             value: semantics.value.clone(),
             focused: semantics.focused,
             focus_action: semantics.focus_action,
@@ -494,7 +508,9 @@ impl<E: Element<PrepaintState = Option<Hitbox>> + InteractiveElement> Element fo
             checked: toggled.map(|value| value == gpui::accesskit::Toggled::True),
             indeterminate: toggled.map(|value| value == gpui::accesskit::Toggled::Mixed),
             selected: node.is_selected(),
+            sort_direction: node.sort_direction(),
             expanded: node.is_expanded(),
+            modal: node.is_modal(),
             value: node.value().map(|value| value.to_owned().into()),
             bounds,
             visible: false,

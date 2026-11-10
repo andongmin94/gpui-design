@@ -1,4 +1,4 @@
-//! A single-open, collapsible accordion with native header activation.
+//! A single- or multiple-open, collapsible accordion with native header activation.
 //! Derived from GPUI Kit v0.9.0's accordion primitive; GPUI Design adds retained
 //! state, keyboard navigation, focus ownership, and active-only panels.
 
@@ -61,20 +61,22 @@ impl AccordionItem {
     }
 }
 
-/// Emitted once when the open item changes. `None` means all items are closed.
+/// The open values after one change, in the original item order.
+/// An empty collection means all items are closed.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AccordionEvent {
-    Change(Option<SharedString>),
+    Change(Vec<SharedString>),
 }
 
-/// Retained state for one single-open accordion in one window.
+/// Retained state for one accordion in one window.
 ///
 /// All items start collapsed. Every enabled header is a Tab stop; moving focus
-/// with Up, Down, Home, or End never changes the open item. The application keeps
+/// with Up, Down, Home, or End never changes the open items. The application keeps
 /// panel data in its own retained entities, independently of panel mounting.
 pub struct AccordionState {
     items: Vec<AccordionItem>,
-    open: Option<usize>,
+    open: Vec<bool>,
+    multiple: bool,
     root_focus: FocusHandle,
     trigger_focus: Vec<FocusHandle>,
     panel_focus: Vec<FocusHandle>,
@@ -92,24 +94,48 @@ impl AccordionState {
         let trigger_focus = items.iter().map(|_| cx.focus_handle()).collect();
         let panel_focus = items.iter().map(|_| cx.focus_handle()).collect();
         Self {
+            open: vec![false; items.len()],
             items,
-            open: None,
+            multiple: false,
             root_focus: cx.focus_handle(),
             trigger_focus,
             panel_focus,
         }
     }
 
-    /// Opens an enabled value before the state is first rendered.
+    /// Allows several panels to remain open, defaulting to false.
+    /// Configure this before setting multiple default values or rendering the state.
     ///
     /// # Panics
-    /// Panics if `value` does not identify an enabled item in this collection.
-    pub fn default_open(mut self, value: impl AsRef<str>) -> Self {
-        self.open = Some(
-            self.items
+    /// Panics when disabling multiple mode with several default panels open.
+    pub fn multiple(mut self, multiple: bool) -> Self {
+        assert!(
+            multiple || self.open.iter().filter(|open| **open).count() <= 1,
+            "AccordionState single-open mode cannot have multiple open items"
+        );
+        self.multiple = multiple;
+        self
+    }
+
+    /// Opens enabled values before the state is first rendered, without emitting an event.
+    /// Set [`Self::multiple`] to true before supplying several values.
+    ///
+    /// # Panics
+    /// Every value must identify an enabled item in this collection. Single-open
+    /// mode accepts at most one distinct value.
+    pub fn default_open<V: AsRef<str>>(mut self, values: impl IntoIterator<Item = V>) -> Self {
+        self.open.fill(false);
+        for value in values {
+            let index = self
+                .items
                 .iter()
                 .position(|item| item.value.as_ref() == value.as_ref() && !item.disabled)
-                .expect("AccordionState default_open must identify an enabled AccordionItem"),
+                .expect("AccordionState default_open must identify enabled AccordionItems");
+            self.open[index] = true;
+        }
+        assert!(
+            self.multiple || self.open.iter().filter(|open| **open).count() <= 1,
+            "AccordionState single-open mode cannot have multiple open items"
         );
         self
     }
@@ -118,12 +144,17 @@ impl AccordionState {
         &self.items
     }
 
-    pub fn open_index(&self) -> Option<usize> {
-        self.open
+    pub fn is_open(&self, index: usize) -> bool {
+        self.open[index]
     }
 
-    pub fn open_item(&self) -> Option<&AccordionItem> {
-        self.open.map(|index| &self.items[index])
+    /// The open values in their original item order.
+    pub fn open_values(&self) -> Vec<SharedString> {
+        self.items
+            .iter()
+            .zip(&self.open)
+            .filter_map(|(item, open)| open.then(|| item.value.clone()))
+            .collect()
     }
 
     /// The stable focus handle of a header's native button.
@@ -136,7 +167,8 @@ impl AccordionState {
         &self.panel_focus[index]
     }
 
-    /// Opens a closed item, closing the previous item, or collapses an open item.
+    /// Opens a closed item or collapses an open item. In single-open mode, opening
+    /// another item closes the previous panel; multiple mode leaves other panels open.
     /// Disabled items ignore requests. `index` must identify an item.
     ///
     /// If this removes the focused panel, focus moves to the requested header.
@@ -145,34 +177,48 @@ impl AccordionState {
         if self.items[index].disabled {
             return;
         }
-        self.set_open((self.open != Some(index)).then_some(index), window, cx);
+        let mut next = self.open.clone();
+        if next[index] {
+            next[index] = false;
+        } else {
+            if !self.multiple {
+                next.fill(false);
+            }
+            next[index] = true;
+        }
+        self.set_open(next, Some(index), window, cx);
     }
 
-    /// Collapses the open panel and returns its focus to the still-mounted header.
-    /// Focus outside the panel is preserved. Removing the whole accordion remains
+    /// Collapses all open panels and returns focused panel content to its header.
+    /// Focus outside the panels is preserved. Removing the whole accordion remains
     /// the application's responsibility, including its choice of focus target.
     pub fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.set_open(None, window, cx);
+        self.set_open(vec![false; self.items.len()], None, window, cx);
     }
 
-    fn set_open(&mut self, next: Option<usize>, window: &mut Window, cx: &mut Context<Self>) {
+    fn set_open(
+        &mut self,
+        next: Vec<bool>,
+        requested_header: Option<usize>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.open == next {
             return;
         }
-        if let Some(previous) = self.open {
-            let target = &self.trigger_focus[next.unwrap_or(previous)];
+        if let Some(previous) = self.open.iter().enumerate().find_map(|(index, open)| {
+            (*open && !next[index] && self.panel_focus[index].contains_focused(window, cx))
+                .then_some(index)
+        }) {
+            let target = &self.trigger_focus[requested_header.unwrap_or(previous)];
             // A detached panel may leave its scope focused. Only restore a
             // header that is still inside the rendered accordion's focus tree.
-            if self.panel_focus[previous].contains_focused(window, cx)
-                && self.root_focus.contains(target, window)
-            {
+            if self.root_focus.contains(target, window) {
                 target.focus(window, cx);
             }
         }
         self.open = next;
-        cx.emit(AccordionEvent::Change(
-            self.open_item().map(|item| item.value.clone()),
-        ));
+        cx.emit(AccordionEvent::Change(self.open_values()));
         cx.notify();
         window.refresh();
     }
@@ -360,7 +406,7 @@ impl RenderOnce for AccordionHeader {
             .get(self.index)
             .expect("AccordionHeader index must identify an item");
         let disabled = item.disabled;
-        let expanded = model.open == Some(self.index);
+        let expanded = model.is_open(self.index);
         let label = item.label.clone();
         let focus = model.trigger_focus_handle(self.index).clone();
         let heading_id = part_id(self.state.entity_id(), "accordion-heading", self.index);
@@ -461,7 +507,7 @@ impl RenderOnce for AccordionPanel {
             .items
             .get(self.index)
             .expect("AccordionPanel index must identify an item");
-        if model.open != Some(self.index) {
+        if !model.is_open(self.index) {
             return gpui::Empty.into_any_element();
         }
         let focus = model.panel_focus_handle(self.index).clone();
@@ -563,7 +609,7 @@ mod tests {
         }
     }
 
-    type Changes = Rc<RefCell<Vec<Option<SharedString>>>>;
+    type Changes = Rc<RefCell<Vec<Vec<SharedString>>>>;
 
     fn items() -> Vec<AccordionItem> {
         vec![
@@ -577,11 +623,12 @@ mod tests {
     fn harness(
         cx: &mut TestAppContext,
         items: Vec<AccordionItem>,
+        multiple: bool,
     ) -> (&mut VisualTestContext, Entity<Harness>, Changes) {
         cx.update(crate::init);
         let (root, cx) = cx.add_window_view(move |window, cx| {
             let content = cx.new(|cx| {
-                let state = cx.new(|cx| AccordionState::new(items, cx));
+                let state = cx.new(|cx| AccordionState::new(items, cx).multiple(multiple));
                 let subscription = cx.observe(&state, |_, _, cx| cx.notify());
                 Harness {
                     state,
@@ -605,10 +652,7 @@ mod tests {
             let changes = changes.clone();
             cx.subscribe(&state, move |state, event: &AccordionEvent, cx| {
                 let AccordionEvent::Change(value) = event;
-                assert_eq!(
-                    state.read(cx).open_item().map(|item| item.value().clone()),
-                    *value,
-                );
+                assert_eq!(state.read(cx).open_values(), *value);
                 changes.borrow_mut().push(value.clone());
             })
             .detach();
@@ -657,12 +701,142 @@ mod tests {
     }
 
     fn assert_open(cx: &mut VisualTestContext, view: &Entity<Harness>, open: Option<usize>) {
-        cx.update(|_, cx| assert_eq!(view.read(cx).state.read(cx).open_index(), open));
+        cx.update(|_, cx| {
+            let state = view.read(cx).state.read(cx);
+            let expected: Vec<_> = open
+                .map(|index| state.items()[index].value().clone())
+                .into_iter()
+                .collect();
+            assert_eq!(state.open_values(), expected);
+        });
+    }
+
+    #[gpui::test]
+    fn multiple_defaults_follow_item_order_and_single_mode_keeps_one_value(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(|cx| {
+            let multiple = cx.new(|cx| {
+                AccordionState::new(items(), cx)
+                    .multiple(true)
+                    .default_open(["help", "general", "help"])
+            });
+            let state = multiple.read(cx);
+            assert_eq!(
+                state.open_values(),
+                [SharedString::from("general"), SharedString::from("help")]
+            );
+            assert!(state.is_open(0));
+            assert!(!state.is_open(1));
+            assert!(state.is_open(2));
+            assert!(!state.is_open(3));
+
+            let single = cx.new(|cx| AccordionState::new(items(), cx).default_open(["help"]));
+            assert_eq!(single.read(cx).open_values(), [SharedString::from("help")]);
+        });
+    }
+
+    #[gpui::test]
+    fn multiple_activation_keeps_other_panels_and_restores_only_closing_content(
+        cx: &mut TestAppContext,
+    ) {
+        let (cx, view, changes) = harness(cx, items(), true);
+        click_header(cx, 2);
+        click_header(cx, 0);
+        cx.simulate_keystrokes("down down");
+        draw(cx);
+        assert_header(cx, &view, 3);
+        press(cx, "enter");
+        click_header(cx, 1);
+        press(cx, "space");
+        assert_eq!(
+            *changes.borrow(),
+            [
+                vec![SharedString::from("help")],
+                vec![SharedString::from("general"), SharedString::from("help")],
+                vec![
+                    SharedString::from("general"),
+                    SharedString::from("help"),
+                    SharedString::from("advanced"),
+                ],
+                vec![SharedString::from("general"), SharedString::from("help")],
+            ]
+        );
+
+        #[cfg(feature = "test-support")]
+        cx.update(|window, cx| {
+            let state = view.read(cx).state.clone();
+            for index in [0, 2] {
+                let header = crate::test_support::find(
+                    window,
+                    &[],
+                    &part_id(state.entity_id(), "accordion-trigger", index),
+                )
+                .unwrap();
+                assert_eq!(header.expanded(), Some(true));
+                let panel = crate::test_support::find(
+                    window,
+                    &[],
+                    &part_id(state.entity_id(), "accordion-panel", index),
+                )
+                .unwrap();
+                assert_eq!(panel.role(), Some(Role::Region));
+                assert_eq!(
+                    panel.label(),
+                    Some(state.read(cx).items()[index].label().as_ref())
+                );
+            }
+        });
+
+        cx.update(|window, cx| {
+            let input_focus = view.read(cx).input.focus_handle(cx);
+            input_focus.focus(window, cx);
+            let state = view.read(cx).state.clone();
+            state.update(cx, |state, cx| state.toggle(3, window, cx));
+            assert!(input_focus.is_focused(window));
+        });
+        draw(cx);
+        cx.update(|window, cx| {
+            let state = view.read(cx).state.clone();
+            state.update(cx, |state, cx| state.toggle(2, window, cx));
+            assert!(view.read(cx).input.focus_handle(cx).is_focused(window));
+        });
+        draw(cx);
+        cx.update(|window, cx| {
+            let state = view.read(cx).state.clone();
+            state.update(cx, |state, cx| state.toggle(0, window, cx));
+        });
+        draw(cx);
+        assert_header(cx, &view, 0);
+        assert_open(cx, &view, Some(3));
+        assert!(cx.debug_bounds("panel-input").is_none());
+
+        cx.update(|window, cx| {
+            let state = view.read(cx).state.clone();
+            state.update(cx, |state, cx| state.toggle(2, window, cx));
+        });
+        draw(cx);
+        cx.update(|window, cx| {
+            let state = view.read(cx).state.clone();
+            let panel_focus = state.read(cx).panel_focus_handle(2).clone();
+            panel_focus.focus(window, cx);
+            state.update(cx, |state, cx| state.close(window, cx));
+        });
+        draw(cx);
+        assert_header(cx, &view, 2);
+        assert_open(cx, &view, None);
+        let count = changes.borrow().len();
+        assert_eq!(changes.borrow().last(), Some(&Vec::new()));
+        cx.update(|window, cx| {
+            let state = view.read(cx).state.clone();
+            state.update(cx, |state, cx| state.close(window, cx));
+        });
+        assert_eq!(changes.borrow().len(), count);
     }
 
     #[gpui::test]
     fn every_enabled_header_is_a_tab_stop_and_arrow_focus_does_not_expand(cx: &mut TestAppContext) {
-        let (cx, view, changes) = harness(cx, items());
+        let (cx, view, changes) = harness(cx, items(), false);
         cx.simulate_keystrokes("tab");
         draw(cx);
         assert_header(cx, &view, 0);
@@ -699,7 +873,7 @@ mod tests {
     fn native_pointer_enter_and_space_toggle_once_and_ignore_disabled_items(
         cx: &mut TestAppContext,
     ) {
-        let (cx, view, changes) = harness(cx, items());
+        let (cx, view, changes) = harness(cx, items(), false);
         let collapsed_after = cx.debug_bounds("after").unwrap().origin.y;
         let first_header = cx.debug_bounds("header-0").unwrap();
         assert_eq!(collapsed_after - first_header.origin.y, px(128.));
@@ -728,8 +902,10 @@ mod tests {
         assert_open(cx, &view, None);
         assert_eq!(
             *changes.borrow(),
-            [Some("general"), None, Some("general"), Some("help"), None]
-                .map(|value| value.map(SharedString::from))
+            [Some("general"), None, Some("general"), Some("help"), None].map(|value| value
+                .map(SharedString::from)
+                .into_iter()
+                .collect::<Vec<_>>())
         );
     }
 
@@ -737,7 +913,7 @@ mod tests {
     fn panel_data_survives_unmount_and_collapsing_focused_content_restores_header(
         cx: &mut TestAppContext,
     ) {
-        let (cx, view, _) = harness(cx, items());
+        let (cx, view, _) = harness(cx, items(), false);
         cx.simulate_keystrokes("tab");
         draw(cx);
         press(cx, "enter");
@@ -831,7 +1007,7 @@ mod tests {
 
     #[gpui::test]
     fn closing_after_host_removal_does_not_focus_a_detached_header(cx: &mut TestAppContext) {
-        let (cx, view, changes) = harness(cx, items());
+        let (cx, view, changes) = harness(cx, items(), false);
         click_header(cx, 2);
         cx.simulate_keystrokes("tab");
         draw(cx);
@@ -848,7 +1024,10 @@ mod tests {
             });
             assert!(!state.read(cx).trigger_focus_handle(2).is_focused(window));
         });
-        assert_eq!(*changes.borrow(), [Some(SharedString::from("help")), None]);
+        assert_eq!(
+            *changes.borrow(),
+            [vec![SharedString::from("help")], vec![]]
+        );
     }
 
     #[gpui::test]
@@ -859,14 +1038,14 @@ mod tests {
             Vec::new(),
             vec![AccordionItem::new("disabled", "Unavailable").disabled(true)],
         ] {
-            let (cx, view, changes) = harness(cx, items);
+            let (cx, view, changes) = harness(cx, items, false);
             cx.simulate_keystrokes("tab");
             draw(cx);
             cx.update(|window, cx| assert!(view.read(cx).after.is_focused(window)));
             assert_open(cx, &view, None);
             assert!(changes.borrow().is_empty());
         }
-        let (cx, view, changes) = harness(cx, vec![AccordionItem::new("only", "Only")]);
+        let (cx, view, changes) = harness(cx, vec![AccordionItem::new("only", "Only")], false);
         cx.simulate_keystrokes("tab up down home end");
         draw(cx);
         assert_header(cx, &view, 0);
@@ -920,7 +1099,7 @@ mod tests {
     fn accessibility_reports_expanded_disabled_and_only_the_mounted_region(
         cx: &mut TestAppContext,
     ) {
-        let (cx, view, _) = harness(cx, items());
+        let (cx, view, _) = harness(cx, items(), false);
         cx.update(|window, cx| {
             let state = view.read(cx).state.clone();
             for (index, item) in state.read(cx).items().iter().enumerate() {

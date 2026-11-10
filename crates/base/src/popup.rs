@@ -6,7 +6,7 @@ use gpui::{
     StyleRefinement, Styled, Window, canvas, deferred, div, point, px,
 };
 
-use crate::{Positioner, ResolvedPosition, StyledExt as _};
+use crate::{Align, Direction, Placement, Positioner, ResolvedPosition, StyledExt as _};
 
 /// Distance kept between a popup and the window edge.
 const WINDOW_MARGIN: Pixels = px(8.);
@@ -31,6 +31,8 @@ pub struct Popup {
     base: gpui::Stateful<Div>,
     style: StyleRefinement,
     anchor: Anchor,
+    side: Option<Placement>,
+    align: Align,
     offset: Pixels,
     position: Option<Point<Pixels>>,
     on_position: Option<Box<dyn Fn(ResolvedPosition, Bounds<Pixels>)>>,
@@ -46,6 +48,8 @@ impl Popup {
             id,
             style: StyleRefinement::default(),
             anchor: Anchor::TopLeft,
+            side: None,
+            align: Align::Center,
             offset: px(0.),
             position: None,
             on_position: None,
@@ -54,12 +58,32 @@ impl Popup {
         }
     }
 
+    /// Places a popup corner at the opposite trigger edge, without side flipping.
     pub fn anchor(mut self, anchor: impl Into<Anchor>) -> Self {
         self.anchor = anchor.into();
+        self.side = None;
         self
     }
 
-    /// Gap from the trigger along the anchor's outward direction, zero by default.
+    /// Places the popup on this side, flipping to the opposite side when needed.
+    /// Alignment defaults to center; this replaces corner or explicit point positioning.
+    pub fn side(mut self, side: Placement) -> Self {
+        self.side = Some(side);
+        self.position = None;
+        self
+    }
+
+    /// Aligns the popup along its side. Without an explicit side, selects Bottom.
+    /// Start and End follow the inherited direction for Top and Bottom placement.
+    pub fn align(mut self, align: Align) -> Self {
+        self.align = align;
+        self.side.get_or_insert(Placement::Bottom);
+        self.position = None;
+        self
+    }
+
+    /// Gap from the trigger along the selected side or corner's outward direction.
+    /// Zero by default.
     pub fn offset(mut self, offset: Pixels) -> Self {
         self.offset = offset;
         self
@@ -69,6 +93,7 @@ impl Popup {
     // same trigger measurement, clipping, and viewport clamping machinery.
     pub(crate) fn at_position(mut self, position: Point<Pixels>) -> Self {
         self.position = Some(position);
+        self.side = None;
         self
     }
 
@@ -173,8 +198,24 @@ impl RenderOnce for Popup {
             return root;
         }
 
-        let positioner =
-            Positioner::corner(anchor, position.get()).tracked_corner_position(position);
+        let positioner = if let Some(side) = self.side {
+            let align = if side.is_vertical() && Direction::current(cx).is_rtl() {
+                match self.align {
+                    Align::Start => Align::End,
+                    Align::End => Align::Start,
+                    Align::Center => Align::Center,
+                }
+            } else {
+                self.align
+            };
+            Positioner::side(trigger_bounds.get())
+                .placement(side)
+                .align(align)
+                .offset(offset)
+                .tracked_trigger_bounds(trigger_bounds.clone())
+        } else {
+            Positioner::corner(anchor, position.get()).tracked_corner_position(position)
+        };
         let positioner = if let Some(callback) = self.on_position {
             positioner.on_position(move |position| callback(position, trigger_bounds.get()))
         } else {
@@ -361,5 +402,100 @@ mod tests {
             window.debug_bounds("popup-content").unwrap().size,
             gpui::Size::new(px(20.), px(20.))
         );
+    }
+
+    struct SideHarness {
+        trigger: Bounds<Pixels>,
+        side: Placement,
+        align: Align,
+        direction: Direction,
+        resolved: Rc<Cell<Option<(ResolvedPosition, Bounds<Pixels>)>>>,
+    }
+
+    impl Render for SideHarness {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            let resolved = self.resolved.clone();
+            crate::DirectionProvider::new(self.direction)
+                .size_full()
+                .child(
+                    Popup::new(
+                        "side-popup",
+                        div().w(self.trigger.size.width).h(self.trigger.size.height),
+                    )
+                    .absolute()
+                    .left(self.trigger.origin.x)
+                    .top(self.trigger.origin.y)
+                    .side(self.side)
+                    .align(self.align)
+                    .offset(px(8.))
+                    .on_position(move |position, trigger| {
+                        resolved.set(Some((position, trigger)));
+                    })
+                    .content(
+                        div()
+                            .debug_selector(|| "side-content".into())
+                            .w(px(60.))
+                            .h(px(30.)),
+                    ),
+                )
+        }
+    }
+
+    #[gpui::test]
+    fn side_placement_tracks_current_bounds_alignment_direction_and_collisions(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let resolved = Rc::new(Cell::new(None));
+        let (view, window) = cx.add_window_view({
+            let resolved = resolved.clone();
+            move |_, _| SideHarness {
+                trigger: Bounds::new(point(px(120.), px(100.)), gpui::size(px(100.), px(40.))),
+                side: Placement::Bottom,
+                align: Align::End,
+                direction: Direction::Ltr,
+                resolved,
+            }
+        });
+        window.update(|window, cx| window.draw(cx).clear(cx));
+        window.update(|window, cx| window.draw(cx).clear(cx));
+        let (position, trigger) = resolved.get().unwrap();
+        assert_eq!(position.placement, Some(Placement::Bottom));
+        assert_eq!(position.bounds.right(), trigger.right());
+        assert_eq!(position.bounds.top(), trigger.bottom() + px(8.));
+
+        view.update(window, |harness, cx| {
+            harness.trigger = Bounds::new(point(px(220.), px(170.)), gpui::size(px(100.), px(50.)));
+            harness.side = Placement::Right;
+            cx.notify();
+        });
+        window.update(|window, cx| window.draw(cx).clear(cx));
+        let (position, trigger) = resolved.get().unwrap();
+        assert_eq!(trigger.origin, point(px(220.), px(170.)));
+        assert_eq!(position.placement, Some(Placement::Right));
+        assert_eq!(position.bounds.left(), trigger.right() + px(8.));
+        assert_eq!(position.bounds.bottom(), trigger.bottom());
+        assert_eq!(window.debug_bounds("side-content"), Some(position.bounds));
+
+        view.update(window, |harness, cx| {
+            harness.side = Placement::Bottom;
+            harness.direction = Direction::Rtl;
+            cx.notify();
+        });
+        window.update(|window, cx| window.draw(cx).clear(cx));
+        let (position, trigger) = resolved.get().unwrap();
+        assert_eq!(position.bounds.left(), trigger.left());
+
+        let viewport = window.update(|window, _| window.viewport_size());
+        view.update(window, |harness, cx| {
+            harness.direction = Direction::Ltr;
+            harness.align = Align::Start;
+            harness.trigger.origin = point(viewport.width - px(30.), viewport.height - px(50.));
+            cx.notify();
+        });
+        window.update(|window, cx| window.draw(cx).clear(cx));
+        let (position, trigger) = resolved.get().unwrap();
+        assert_eq!(position.placement, Some(Placement::Top));
+        assert_eq!(position.bounds.bottom(), trigger.top() - px(8.));
+        assert_eq!(position.bounds.right(), viewport.width - WINDOW_MARGIN);
     }
 }

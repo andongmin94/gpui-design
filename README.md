@@ -14,40 +14,44 @@ sidebar presentations. The source is maintained in this repository, with GPUI
 kept as an exactly pinned rendering
 dependency.
 
+The [completion criteria and current work](docs/component-coverage.md#completion-criteria-and-current-work)
+track behavior, accessibility, visual defaults, source distribution, and native
+validation. Catalogue coverage alone is not a claim of shadcn/ui-level completeness.
+
 ## Current scope
 
 | Control | Behavior supplied by the library | Application-owned presentation |
 | --- | --- | --- |
 | **Button** | Pointer and keyboard activation, disabled state, focus, accessible name and role, and optional current-page metadata | Content, spacing, shape, and state styling |
 | **Toggle** | Controlled pressed state over Button's activation, focus, and disabled behavior | Content and pressed-state styling |
-| **ToggleGroup** | Multiple pressed values, one Tab stop, orientation-aware navigation, and disabled items | Group layout and Toggle option styling |
+| **ToggleGroup** | Multiple or optional single pressed value, programmatic replacement, one Tab stop, orientation-aware navigation, and disabled items | Group layout and Toggle option styling |
 | **Checkbox** | Controlled unchecked/checked/mixed state, activation, disabled state, and focus | Indicator, label, layout, and state styling |
 | **Switch** | Controlled on/off state, activation, disabled state, and focus | Track, thumb, label, and state styling |
-| **RadioGroup** | Single selection, one Tab stop, arrow navigation, disabled options, and focus | Group layout and option rendering |
+| **RadioGroup** | Single selection, programmatic set/clear, one Tab stop, arrow navigation, disabled options, and focus | Group layout and option rendering |
 | **Input** | Text editing state, selection, clipboard, focus, and the native text-input interface | Field container, text style, caret, and surrounding controls |
 | **Textarea** | Multiline editing over the same engine, retained text, wrapping, and normal form Tab traversal | Field container, dimensions, text style, and surrounding content |
 | **Field** | Label focus, help/error descriptions, and required/invalid metadata for existing Input/Textarea-based controls | Layout, label/help/error styles, control rendering, and validation rules |
 | **Label** | Named native text label that focuses an existing control when clicked, with an explicit disabled flag and no extra Tab stop | Text, layout, styling, target accessible name, and matching disabled state |
-| **Select** | Single selection from fixed options, keyboard navigation, disabled options, commit, and focus | Trigger, popup content, and option rendering |
-| **Combobox** | Editable search over fixed options, separate committed selection, keyboard/pointer commit, and draft cancellation on dismissal | Query frame, suggestion surface, result rows, and empty state |
-| **Calendar** | Single date selection, separate focused date, bounded month/year navigation, and a Monday-first grid | Month controls, weekday/date labels, grid layout, and day styling |
-| **DatePicker** | Calendar selection inside Popover, selected-date or retained-cursor initial focus, commit-and-close, dismissal, and disabled state | Formatted trigger, calendar/month controls, and popup surface |
-| **Slider** | One numeric value, bounded steps, keyboard and pointer adjustment, disabled state, and focus | Track, fill, thumb, sizing, and state styling |
+| **Select** | Fixed single selection, buffered typeahead, Home/End and arrow navigation, disabled options, commit, and focus | Trigger, popup content, and option rendering |
+| **Combobox** | Editable single/multiple selection, grouped search results, replaceable options, keyboard/pointer commit, and draft cancellation | Query frame, suggestion surface, result rows, selected chips, and empty state |
+| **Calendar** | Single/multiple/range date selection, separate focus, date-disabled rules, configurable week start, bounded navigation and RTL | Month controls, weekday/date labels, grid layout, and day styling |
+| **DatePicker** | Calendar selection inside Popover, selected-date or retained-cursor initial focus, single/complete-range closing, dismissal, and disabled state | Formatted trigger, calendar/month controls, presets, and popup surface |
+| **Slider** | One or more ordered numeric values, bounded steps, per-thumb focus and accessibility, keyboard/pointer adjustment, disabled state, vertical and RTL geometry | Track, fill, thumbs, sizing, and state styling |
 | **Progress** | Controlled percentage or indeterminate progress, accessible name and numeric range | Track, fill, label, and any animation |
 | **Breadcrumb** | Named navigation, ordered path items, and native current-page metadata | Path labels, ancestor actions, separators, layout, and styling |
-| **Tabs** | Active panel, one tab-list stop, automatic activation, orientation-aware keys, and disabled tabs | Tab-list layout, tab styling, and panel contents |
-| **Accordion** | One collapsible section, header navigation, disabled items, and focused-panel closure | Header, indicator, panel contents, and layout |
+| **Tabs** | Active panel, one tab-list stop, automatic or manual activation, orientation-aware keys, and disabled tabs | Tab-list layout, tab styling, and panel contents |
+| **Accordion** | Single or multiple open sections, header navigation, disabled items, and focused-panel closure | Header, indicator, panel contents, and layout |
 | **Collapsible** | One disclosure, active-only content, disabled trigger, and focus on content closure | Trigger content, indicator, region contents, and layout |
 | **Tooltip** | Plain text description on Button hover/focus, delayed hover, Escape dismissal, and native tooltip positioning | Button and tooltip text-surface styling |
 | **HoverCard** | Delayed rich preview on hover, trigger-to-card pointer travel, focus preview without moving focus, and dismissal | Button action, preview content, surface, and placement |
-| **Popover** | Non-modal open/close state, anchored placement, focus, outside dismissal, and Escape | Trigger, popup contents, and surface styling |
+| **Popover** | Non-modal open/close state, corner or collision-aware side/alignment placement, focus, outside dismissal, and Escape | Trigger, popup contents, and surface styling |
 | **DropdownMenu** | Plain, checked/mixed/radio and nested submenu semantics, navigation, leaf dispatch, dismissal, and focus | Trigger, menu surface, command rendering, and controlled checked values |
 | **ContextMenu** | Secondary-click or keyboard opening, pointer placement, and the shared menu tree's commands, navigation, dismissal, and focus | Focusable target, menu surface, command rendering, and controlled checked values |
 | **Command** | Text search, enabled-result navigation, pointer/Enter action dispatch, and highlighted-result scrolling | Query frame, result rows, empty state, and optional Dialog composition |
-| **Dialog** | Open/close state, modal focus, initial focus, dismissal, and focus restoration | Backdrop, popup, title, description, and close control |
+| **Dialog** | Open/close state, native modal metadata, background input isolation, initial focus, dismissal, and focus restoration | Backdrop, popup, title, description, and close control |
 | **AlertDialog** | Dialog's modal lifecycle with alert semantics and blocked backdrop dismissal | Decision text, cancellation control, and explicit application confirmation |
 | **Separator** | Semantic or decorative separation, with horizontal/vertical orientation | Length, thickness, color, and spacing |
-| **Table** | Shared fixed/flexible columns, header/body/footer structure, and native row/cell semantics | Width, cell content, typography, borders, and data operations |
+| **Table** | Shared fixed/flexible columns, header/body/footer structure, native row/cell semantics, row selection and header sort metadata | Width, cell content, typography, borders, and data operations |
 | **ScrollArea** | Native viewport, existing overlay scrollbar, retained offsets, and descendant reveal on enabled axes | Viewport dimensions, content layout, and scrollbar appearance |
 | **Resizable** | Two-pane ratio, pointer/keyboard resizing, fractional limits, retained sizes, and native splitter semantics | Frame size, pane content, divider thickness, and grip styling |
 | **Direction** | Scoped logical direction, nested overrides, and consistent horizontal keys/pointer geometry | Logical row layout through `Direction::row`, application spacing and typography |
@@ -64,6 +68,15 @@ dependency.
 Shared support includes the window root, popup positioning, input infrastructure,
 and opt-in test observations. Internal editing machinery retained for Input is
 not a separate editor product. Public APIs are still being developed.
+
+The [crate exports](crates/base/src/lib.rs) define the public control and support
+surface. The [input module](crates/base/src/input/mod.rs) intentionally also exposes
+`EditorState`, display mapping, diagnostics and provider types used by its shared
+engine; its standalone `Editor` renderer is available only to inherited tests.
+`Input` and `Textarea` are the supported rendered text controls. Native test
+observations require the `test-support` feature. Presentation recipes remain
+consumer-owned `pub(crate)` source. `Theme` configures input colors, cursor blink
+and scrollbars; application palettes own light/dark appearance.
 
 ### Copyable presentation recipes
 
@@ -84,13 +97,13 @@ These types live in the example, outside the `gpui_design` crate exports.
 | **Item** | Named content row with a title, description, and trailing action | Current recording preset beside its existing preview/edit control |
 | **Alert** | Inline title and description, with separate destructive styling and explicit urgency | Informational schedule notice and a missing-name warning after closing invalid settings |
 | **Pagination** | Controlled previous/next buttons, current-page text, and empty/first/last-page boundaries | Moving through the preset catalogue |
-| **DataTable** | Client-side text filtering, one-column text sorting, pagination, and stable-ID row actions over Table | Searching the existing recording presets and applying one to the retained settings |
+| **DataTable** | Text filtering/sorting, pagination, page/row checkbox selection, column visibility, and stable-ID row actions | Browsing recording presets, selecting rows independently, and applying a preset |
 | **Spinner** | Named indeterminate Progress with a rotating arc that respects GPUI's reduced-motion setting | The unknown-progress preview |
 | **Skeleton** | Static decorative placeholder with application-controlled size and shape | The preview's unavailable percentage display |
 | **Avatar** | Named circular image with explicit fallback text, using GPUI's image loader and cache | Preset artwork or initials in the existing HoverCard preview |
 | **AspectRatio** | Clipped media frame with a finite positive width/height ratio and application-owned content | A recording-frame illustration driven by the retained preset and session name |
-| **Sheet** | Right-edge modal presentation over Dialog, with a viewport-limited width, fixed header/footer, and one scrolling body | Session settings in both appearances, using the existing form and retained state |
-| **Sidebar** | Named navigation with ordinary Buttons, native current-page metadata, and explicit selection through retained TabsState | The Settings appearance's sections, beside their current named Region or stacked above it in a narrow window |
+| **Sheet** | Four-edge modal presentation over Dialog, viewport-limited size, fixed header/footer, and one scrolling body | Session settings and catalogue help panels, using retained state |
+| **Sidebar** | Named grouped navigation, ordinary Buttons, current-page metadata, and optional whole/group Collapsible state | Grouped Settings sections and the catalogue's collapsible project navigation |
 | **Typography** | Named headings with explicit levels, paragraphs with native inline-code text runs, and independently named code elements | Help headings, state-ownership explanations, and the example's source identifier |
 | **CodeBlock** | Read-only multiline code, an exact full-text Copy action, and bounded two-axis scrolling with keyboard access | A JSON snapshot of the retained session settings in Help |
 | **Marker** | One named date/status label between decorative separators, with wrapping text and no focus stop | The currently selected Calendar date above Schedule's notes and recording plan |
@@ -115,10 +128,14 @@ controls' frame borders, radii, layout, design palette, and sizing scales.
 
 Select accepts a fixed, ordered collection when `SelectState` is created. Each
 option has a unique value; the state owns the selected value and keyboard cursor.
+Typing selects an enabled prefix match while closed and highlights it while open.
+Home/End highlight the first/last enabled option in an open popup without committing.
 Command and Combobox share `SearchItem` values, labels, aliases, and disabled
-flags. Combobox adds one committed selection to the shared query and result
-navigation; typing alone does not change that selection. Its current scope is
-fixed single selection, without free-form values, async sources, or groups.
+flags and group labels. Combobox adds single or multiple committed values to the
+shared query and result navigation; typing alone does not change selection.
+Applications can replace items while preserving native query editing and stable
+selected values. Fetching, request ordering and free-form values belong to the
+application rather than a second input or network engine.
 
 The [two-style example](crates/base/examples/two_styles.rs) applies a compact dark
 presentation and a light settings presentation to shared form controls, with
@@ -221,12 +238,14 @@ An informational Alert explains that the example retains preferences without
 scheduling an actual recording. Its date bounds are 2026–2027.
 
 The separate [catalogue example](crates/base/examples/catalogue.rs) connects the
-remaining families into four retained views. Navigation demonstrates coordinated
-menus and destination links; Forms and feedback runs numeric code entry through
-a confirmation Drawer into a pausing Toast; Media and data supplies RTL-aware
+remaining families into five retained views. Navigation demonstrates coordinated
+menus, destination links and collapsible grouped project navigation; Forms and feedback runs numeric code entry through
+a confirmation Drawer into a pausing Toast, plus help Sheets at all four edges; Media and data supplies RTL-aware
 Carousel slides and inspectable line/bar/area charts with an exact data table;
 Conversation combines incoming/outgoing bubbles, anchored history/streaming,
-reactions and a validated question/review/complete flow. These examples are local
+reactions and a validated question/review/complete flow. Selection combines date
+ranges, independent dates and grouped multiple recording targets. Its calendars
+start weeks on Sunday, disable weekend selection and offer RTL layout. These examples are local
 and make no network requests.
 
 ## Layers and source ownership
@@ -257,8 +276,8 @@ Popover; only the trigger interaction and requested placement differ.
 project application-owned state into native menu semantics. `MenuSubmenu` routes
 leaf activation through the root MenuState; it does not add another selection store.
 Command reuses Input for its query and can be hosted in Dialog. Combobox reuses
-Command's filtering, result cursor, scrolling, and activation, with one committed
-value and a suggestion surface positioned by Popup. Textarea renders the existing
+Command's filtering, result cursor, scrolling, and activation, with single or
+multiple committed values and a suggestion surface positioned by Popup. Textarea renders the existing
 multiline editing state. Field projects associated text into that native input's
 semantics. Label uses the target's existing FocusHandle for click-to-focus;
 the pinned GPUI API does not expose a native labelled-by relationship between
@@ -274,8 +293,9 @@ native table semantics. ScrollArea composes GPUI's ScrollHandle viewport with th
 retained Scrollbar implementation, without another scrolling engine.
 Breadcrumb supplies native navigation/list structure and current-page metadata;
 the consumer composes ordinary Buttons and owns their destination callbacks.
-Appearance belongs in the application. A separately distributed
-styled component catalog, installation CLI, and registry have not been added.
+Appearance belongs in the application. The local `gpui-design-cli` copies selected
+presentation recipes and their dependencies into consumer-owned modules. A remote
+registry and separately published styled component package are not provided.
 
 See the [form control guide](docs/form-controls.md) for state ownership, keyboard
 contracts, and application-owned styling. Checkbox and Switch report the next
@@ -318,22 +338,66 @@ cd gpui-design
 cargo run -p gpui-design --example two_styles --locked -- compact
 cargo run -p gpui-design --example two_styles --locked -- settings
 cargo run -p gpui-design --example catalogue --locked
+cargo run -p gpui-design --example starter --locked
 ```
 
 `compact` is the default when no appearance argument is supplied. Both commands
 run the same session-settings interaction with application-owned styling.
 
+Start with [`starter.rs`](crates/base/examples/starter.rs) for a small complete
+application. It uses only public APIs: `init`, `Root`, a retained `InputState`,
+`Field`, and `Button`. The application keeps its observation and event subscriptions,
+owns the colors and layout, and handles both Enter and button activation. Copy
+its startup and view into a consumer before adding the larger compositions.
+
+In an existing Rust application, depend on the checked-out source and matching
+GPUI snapshots, replacing the path with your checkout:
+
+```toml
+[dependencies]
+gpui-design = { path = "../gpui-design/crates/base" }
+gpui = { package = "gpui-pre", version = "=0.3.11" }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.11", features = ["font-kit", "x11", "wayland", "runtime_shaders"] }
+
+[features]
+test-support = ["gpui-design/test-support"]
+```
+
+The feature declaration supports the test guards in copied recipe source;
+enable it when running those GPUI tests. Use the repository's pinned Rust toolchain and native prerequisites above. Copy
+the desired presentation recipes into the application using their
+[dependency and token instructions](docs/presentation-recipes.md#copy-into-an-application).
+
 The GPUI snapshot family is pinned to **`=0.3.11`**. Update those pins and
 `Cargo.lock` together when changing the rendering dependency.
+
+Copy application-owned presentation source with its required recipe modules,
+light/dark tokens and license:
+
+```sh
+cargo run -p gpui-design-cli --locked -- list
+cargo run -p gpui-design-cli --locked -- add data-table avatar --to ../my-app/src/ui
+```
+
+Declare `mod ui;` in the consumer. The tool preserves edits to previously installed
+recipe and palette files; modified generated module declarations or new-file
+conflicts stop before writing. It leaves Cargo dependencies to the consumer.
+See the [source-copy guide](docs/presentation-recipes.md#copy-into-an-application).
+The catalogue's Selection section demonstrates range/multiple dates, grouped
+recording targets, removable selected chips and replaceable local option data.
+
 
 ## Work on the source
 
 | Location | Responsibility |
 | --- | --- |
+| `crates/cli/` | Source-copy CLI and recipe dependency catalogue |
 | `crates/base/src/` | The `gpui-design` library and its behavior-level tests |
 | `crates/base/tests/` | Integration tests using the public API |
+| `crates/base/examples/starter.rs` | Small complete application using only public APIs |
 | `crates/base/examples/two_styles.rs` | Native example and application-owned styles |
-| `crates/base/examples/recipes/` | Twenty-two copyable presentation/composition recipes, including sidebar navigation, traces, attachments, messages, markers, code blocks, typography, sheets, media frames, avatars, data tables, loading indicators, and keycaps |
+| `crates/base/examples/presentation.rs` | Copyable light/dark application tokens used by the presentation recipes |
+| `crates/base/examples/recipes/` | Twenty-three catalogue recipes and Chart's supporting presentation; copyable application-owned source |
 | `crates/base/examples/assets/` | Embedded example artwork used by the preset preview and its image-decoding regression |
 | `docs/form-controls.md` | Form control usage and interaction contracts |
 | `docs/navigation-overlays.md` | Breadcrumb, Tabs, Accordion, command menus, and composed focus behavior |
@@ -343,7 +407,8 @@ The GPUI snapshot family is pinned to **`=0.3.11`**. Update those pins and
 | `Cargo.toml` / `Cargo.lock` | Workspace and matching dependency set |
 
 Initialize the library with `gpui_design::init(cx)` and host application content
-in `gpui_design::Root`. Use the native example as the complete startup reference.
+in `gpui_design::Root`. Use the starter as the small startup reference and the
+other native examples for larger compositions.
 Consumer applications can work directly with this source and supply their own
 presentation while reusing the behavior layer.
 
@@ -353,22 +418,23 @@ Run the checks for the completed change set:
 
 ```sh
 cargo fmt --all -- --check
-cargo clippy -p gpui-design --all-targets --features test-support --locked -- -D warnings
-cargo test -p gpui-design --features test-support --locked
-cargo build -p gpui-design --examples --locked
+cargo clippy --workspace --all-targets --features gpui-design/test-support --locked -- -D warnings
+cargo test --workspace --features gpui-design/test-support --locked
+cargo build --workspace --bins --examples --locked
 ```
 
 The [Verify workflow](https://github.com/andongmin94/gpui-design/actions/workflows/verify.yml)
 uses one matrix for Linux, Windows, and macOS. Platform-independent checks run
-once; each platform still compiles its native dependencies and both examples.
+once; each platform still compiles its native dependencies and all examples.
 
 | Check | Linux | Windows | macOS |
 | --- | --- | --- | --- |
 | Formatting and Clippy | Yes | — | — |
 | Full behavior and integration suite | Yes | — | — |
 | Real consumer composition flows | Included above | Yes | Yes |
+| Source CLI filesystem contracts | Included above | Yes | Yes |
 | Isolated recipe tests | Included above | — | — |
-| Both native example builds | Yes | Yes | Yes |
+| Native examples and source CLI builds | Yes | Yes | Yes |
 
 Composition tests use representative session and catalogue flows instead of
 duplicating every scenario for each palette. Add tests for distinct behavior and
@@ -399,23 +465,25 @@ The form layer adapts the upstream Checkbox and Switch roots without their
 decorative parts, and adds retained selection and roving focus to RadioGroup.
 Tabs adds retained active panels and keyboard navigation. Popover reuses the
 positioning primitive with a retained non-modal focus and dismissal lifecycle.
-Accordion adds single-open state and header navigation. The shared Menu core
+Accordion adds single/multiple-open state and header navigation. The shared Menu core
 composes Popover with command dispatch and a keyboard/pointer cursor;
 DropdownMenu and ContextMenu provide button and secondary-click entry points.
-Slider adapts the upstream pointer interaction to a single linear value with
-retained focus and keyboard adjustment. Progress retains the controlled numeric
+Slider adapts the upstream pointer interaction to ordered linear values with
+per-thumb native focus, value semantics and keyboard adjustment. Progress retains the controlled numeric
 semantics while the application supplies its track and fill.
 Toggle delegates activation to Button, and ToggleGroup adds retained multiple
 selection and roving focus to Toggle options.
 Collapsible adds retained visibility and content-closure focus to the upstream
 disclosure contract, reusing Button for its trigger. AlertDialog adapts the
 upstream Dialog specialization to the existing retained DialogState and parts.
-Command adds fixed-action search and activation over the existing Input engine.
+Command adds searchable, replaceable and grouped actions over the existing Input engine.
 Textarea exposes that engine's retained multiline state as a public control,
 with form Tab traversal and disabled-input Tab skipping. Separator adds static
 native semantics without imposing visual geometry.
 Combobox extends shared `SearchItem` search and activation with editable drafts,
-committed selection, and an anchored suggestion lifecycle. Field connects visible
+single/multiple committed selection, grouped and replaceable options, and an
+anchored suggestion lifecycle. Calendar and DatePicker retain single, multiple
+and inclusive-range values with independent keyboard navigation. Field connects visible
 labels and application validation feedback to existing text-input semantics;
 it does not own a separate form state or validation engine. Tooltip uses GPUI's
 native tooltip rendering with Button focus, hover timing, and dismissal behavior.

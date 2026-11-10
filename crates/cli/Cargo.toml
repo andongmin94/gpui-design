@@ -1,0 +1,18 @@
+[package]
+name = "gpui-design-cli"
+description = "Copy application-owned GPUI Design recipes and their dependencies."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "gpui-design"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+
+[lints]
+workspace = true

@@ -1,4 +1,4 @@
-//! A single-date picker composed from Calendar and Popover.
+//! A single, multiple, or range date picker composed from Calendar and Popover.
 
 use gpui::{
     Anchor, AnyElement, App, AppContext as _, Context, ElementId, Entity, EventEmitter,
@@ -7,14 +7,16 @@ use gpui::{
 };
 
 use crate::{
-    Button, CalendarState, NaiveDate, Popover, PopoverState, StyledExt as _,
-    calendar::CalendarActivation,
+    Button, CalendarState, Popover, PopoverState, StyledExt as _,
+    calendar::{CalendarActivation, CalendarSelection},
 };
 
-/// Emitted after a different date is committed and the popup has closed.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Emitted after user activation changes the selection. Single and complete-range
+/// selections close the popup before publishing; partial ranges and multiple
+/// selections keep the popup open.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DatePickerEvent {
-    Change(NaiveDate),
+    Change(CalendarSelection),
 }
 
 /// Coordinates one Calendar with one non-modal Popover in the same window.
@@ -22,12 +24,13 @@ pub enum DatePickerEvent {
 /// Calendar exclusively owns the selected value, date arithmetic, and grid
 /// navigation. Popover exclusively owns opening, dismissal, and return focus.
 /// This composition resolves the current day focus immediately before opening
-/// and closes on day activation, including reselecting the existing date.
+/// and closes on single-date or completed-range activation. Multiple selection
+/// remains open until an explicit close or normal Popover dismissal.
 ///
 /// Keep the matching DatePicker mounted while closed. Render the supplied
 /// calendar only inside this picker's content, not in a second simultaneous
-/// Calendar. An opening with a selected value resets navigation to that date;
-/// when selection is empty, the last focused date is retained.
+/// Calendar. Opening focuses the first selected date, or the retained cursor
+/// when empty. Multiple selection retains its cursor if that date is selected.
 pub struct DatePickerState {
     calendar: Entity<CalendarState>,
     popover: Entity<PopoverState>,
@@ -38,7 +41,8 @@ pub struct DatePickerState {
 }
 
 impl DatePickerState {
-    /// Uses an existing Calendar state, including its bounds and initial value.
+    /// Uses an existing Calendar state, including its week start, disabled-date
+    /// predicate, bounds, and initial value.
     pub fn new(
         calendar: &Entity<CalendarState>,
         window: &mut Window,
@@ -50,8 +54,10 @@ impl DatePickerState {
             let mut popover =
                 PopoverState::new(cx).with_initial_focus_builder(move |window, cx| {
                     prepare_calendar.update(cx, |calendar, cx| {
-                        if let Some(selected) = calendar.selected_date() {
-                            calendar.set_selected_date(Some(selected), window, cx);
+                        if !matches!(calendar.selection(), CalendarSelection::Multiple(_))
+                            || !calendar.is_selected(calendar.focused_date())
+                        {
+                            calendar.set_selection(calendar.selection().clone(), window, cx);
                         }
                         calendar.focus_handle().clone()
                     })
@@ -71,9 +77,14 @@ impl DatePickerState {
                 }
                 // Subscribers may open another surface. Finish return focus
                 // before notifying them so this popup cannot steal it later.
-                state.close(window, cx);
+                if matches!(
+                    event.selection,
+                    CalendarSelection::Single(_) | CalendarSelection::Range { end: Some(_), .. }
+                ) {
+                    state.close(window, cx);
+                }
                 if event.changed {
-                    cx.emit(DatePickerEvent::Change(event.date));
+                    cx.emit(DatePickerEvent::Change(event.selection.clone()));
                 }
             },
         );
@@ -92,8 +103,8 @@ impl DatePickerState {
         &self.calendar
     }
 
-    pub fn selected_date(&self, cx: &App) -> Option<NaiveDate> {
-        self.calendar.read(cx).selected_date()
+    pub fn selection<'a>(&self, cx: &'a App) -> &'a CalendarSelection {
+        self.calendar.read(cx).selection()
     }
 
     pub fn is_open(&self, cx: &App) -> bool {
@@ -109,7 +120,7 @@ impl DatePickerState {
         &self.focus
     }
 
-    /// Opens at the committed date, or the current cursor when unselected.
+    /// Opens at the selection or retained cursor, using the Calendar focus policy.
     pub fn open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.popover.update(cx, |state, cx| state.open(window, cx));
     }
@@ -130,24 +141,23 @@ impl DatePickerState {
             .update(cx, |state, cx| state.set_disabled(disabled, window, cx));
     }
 
-    /// Replaces the value without emitting Change and closes an open popup.
-    /// Out-of-range values are rejected without changing either state. None
-    /// clears the value and preserves the Calendar's current navigation date.
-    pub fn set_selected_date(
+    /// Replaces the selection mode and value without emitting Change, closing an
+    /// open popup first. Invalid, date-disabled, or out-of-bounds selections leave both states
+    /// unchanged. An empty selection preserves the Calendar's navigation date.
+    pub fn set_selection(
         &mut self,
-        date: Option<NaiveDate>,
+        selection: CalendarSelection,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        let calendar = self.calendar.read(cx);
-        if date.is_some_and(|date| !(calendar.minimum()..=calendar.maximum()).contains(&date)) {
+        let Some(selection) = self.calendar.read(cx).normalized_selection(selection) else {
             return false;
-        }
+        };
         // Close while Popover still knows its original initial focus. Before
         // first paint, a different month's grid slot is not yet in its tree.
         self.close(window, cx);
         self.calendar
-            .update(cx, |state, cx| state.set_selected_date(date, window, cx))
+            .update(cx, |state, cx| state.set_selection(selection, window, cx))
     }
 }
 
@@ -157,10 +167,11 @@ impl EventEmitter<DatePickerEvent> for DatePickerState {}
 ///
 /// The application supplies formatted trigger text, the popup surface, month
 /// buttons, and the Calendar rendered from [`DatePickerState::calendar`]. Keep
-/// using ordinary CalendarDay children; their activation closes this picker.
+/// using ordinary CalendarDay children; single and complete-range activation
+/// close this picker. Partial range and multiple selections remain open.
 /// `accessibility_label` names the popup. Name the trigger separately through
 /// its builder. Expansion, disabled state, activation, and focus belong to the
-/// underlying Popover. This version has no text parser or date-range model.
+/// underlying Popover. Text parsing and trigger formatting belong to the application.
 #[derive(IntoElement)]
 pub struct DatePicker {
     id: ElementId,
@@ -246,7 +257,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::{Calendar, CalendarDay, Root};
+    use crate::{Calendar, CalendarDay, NaiveDate, Root};
 
     struct Harness {
         calendar: Entity<CalendarState>,
@@ -255,7 +266,7 @@ mod tests {
         after: FocusHandle,
         show_picker: bool,
         redirect_change: bool,
-        changes: Rc<RefCell<Vec<NaiveDate>>>,
+        changes: Rc<RefCell<Vec<CalendarSelection>>>,
         _subscriptions: Vec<Subscription>,
     }
 
@@ -341,13 +352,22 @@ mod tests {
     }
 
     fn harness(cx: &mut TestAppContext) -> (&mut VisualTestContext, Entity<Harness>) {
+        configured_harness(cx, |calendar| calendar)
+    }
+
+    fn configured_harness(
+        cx: &mut TestAppContext,
+        configure: impl FnOnce(CalendarState) -> CalendarState + 'static,
+    ) -> (&mut VisualTestContext, Entity<Harness>) {
         cx.update(crate::init);
-        let (root, cx) = cx.add_window_view(|window, cx| {
+        let (root, cx) = cx.add_window_view(move |window, cx| {
             let content = cx.new(|cx| {
                 let calendar = cx.new(|cx| {
-                    CalendarState::new(date(2024, 1, 31), cx)
-                        .bounds(date(2024, 1, 1), date(2026, 12, 31))
-                        .default_value(date(2024, 1, 31))
+                    configure(
+                        CalendarState::new(date(2024, 1, 31), cx)
+                            .bounds(date(2024, 1, 1), date(2026, 12, 31))
+                            .default_selection(CalendarSelection::Single(Some(date(2024, 1, 31)))),
+                    )
                 });
                 let picker = cx.new(|cx| DatePickerState::new(&calendar, window, cx));
                 let subscriptions = vec![
@@ -356,12 +376,14 @@ mod tests {
                         &picker,
                         window,
                         |this: &mut Harness, picker, event, window, cx| {
-                            let DatePickerEvent::Change(date) = event;
-                            assert!(
-                                !picker.read(cx).is_open(cx),
-                                "close before publishing the value"
+                            let DatePickerEvent::Change(selection) = event;
+                            let finished = matches!(
+                                selection,
+                                CalendarSelection::Single(_)
+                                    | CalendarSelection::Range { end: Some(_), .. }
                             );
-                            this.changes.borrow_mut().push(*date);
+                            assert_eq!(picker.read(cx).is_open(cx), !finished);
+                            this.changes.borrow_mut().push(selection.clone());
                             if this.redirect_change {
                                 this.after.focus(window, cx);
                             }
@@ -437,8 +459,8 @@ mod tests {
             let view = view.read(cx);
             assert!(!view.picker.read(cx).is_open(cx));
             assert_eq!(
-                view.picker.read(cx).selected_date(cx),
-                Some(date(2024, 1, 31))
+                view.picker.read(cx).selection(cx),
+                &CalendarSelection::Single(Some(date(2024, 1, 31)))
             );
             assert!(view.picker.read(cx).focus_handle().is_focused(window));
         });
@@ -449,7 +471,10 @@ mod tests {
         cx.update(|window, cx| {
             let view = view.read(cx);
             assert!(!view.picker.read(cx).is_open(cx));
-            assert_eq!(*view.changes.borrow(), [date(2024, 2, 1)]);
+            assert_eq!(
+                *view.changes.borrow(),
+                [CalendarSelection::Single(Some(date(2024, 2, 1)))]
+            );
             assert!(view.picker.read(cx).focus_handle().is_focused(window));
         });
 
@@ -464,7 +489,10 @@ mod tests {
         cx.update(|_, cx| {
             let view = view.read(cx);
             assert!(!view.picker.read(cx).is_open(cx));
-            assert_eq!(*view.changes.borrow(), [date(2024, 2, 1)]);
+            assert_eq!(
+                *view.changes.borrow(),
+                [CalendarSelection::Single(Some(date(2024, 2, 1)))]
+            );
         });
 
         view.update(cx, |view, _| view.redirect_change = true);
@@ -474,7 +502,11 @@ mod tests {
         cx.update(|window, cx| {
             let view = view.read(cx);
             assert!(!view.picker.read(cx).is_open(cx));
-            assert_eq!(*view.changes.borrow(), [date(2024, 2, 1), date(2024, 2, 2)]);
+            assert_eq!(
+                *view.changes.borrow(),
+                [date(2024, 2, 1), date(2024, 2, 2)]
+                    .map(|date| CalendarSelection::Single(Some(date)))
+            );
             assert!(
                 view.after.is_focused(window),
                 "Change subscribers retain their new focus"
@@ -493,7 +525,11 @@ mod tests {
                 picker.close(window, cx);
                 assert!(picker.focus_handle().is_focused(window));
                 picker.open(window, cx);
-                assert!(picker.set_selected_date(Some(date(2024, 2, 20)), window, cx));
+                assert!(picker.set_selection(
+                    CalendarSelection::Single(Some(date(2024, 2, 20))),
+                    window,
+                    cx
+                ));
                 assert!(!picker.is_open(cx));
                 assert!(picker.focus_handle().is_focused(window));
             });
@@ -521,10 +557,21 @@ mod tests {
         cx.update(|window, cx| {
             let picker = view.read(cx).picker.clone();
             picker.update(cx, |picker, cx| {
-                assert!(picker.set_selected_date(Some(date(2024, 2, 20)), window, cx));
-                assert!(!picker.set_selected_date(Some(date(2023, 12, 31)), window, cx));
-                assert_eq!(picker.selected_date(cx), Some(date(2024, 2, 20)));
-                assert!(picker.set_selected_date(None, window, cx));
+                assert!(picker.set_selection(
+                    CalendarSelection::Single(Some(date(2024, 2, 20))),
+                    window,
+                    cx
+                ));
+                assert!(!picker.set_selection(
+                    CalendarSelection::Single(Some(date(2023, 12, 31))),
+                    window,
+                    cx
+                ));
+                assert_eq!(
+                    picker.selection(cx),
+                    &CalendarSelection::Single(Some(date(2024, 2, 20)))
+                );
+                assert!(picker.set_selection(CalendarSelection::Single(None), window, cx));
                 picker.open(window, cx);
             });
         });
@@ -566,5 +613,164 @@ mod tests {
         });
         settle(cx);
         cx.update(|_, cx| assert!(!view.read(cx).picker.read(cx).is_open(cx)));
+    }
+
+    #[gpui::test]
+    fn range_picker_retains_partial_selection_and_closes_only_when_complete(
+        cx: &mut TestAppContext,
+    ) {
+        let (cx, view) = harness(cx);
+        let start = date(2024, 1, 31);
+        let end = date(2024, 2, 2);
+        let range = |start, end| CalendarSelection::Range { start, end };
+        cx.update(|window, cx| {
+            let picker = view.read(cx).picker.clone();
+            picker.update(cx, |picker, cx| {
+                assert!(picker.set_selection(range(None, None), window, cx));
+                picker.open(window, cx);
+            });
+        });
+        settle(cx);
+        press(cx, "enter");
+        assert_open_at(cx, &view, start);
+        press(cx, "right");
+        press(cx, "escape");
+        press(cx, "enter");
+        assert_open_at(cx, &view, start);
+        cx.update(|window, cx| {
+            let picker = view.read(cx).picker.clone();
+            assert!(!picker.update(cx, |picker, cx| {
+                picker.set_selection(range(None, Some(end)), window, cx)
+            }));
+            assert!(picker.read(cx).is_open(cx));
+            assert_eq!(picker.read(cx).selection(cx), &range(Some(start), None));
+        });
+        press(cx, "right");
+        press(cx, "right");
+        press(cx, "space");
+        cx.update(|window, cx| {
+            let picker = view.read(cx).picker.read(cx);
+            assert!(!picker.is_open(cx));
+            assert!(picker.focus_handle().is_focused(window));
+            assert_eq!(picker.selection(cx), &range(Some(start), Some(end)));
+        });
+        press(cx, "enter");
+        assert_open_at(cx, &view, start);
+        press(cx, "enter");
+        assert_open_at(cx, &view, start);
+        press(cx, "space");
+        cx.update(|window, cx| {
+            let picker = view.read(cx).picker.clone();
+            assert!(!picker.read(cx).is_open(cx));
+            assert_eq!(
+                picker.read(cx).selection(cx),
+                &range(Some(start), Some(start))
+            );
+            assert_eq!(
+                *view.read(cx).changes.borrow(),
+                [
+                    range(Some(start), None),
+                    range(Some(start), Some(end)),
+                    range(Some(start), None),
+                    range(Some(start), Some(start)),
+                ]
+            );
+            picker.update(cx, |picker, cx| {
+                picker.open(window, cx);
+                assert!(picker.set_selection(range(Some(start), Some(end)), window, cx));
+                assert!(!picker.is_open(cx));
+                assert!(picker.focus_handle().is_focused(window));
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn multiple_picker_keeps_toggling_until_dismissal_and_reopens_at_selected_focus(
+        cx: &mut TestAppContext,
+    ) {
+        let (cx, view) = harness(cx);
+        let first = date(2024, 1, 31);
+        let second = date(2024, 2, 1);
+        let third = date(2024, 2, 2);
+        cx.update(|window, cx| {
+            let picker = view.read(cx).picker.clone();
+            picker.update(cx, |picker, cx| {
+                assert!(picker.set_selection(CalendarSelection::Multiple(vec![first]), window, cx));
+                picker.open(window, cx);
+            });
+        });
+        settle(cx);
+        press(cx, "right");
+        press(cx, "enter");
+        assert_open_at(cx, &view, second);
+        press(cx, "left");
+        press(cx, "space");
+        assert_open_at(cx, &view, first);
+        press(cx, "escape");
+        press(cx, "enter");
+        assert_open_at(cx, &view, second);
+        press(cx, "right");
+        press(cx, "enter");
+        press(cx, "escape");
+        press(cx, "enter");
+        assert_open_at(cx, &view, third);
+        cx.update(|window, cx| {
+            let picker = view.read(cx).picker.clone();
+            picker.update(cx, |picker, cx| picker.set_disabled(true, window, cx));
+            assert!(!picker.read(cx).is_open(cx));
+            assert_eq!(
+                picker.read(cx).selection(cx),
+                &CalendarSelection::Multiple(vec![second, third])
+            );
+            assert_eq!(
+                *view.read(cx).changes.borrow(),
+                [
+                    CalendarSelection::Multiple(vec![first, second]),
+                    CalendarSelection::Multiple(vec![second]),
+                    CalendarSelection::Multiple(vec![second, third]),
+                ]
+            );
+        });
+        settle(cx);
+        press(cx, "space");
+        cx.update(|_, cx| assert!(!view.read(cx).picker.read(cx).is_open(cx)));
+    }
+
+    #[gpui::test]
+    fn disabled_date_activation_and_programmatic_rejection_keep_the_popup_open(
+        cx: &mut TestAppContext,
+    ) {
+        let disabled = date(2024, 2, 1);
+        let (cx, view) = configured_harness(cx, move |calendar| {
+            calendar.disabled_dates(move |date| date == disabled)
+        });
+        press(cx, "tab");
+        press(cx, "enter");
+        press(cx, "right");
+        assert_open_at(cx, &view, disabled);
+        press(cx, "enter");
+        assert_open_at(cx, &view, disabled);
+        cx.update(|window, cx| {
+            let picker = view.read(cx).picker.clone();
+            assert!(!picker.update(cx, |picker, cx| picker.set_selection(
+                CalendarSelection::Single(Some(disabled)),
+                window,
+                cx
+            )));
+            assert!(view.read(cx).changes.borrow().is_empty());
+        });
+        settle(cx);
+        assert_open_at(cx, &view, disabled);
+        press(cx, "right");
+        press(cx, "enter");
+        cx.update(|window, cx| {
+            let view = view.read(cx);
+            assert!(!view.picker.read(cx).is_open(cx));
+            assert!(view.picker.read(cx).focus_handle().is_focused(window));
+            assert_eq!(
+                *view.changes.borrow(),
+                [CalendarSelection::Single(Some(date(2024, 2, 2)))]
+            );
+        });
     }
 }

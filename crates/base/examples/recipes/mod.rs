@@ -41,7 +41,7 @@ pub(crate) use kbd::{Kbd, KbdGroup};
 pub(crate) use marker::Marker;
 pub(crate) use message::Message;
 pub(crate) use pagination::Pagination;
-pub(crate) use sheet::Sheet;
+pub(crate) use sheet::{Sheet, SheetSide};
 pub(crate) use sidebar::Sidebar;
 pub(crate) use skeleton::Skeleton;
 pub(crate) use spinner::Spinner;

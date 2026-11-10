@@ -1,22 +1,25 @@
-//! Native chart, directional layout, and a three-slide local media carousel.
+//! Native chart, directional layout, media trim, and a local review carousel.
 
 #[path = "recipes/chart.rs"]
 mod chart;
 
 use chart::{ChartKind, ChartRecipe};
 use gpui::{
-    AnyElement, AppContext as _, Bounds, Context, ElementId, Entity, FontWeight,
+    AnyElement, AppContext as _, Axis, Bounds, Context, ElementId, Entity, FontWeight,
     InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString, Styled,
-    Subscription, Window, canvas, div, fill, point, px, rgb, size,
+    Subscription, Window, canvas, div, fill, point, prelude::FluentBuilder as _, px, relative, rgb,
+    size,
 };
 use gpui_design::{
     Button, Carousel, CarouselControl, CarouselSlide, CarouselState, ChartSeries, ChartState,
-    Direction, DirectionProvider,
+    Direction, DirectionProvider, Slider, SliderState, SliderThumb,
 };
 
 pub(crate) struct DataCatalogue {
     chart: Entity<ChartState>,
     carousel: Entity<CarouselState>,
+    trim: Entity<SliderState>,
+    trim_axis: Axis,
     chart_kind: ChartKind,
     direction: Direction,
     reviewed: [bool; 3],
@@ -38,13 +41,17 @@ impl DataCatalogue {
         let carousel = cx.new(|cx| {
             CarouselState::new(["Recording frame", "Audio waveform", "Caption review"], cx)
         });
+        let trim = cx.new(|cx| SliderState::new(0.0..=100.0, 1., [20., 80.], cx));
         let subscriptions = vec![
             cx.observe(&chart, |_, _, cx| cx.notify()),
             cx.observe(&carousel, |_, _, cx| cx.notify()),
+            cx.observe(&trim, |_, _, cx| cx.notify()),
         ];
         Self {
             chart,
             carousel,
+            trim,
+            trim_axis: Axis::Horizontal,
             chart_kind: ChartKind::Line,
             direction: Direction::Ltr,
             reviewed: [false; 3],
@@ -71,6 +78,110 @@ impl DataCatalogue {
                     .selected(|style| style.bg(rgb(0x1e40af)))
                     .disabled(|style| style.opacity(0.45))
             })
+    }
+
+    fn render_trim(&self, cx: &mut Context<Self>) -> AnyElement {
+        let state = self.trim.read(cx);
+        let start = state.percentage(0);
+        let end = state.percentage(1);
+        let horizontal = self.trim_axis == Axis::Horizontal;
+        let first = if horizontal {
+            self.direction
+                .physical_fraction(start)
+                .min(self.direction.physical_fraction(end))
+        } else {
+            start
+        };
+        let mut rail = Slider::new("media-trim", &self.trim)
+            .accessibility_label("Media trim range in seconds")
+            .axis(self.trim_axis)
+            .direction(self.direction)
+            .relative()
+            .when(horizontal, |this| this.w_full().h(px(32.)))
+            .when(!horizontal, |this| this.w(px(32.)).h(px(160.)))
+            .when(state.is_disabled(), |this| this.opacity(0.45))
+            .child(
+                div()
+                    .absolute()
+                    .rounded_full()
+                    .bg(rgb(0x475569))
+                    .when(horizontal, |this| {
+                        this.left_0()
+                            .right_0()
+                            .top(relative(0.5))
+                            .h(px(4.))
+                            .mt(px(-2.))
+                    })
+                    .when(!horizontal, |this| {
+                        this.top_0()
+                            .bottom_0()
+                            .left(relative(0.5))
+                            .w(px(4.))
+                            .ml(px(-2.))
+                    }),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .rounded_full()
+                    .bg(rgb(0x38bdf8))
+                    .when(horizontal, |this| {
+                        this.left(relative(first))
+                            .w(relative(end - start))
+                            .top(relative(0.5))
+                            .h(px(4.))
+                            .mt(px(-2.))
+                    })
+                    .when(!horizontal, |this| {
+                        this.bottom(relative(start))
+                            .h(relative(end - start))
+                            .left(relative(0.5))
+                            .w(px(4.))
+                            .ml(px(-2.))
+                    }),
+            );
+        for index in 0..2 {
+            let fraction = state.percentage(index);
+            rail = rail.child(
+                SliderThumb::new(&self.trim, index)
+                    .accessibility_label(if index == 0 {
+                        "Trim start in seconds"
+                    } else {
+                        "Trim end in seconds"
+                    })
+                    .absolute()
+                    .size(px(16.))
+                    .rounded_full()
+                    .border_2()
+                    .border_color(rgb(0x0f172a))
+                    .bg(rgb(0x38bdf8))
+                    .focus_visible(|style| style.border_color(rgb(0xf1f5f9)).bg(rgb(0x1d4ed8)))
+                    .when(horizontal, |this| {
+                        this.left(relative(self.direction.physical_fraction(fraction)))
+                            .top(relative(0.5))
+                            .ml(px(-8.))
+                            .mt(px(-8.))
+                    })
+                    .when(!horizontal, |this| {
+                        this.bottom(relative(fraction))
+                            .left(relative(0.5))
+                            .ml(px(-8.))
+                            .mb(px(-8.))
+                    }),
+            );
+        }
+        let values = state.values();
+        div().w_full().flex().flex_col().gap_2()
+            .child(div().font_weight(FontWeight::SEMIBOLD).child("Slider · media trim selection"))
+            .child("Choose the start and end of a 100-second preview. Tab reaches each handle; arrow keys adjust it without crossing the other handle.")
+            .child(Self::button("media-trim-axis", if horizontal { "Orientation: Horizontal" } else { "Orientation: Vertical" })
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.trim_axis = if this.trim_axis == Axis::Horizontal { Axis::Vertical } else { Axis::Horizontal };
+                    cx.notify();
+                })))
+            .child(div().w_full().p_3().child(rail))
+            .child(format!("Start: {:.0} s · End: {:.0} s · Selected: {:.0} s", values[0], values[1], values[1] - values[0]))
+            .into_any_element()
     }
 
     fn render_carousel(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -275,5 +386,6 @@ impl Render for DataCatalogue {
                 self.direction,
             ))
             .child(self.render_carousel(cx))
+            .child(self.render_trim(cx))
     }
 }

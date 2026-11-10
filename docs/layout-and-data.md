@@ -59,12 +59,14 @@ explicit accessible label when their visible content does not provide one.
 
 This is an ordinary table, without cell navigation or a data controller. Row or
 column spans, automatic intrinsic column sizing, sorting, filtering, pagination,
-row selection, and virtualization are not supplied. Data operations should be
+selection management, and virtualization are not supplied. `TableRow::selected`
+and `TableCell::sort_direction` project application-owned selection and sorting
+into native metadata; they do not perform data operations. Data operations should be
 composed over this structure when a real application needs them.
 
 The copyable [DataTable recipe](presentation-recipes.md#data-table) adds text
-filtering, single-column sorting, pagination, empty-state recovery, and stable-ID
-row actions. The native example uses it to browse and apply recording presets;
+filtering, single-column sorting, pagination, page/row checkbox selection, column
+visibility, empty-state recovery, and stable-ID row actions. The native example uses it to browse and apply recording presets;
 its query and page state belong to the application, outside Table.
 
 ## ScrollArea

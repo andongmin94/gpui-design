@@ -64,7 +64,7 @@ impl<'a> Iterator for RopeLines<'a> {
 
     #[inline]
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        self.row = self.row.saturating_add(n);
+        self.row = self.row.saturating_add(n).min(self.end_row);
         self.next()
     }
 
@@ -517,6 +517,38 @@ mod tests {
             .map(|r| r.to_string())
             .collect();
         assert_eq!(lines, vec!["World\r", "This is a test 中文"]);
+    }
+
+    #[test]
+    fn test_iter_lines_nth_reports_remaining_length() {
+        let rope = Rope::from("first\nsecond\nthird");
+        let mut lines = rope.iter_lines();
+
+        assert_eq!(lines.nth(1).unwrap().to_string(), "second");
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines.size_hint(), (1, Some(1)));
+        assert_eq!(lines.nth(0).unwrap().to_string(), "third");
+        assert_eq!(lines.len(), 0);
+        assert_eq!(lines.size_hint(), (0, Some(0)));
+        assert!(lines.next().is_none());
+    }
+
+    #[test]
+    fn test_iter_lines_nth_past_end_stays_exhausted() {
+        let rope = Rope::from("first\nsecond\nthird");
+        for skip in [2, 3, usize::MAX] {
+            let mut lines = rope.iter_lines();
+            assert_eq!(lines.next().unwrap().to_string(), "first");
+            assert_eq!(lines.len(), 2);
+
+            assert!(lines.nth(skip).is_none());
+            assert_eq!(lines.len(), 0);
+            assert_eq!(lines.size_hint(), (0, Some(0)));
+            assert!(lines.next().is_none());
+            assert!(lines.nth(usize::MAX).is_none());
+            assert_eq!(lines.len(), 0);
+            assert_eq!(lines.size_hint(), (0, Some(0)));
+        }
     }
 
     #[test]

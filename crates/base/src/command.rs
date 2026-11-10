@@ -3,15 +3,16 @@
 //! surrounding surface, item presentation, and the action's effects.
 
 use gpui::{
-    AnyElement, App, AppContext as _, Context, ElementId, Entity, EntityId,
+    AnyElement, App, AppContext as _, Bounds, Context, ElementId, Entity, EntityId,
     EntityInputHandler as _, EventEmitter, FocusHandle, Focusable as _, InteractiveElement,
-    Interactivity, IntoElement, MouseButton, ParentElement, RenderOnce, Role, ScrollHandle,
+    Interactivity, IntoElement, MouseButton, ParentElement, Pixels, RenderOnce, Role, ScrollHandle,
     SharedString, StatefulInteractiveElement, StyleRefinement, Styled, Subscription, Window, div,
-    prelude::FluentBuilder as _,
+    prelude::FluentBuilder as _, px,
 };
 
 use crate::{
-    Input, InputAccessibility, InputBase, InputState, InputStyles, TestSupportExt as _,
+    ElementExt as _, Input, InputAccessibility, InputBase, InputState, InputStyles,
+    TestSupportExt as _,
     a11y_disabled::A11yDisabledExt as _,
     input::{InputEvent, MoveDown, MoveUp},
 };
@@ -23,6 +24,7 @@ pub struct SearchItem {
     label: SharedString,
     search_text: String,
     disabled: bool,
+    group: Option<SharedString>,
 }
 
 impl SearchItem {
@@ -34,6 +36,7 @@ impl SearchItem {
             value,
             label,
             disabled: false,
+            group: None,
         }
     }
 
@@ -51,6 +54,16 @@ impl SearchItem {
         self
     }
 
+    /// Names the result group. Group labels do not change matching or item order.
+    pub fn group(mut self, label: impl Into<SharedString>) -> Self {
+        self.group = Some(label.into());
+        self
+    }
+
+    pub fn group_label(&self) -> Option<&SharedString> {
+        self.group.as_ref()
+    }
+
     pub fn value(&self) -> &SharedString {
         &self.value
     }
@@ -62,6 +75,23 @@ impl SearchItem {
     pub fn is_disabled(&self) -> bool {
         self.disabled
     }
+}
+
+fn collect_items(items: impl IntoIterator<Item = SearchItem>) -> Vec<SearchItem> {
+    let items: Vec<_> = items.into_iter().collect();
+    for (index, item) in items.iter().enumerate() {
+        assert!(
+            items[..index].iter().all(|other| other.value != item.value),
+            "SearchItem values must be unique"
+        );
+        if index > 0 && items[index - 1].group != item.group {
+            assert!(
+                items[..index].iter().all(|other| other.group != item.group),
+                "SearchItem groups must be contiguous"
+            );
+        }
+    }
+    items
 }
 
 /// An explicit command activation. The application decides what it does.
@@ -89,6 +119,7 @@ pub struct CommandState {
     visible: Vec<usize>,
     highlighted: Option<usize>,
     scroll: ScrollHandle,
+    option_bounds: Vec<Option<Bounds<Pixels>>>,
     _input_observation: Subscription,
     _input_events: Subscription,
 }
@@ -99,13 +130,7 @@ impl CommandState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let items: Vec<_> = items.into_iter().collect();
-        for (index, item) in items.iter().enumerate() {
-            assert!(
-                items[..index].iter().all(|other| other.value != item.value),
-                "SearchItem values must be unique"
-            );
-        }
+        let items = collect_items(items);
         let input = cx.new(|cx| InputState::new(window, cx).placeholder("Search commands..."));
         let focus = input.focus_handle(cx);
         let input_observation = cx.observe(&input, |state, _, cx| {
@@ -126,6 +151,7 @@ impl CommandState {
             }
         });
         Self {
+            option_bounds: vec![None; items.len()],
             visible: (0..items.len()).collect(),
             highlighted: items.iter().position(|item| !item.disabled),
             items,
@@ -152,9 +178,59 @@ impl CommandState {
         &self.items
     }
 
+    /// Replaces available actions and refilters the existing native query without
+    /// changing input focus, selection, composition, or editing history.
+    /// Keeps the highlighted value when it remains enabled and visible.
+    pub fn set_items(
+        &mut self,
+        items: impl IntoIterator<Item = SearchItem>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let highlighted = self
+            .highlighted
+            .map(|index| self.items[index].value.clone());
+        let items = collect_items(items);
+        self.option_bounds = vec![None; items.len()];
+        self.items = items;
+        self.filter_query(self.input.read(cx).value());
+        if let Some(value) = highlighted {
+            self.highlighted = self
+                .visible
+                .iter()
+                .copied()
+                .find(|&index| !self.items[index].disabled && self.items[index].value == value)
+                .or(self.highlighted);
+        }
+        cx.notify();
+        window.refresh();
+    }
+
     /// Original item indices in display order, including matching disabled items.
     pub fn visible_indices(&self) -> &[usize] {
         &self.visible
+    }
+
+    /// Nonempty named groups in first-result order. Render each group's options
+    /// in [`Self::visible_group_indices`] order; ungrouped options use None.
+    pub fn visible_groups(&self) -> Vec<SharedString> {
+        let mut groups = Vec::new();
+        for &index in &self.visible {
+            if let Some(group) = &self.items[index].group
+                && !groups.contains(group)
+            {
+                groups.push(group.clone());
+            }
+        }
+        groups
+    }
+
+    pub fn visible_group_indices(&self, group: Option<&str>) -> Vec<usize> {
+        self.visible
+            .iter()
+            .copied()
+            .filter(|&index| self.items[index].group.as_deref() == group)
+            .collect()
     }
 
     pub fn highlighted_index(&self) -> Option<usize> {
@@ -189,6 +265,10 @@ impl CommandState {
         if query == self.filtered_query {
             return;
         }
+        self.filter_query(query);
+    }
+
+    fn filter_query(&mut self, query: SharedString) {
         let terms: Vec<_> = query.split_whitespace().map(str::to_lowercase).collect();
         self.visible = self
             .items
@@ -207,6 +287,7 @@ impl CommandState {
             .copied()
             .find(|&index| !self.items[index].disabled);
         self.filtered_query = query;
+        self.option_bounds.fill(None);
         self.scroll.set_offset(Default::default());
         self.scroll_to_highlight();
     }
@@ -218,12 +299,22 @@ impl CommandState {
     }
 
     fn scroll_to_highlight(&self) {
-        if let Some(position) = self
-            .highlighted
-            .and_then(|index| self.visible.binary_search(&index).ok())
-        {
-            self.scroll.scroll_to_item(position);
+        let Some(bounds) = self.highlighted.and_then(|index| self.option_bounds[index]) else {
+            return;
+        };
+        let viewport = self.scroll.bounds();
+        let mut offset = self.scroll.offset();
+        // Bounds are stored without the viewport's scroll offset, so nested
+        // group wrappers do not change which exact option must be revealed.
+        let top = bounds.top() + offset.y;
+        let bottom = bounds.bottom() + offset.y;
+        if top < viewport.top() {
+            offset.y += viewport.top() - top;
+        } else if bottom > viewport.bottom() {
+            offset.y -= bottom - viewport.bottom();
         }
+        offset.y = offset.y.clamp(-self.scroll.max_offset().y, px(0.));
+        self.scroll.set_offset(offset);
     }
 
     pub(crate) fn move_cursor(
@@ -437,14 +528,16 @@ impl RenderOnce for CommandInput {
 
 /// A named, vertically scrolling result list with no independent Tab stop.
 ///
-/// Render CommandOption children for `visible_indices()` in that exact order.
-/// Keep extra controls, group headings, and empty-result text outside this list.
+/// Render CommandOption children for `visible_indices()` in that exact order,
+/// optionally inside CommandGroup wrappers. Keep extra controls and empty-result
+/// text outside this list; group headings never participate in navigation.
 /// Applications supply its height limit, spacing, and item presentation.
 #[derive(IntoElement)]
 pub struct CommandList {
     base: crate::ObservedElement<gpui::Stateful<gpui::Div>>,
     state: Entity<CommandState>,
     label: Option<SharedString>,
+    multiple: bool,
 }
 
 impl CommandList {
@@ -453,6 +546,7 @@ impl CommandList {
             base: div().id(id).test_support().flex().flex_col().min_h_0(),
             state: state.clone(),
             label: None,
+            multiple: false,
         }
     }
 
@@ -465,11 +559,13 @@ impl CommandList {
         base: crate::ObservedElement<gpui::Stateful<gpui::Div>>,
         state: &Entity<CommandState>,
         label: Option<SharedString>,
+        multiple: bool,
     ) -> Self {
         Self {
             base,
             state: state.clone(),
             label,
+            multiple,
         }
     }
 }
@@ -501,6 +597,99 @@ impl RenderOnce for CommandList {
             .when_some(self.label, |this, label| this.aria_label(label))
             .overflow_y_scroll()
             .track_scroll(&self.state.read(cx).scroll)
+            .a11y_selection(false, self.multiple)
+    }
+}
+
+/// A named, non-focusable result group with an application-styled heading.
+/// Render only the matching [`CommandState::visible_group_indices`] options.
+/// A group without visible matching items contributes no layout or native nodes.
+#[derive(IntoElement)]
+pub struct CommandGroup {
+    base: crate::ObservedElement<gpui::Stateful<gpui::Div>>,
+    state: Entity<CommandState>,
+    label: SharedString,
+    heading: gpui::Div,
+    children: Vec<AnyElement>,
+}
+
+impl CommandGroup {
+    pub fn new(
+        id: impl Into<ElementId>,
+        state: &Entity<CommandState>,
+        label: impl Into<SharedString>,
+    ) -> Self {
+        let id = id.into();
+        let label = label.into();
+        Self::from_base(
+            div().id(id).test_support(),
+            state,
+            label.clone(),
+            div().child(label),
+        )
+    }
+
+    pub(crate) fn from_base(
+        base: crate::ObservedElement<gpui::Stateful<gpui::Div>>,
+        state: &Entity<CommandState>,
+        label: SharedString,
+        heading: gpui::Div,
+    ) -> Self {
+        Self {
+            base,
+            state: state.clone(),
+            label,
+            heading,
+            children: Vec::new(),
+        }
+    }
+
+    pub fn heading(mut self, build: impl FnOnce(gpui::Div) -> gpui::Div) -> Self {
+        self.heading = build(self.heading);
+        self
+    }
+}
+
+impl Styled for CommandGroup {
+    fn style(&mut self) -> &mut StyleRefinement {
+        self.base.style()
+    }
+}
+
+impl ParentElement for CommandGroup {
+    fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>) {
+        self.children.extend(elements);
+    }
+}
+
+impl RenderOnce for CommandGroup {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+        if self
+            .state
+            .read(cx)
+            .visible_group_indices(Some(&self.label))
+            .is_empty()
+        {
+            return gpui::Empty.into_any_element();
+        }
+        // The heading precedes options while the group's accessible name stays
+        // independent of its decorative presentation.
+        self.base
+            .role(Role::Group)
+            .aria_label(self.label.clone())
+            .flex()
+            .flex_col()
+            .flex_shrink_0()
+            .child(
+                self.heading
+                    .id("heading")
+                    .test_support()
+                    .role(Role::Heading)
+                    .aria_level(3)
+                    .aria_label(self.label),
+            )
+            .children(self.children)
+            .into_any_element()
     }
 }
 
@@ -592,6 +781,7 @@ impl RenderOnce for CommandOption {
         let focus = state.focus.clone();
         let hover = self.state.clone();
         let activate = self.state;
+        let geometry = activate.clone();
         self.base
             .role(Role::ListBoxOption)
             .aria_label(label)
@@ -611,6 +801,22 @@ impl RenderOnce for CommandOption {
                 .on_click(move |_, window, cx| {
                     activate.update(cx, |state, cx| state.activate(index, window, cx));
                 })
+            })
+            .on_prepaint(move |bounds, window, cx| {
+                geometry.update(cx, |state, _| {
+                    let first = state.option_bounds[index].is_none();
+                    state.option_bounds[index] = Some(Bounds::new(
+                        bounds.origin - state.scroll.offset(),
+                        bounds.size,
+                    ));
+                    if first && state.highlighted == Some(index) {
+                        let previous = state.scroll.offset();
+                        state.scroll_to_highlight();
+                        if state.scroll.offset() != previous {
+                            window.request_animation_frame();
+                        }
+                    }
+                });
             })
             .a11y_disabled(disabled)
             .into_any_element()

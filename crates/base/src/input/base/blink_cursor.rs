@@ -535,7 +535,9 @@ mod tests {
         advance(cx, INTERVAL);
         assert!(!cursor.read_with(cx, |cursor, _| cursor.visible()));
 
-        cx.update(|cx| crate::Theme::global_mut(cx).appearance = crate::ThemeAppearance::Dark);
+        cx.update(|cx| {
+            crate::Theme::global_mut(cx).input_colors.foreground = gpui::hsla(0., 0., 0.98, 1.);
+        });
         assert!(!cursor.read_with(cx, |cursor, _| cursor.visible()));
         advance(cx, Duration::from_millis(249));
         assert!(!cursor.read_with(cx, |cursor, _| cursor.visible()));

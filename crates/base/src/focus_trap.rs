@@ -25,12 +25,17 @@ pub trait FocusTrapElement: InteractiveElement + Sized {
     ///
     /// # Example
     ///
-    /// ```ignore
-    /// v_flex()
-    ///     .child(Button::new("btn1").label("Button 1"))
-    ///     .child(Button::new("btn2").label("Button 2"))
-    ///     .child(Button::new("btn3").label("Button 3"))
-    ///     .focus_trap("trap1", &self.container_focus_handle)
+    /// ```no_run
+    /// use gpui::{FocusHandle, IntoElement, ParentElement as _};
+    /// use gpui_design::{Button, FocusTrapElement as _, v_flex};
+    ///
+    /// fn content(container_focus_handle: &FocusHandle) -> impl IntoElement {
+    ///     v_flex()
+    ///         .child(Button::new("btn1").accessibility_label("Button 1").child("Button 1"))
+    ///         .child(Button::new("btn2").accessibility_label("Button 2").child("Button 2"))
+    ///         .child(Button::new("btn3").accessibility_label("Button 3").child("Button 3"))
+    ///         .focus_trap("trap1", container_focus_handle)
+    /// }
     /// // Pressing Tab will cycle: btn1 -> btn2 -> btn3 -> btn1
     /// // Focus will not escape to elements outside this container
     /// ```

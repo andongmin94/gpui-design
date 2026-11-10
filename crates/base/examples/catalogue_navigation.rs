@@ -1,15 +1,21 @@
 //! Command and document navigation with application-owned layout and state.
 
+#[path = "recipes/sidebar.rs"]
+mod sidebar;
+use sidebar::Sidebar;
+
 use gpui::{
     AppContext as _, Context, Entity, FocusHandle, FontWeight, InteractiveElement as _,
     IntoElement, ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _,
-    Styled as _, Subscription, Window, div, px, rgb,
+    Styled as _, Subscription, Window, div, prelude::FluentBuilder as _, px, rgb,
 };
 use gpui_design::{
-    Button, CheckboxState, Direction, DirectionProvider, MenuEvent, MenuItem, MenuOption,
+    Accordion, AccordionHeader, AccordionItem, AccordionPanel, AccordionState, Align, Button,
+    CheckboxState, CollapsibleState, Direction, DirectionProvider, MenuEvent, MenuItem, MenuOption,
     MenuState, MenuSubmenu, Menubar, MenubarItem, MenubarMenu, MenubarState, NavigationMenu,
     NavigationMenuEntry, NavigationMenuEvent, NavigationMenuItem, NavigationMenuLink,
-    NavigationMenuState,
+    NavigationMenuState, Placement, Popover, PopoverState, TabItem, TabsState, TestSupportExt as _,
+    ToggleGroup, ToggleGroupState, ToggleItem, ToggleOption,
 };
 
 pub(crate) struct NavigationCatalogue {
@@ -18,6 +24,10 @@ pub(crate) struct NavigationCatalogue {
     file: Entity<MenuState>,
     view: Entity<MenuState>,
     export: Entity<MenuState>,
+    alignment: Entity<ToggleGroupState>,
+    help: Entity<AccordionState>,
+    quick_help: Entity<PopoverState>,
+    quick_help_close: FocusHandle,
     guide_focus: FocusHandle,
     reference_focus: FocusHandle,
     direction: Direction,
@@ -26,6 +36,9 @@ pub(crate) struct NavigationCatalogue {
     show_grid: bool,
     selection: CheckboxState,
     theme: SharedString,
+    pub(crate) sections: Entity<TabsState>,
+    pub(crate) sidebar: Entity<CollapsibleState>,
+    pub(crate) tools: Entity<CollapsibleState>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -88,9 +101,51 @@ impl NavigationCatalogue {
                 cx,
             )
         });
+        let alignment = cx.new(|cx| {
+            ToggleGroupState::new(
+                [
+                    ToggleItem::new("center", "Center"),
+                    ToggleItem::new("end", "End"),
+                ],
+                cx,
+            )
+            .single_selection()
+        });
+        let help = cx.new(|cx| {
+            AccordionState::new(
+                [
+                    AccordionItem::new("alignment", "How does reading alignment work?"),
+                    AccordionItem::new("commands", "How do command menus work?"),
+                ],
+                cx,
+            )
+            .multiple(true)
+            .default_open(["alignment"])
+        });
+        let quick_help_close = cx.focus_handle();
+        let quick_help = cx.new(|cx| PopoverState::new(cx).with_initial_focus(&quick_help_close));
+        let sections = cx.new(|cx| {
+            TabsState::new(
+                [
+                    TabItem::new("overview", "Project overview"),
+                    TabItem::new("activity", "Activity (unavailable)").disabled(true),
+                    TabItem::new("members", "Members"),
+                    TabItem::new("exports", "Exports"),
+                ],
+                cx,
+            )
+        });
+        let sidebar = cx.new(|cx| CollapsibleState::new(cx).default_open(true));
+        let tools = cx.new(|cx| CollapsibleState::new(cx).default_open(true));
         let mut subscriptions = vec![
+            cx.observe(&sections, |_, _, cx| cx.notify()),
+            cx.observe(&sidebar, |_, _, cx| cx.notify()),
+            cx.observe(&tools, |_, _, cx| cx.notify()),
             cx.observe(&bar, |_, _, cx| cx.notify()),
             cx.observe(&navigation, |_, _, cx| cx.notify()),
+            cx.observe(&alignment, |_, _, cx| cx.notify()),
+            cx.observe(&help, |_, _, cx| cx.notify()),
+            cx.observe(&quick_help, |_, _, cx| cx.notify()),
             cx.subscribe(&navigation, |this: &mut Self, _, event, cx| {
                 let NavigationMenuEvent::Navigate(value) = event;
                 this.page = value.clone();
@@ -122,6 +177,10 @@ impl NavigationCatalogue {
             file,
             view,
             export,
+            alignment,
+            help,
+            quick_help,
+            quick_help_close,
             guide_focus,
             reference_focus,
             direction: Direction::Ltr,
@@ -130,6 +189,9 @@ impl NavigationCatalogue {
             show_grid: true,
             selection: CheckboxState::Indeterminate,
             theme: "system".into(),
+            sections,
+            sidebar,
+            tools,
             _subscriptions: subscriptions,
         }
     }
@@ -186,6 +248,11 @@ impl NavigationCatalogue {
             } else {
                 0x172033
             }))
+            .button(|button| {
+                button
+                    .accessibility_label(label)
+                    .focus_visible(|style| style.bg(rgb(0x93c5fd)).text_color(rgb(0x0b1220)))
+            })
             .child(label)
     }
 }
@@ -209,14 +276,41 @@ fn trigger(button: Button, label: &'static str, open: bool) -> Button {
         .py_2()
         .rounded_md()
         .bg(rgb(if open { 0x334155 } else { 0x172033 }))
+        .focus_visible(|style| style.bg(rgb(0x93c5fd)).text_color(rgb(0x0b1220)))
         .child(label)
 }
 
 impl Render for NavigationCatalogue {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let direction_label = if self.direction.is_rtl() {
+            "Direction: RTL"
+        } else {
+            "Direction: LTR"
+        };
         let open_menu = self.bar.read(cx).open_index(cx);
         let open_navigation = self.navigation.read(cx).open_index(cx);
         let export_highlighted = self.file.read(cx).highlighted_index() == Some(2);
+        let alignment = self.alignment.read(cx);
+        let alignment_controls = self
+            .direction
+            .row(
+                ToggleGroup::new("reading-alignment", &self.alignment)
+                    .accessibility_label("Reading alignment"),
+            )
+            .gap_2()
+            .children(alignment.items().iter().enumerate().map(|(index, item)| {
+                ToggleOption::new(&self.alignment, index)
+                    .px_3()
+                    .py_2()
+                    .rounded_md()
+                    .bg(rgb(if alignment.is_pressed(index) {
+                        0x1d4ed8
+                    } else {
+                        0x172033
+                    }))
+                    .focus_visible(|style| style.bg(rgb(0x93c5fd)).text_color(rgb(0x0b1220)))
+                    .child(item.label().clone())
+            }));
         let menu =
             self.direction
                 .row(Menubar::new(&self.bar).accessibility_label("Document commands"))
@@ -365,13 +459,80 @@ impl Render for NavigationCatalogue {
                 "This local page changes when a navigation link is activated. Command menus above control independent document preferences."
             }
         };
+        let help = self.help.read(cx);
+        let section = self.sections.read(cx);
+        let selected_section = section.selected_index().unwrap_or(0);
+        let section_label = section.items()[selected_section].label().clone();
+        let project_sidebar = div().w_full().min_w_0().flex().gap_4()
+            .when(window.viewport_size().width < px(640.), |layout| layout.flex_col())
+            .child(Sidebar::new("project-sidebar", &self.sections, "Project sections", super::Appearance::Compact.palette())
+                .collapsible(&self.sidebar)
+                .group("Project", ["overview", "activity"])
+                .collapsible_group("Project tools", ["members", "exports"], &self.tools)
+                .flex_shrink_0()
+                .when(window.viewport_size().width < px(640.), |sidebar| sidebar.w_full()))
+            .child(div().id("project-section").test_support().role(Role::Region)
+                .aria_label(section_label.clone()).flex_1().min_w_0().p_4()
+                .rounded_md().bg(rgb(0x172033))
+                .child(div().font_weight(FontWeight::BOLD).child(section_label))
+                .child(div().text_sm().whitespace_normal().child(match selected_section {
+                    2 => "Members of this local project. Closing navigation keeps the current page open.",
+                    3 => "Export options for this local project. Navigation selection survives closing a group.",
+                    _ => "Use Tab and Enter to choose a page. Collapse Project tools or the full sidebar without losing the current page.",
+                })));
+        let help_sections = Accordion::new("navigation-help", &self.help)
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .children(help.items().iter().enumerate().map(|(index, item)| {
+                div()
+                    .flex()
+                    .flex_col()
+                    .rounded_md()
+                    .border_1()
+                    .border_color(rgb(0x334155))
+                    .child(
+                        AccordionHeader::new(&self.help, index)
+                            .w_full()
+                            .px_3()
+                            .py_2()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .bg(rgb(0x172033))
+                            .focus_visible(|style| {
+                                style.bg(rgb(0x93c5fd)).text_color(rgb(0x0b1220))
+                            })
+                            .child(item.label().clone())
+                            .child(if help.is_open(index) { "−" } else { "+" }),
+                    )
+                    .child(
+                        AccordionPanel::new(&self.help, index)
+                            .tab_stop(true)
+                            .px_3()
+                            .py_2()
+                            .text_sm()
+                            .text_color(rgb(0x94a3b8))
+                            .focus_visible(|style| {
+                                style.bg(rgb(0x334155)).text_color(rgb(0xe2e8f0))
+                            })
+                            .child(if index == 0 {
+                                "Choose Center or End to align the page preview. Only one option stays pressed; press it again to return to Start. Arrow keys move focus without changing the alignment."
+                            } else {
+                                "File contains document actions and an Export submenu. View changes the grid, selected layers and theme. Escape closes one menu level and returns focus to its trigger."
+                            }),
+                    )
+            }));
         DirectionProvider::new(self.direction).w_full().child(
             div().w_full().flex().flex_col().gap_4().p_4().rounded_lg()
                 .border_1().border_color(rgb(0x334155)).bg(rgb(0x0f172a))
                 .child(div().flex().justify_between().items_center().gap_3()
                     .child(div().text_lg().font_weight(FontWeight::BOLD).child("Commands and navigation"))
                     .child(Button::new("navigation-direction").px_3().py_2().rounded_md().bg(rgb(0x334155))
-                        .child(if self.direction.is_rtl() { "Direction: RTL" } else { "Direction: LTR" })
+                        .accessibility_label(direction_label)
+                        .focus_visible(|style| style.bg(rgb(0x93c5fd)).text_color(rgb(0x0b1220)))
+                        .child(direction_label)
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.direction = if this.direction.is_rtl() { Direction::Ltr } else { Direction::Rtl }; cx.notify();
                         }))))
@@ -382,9 +543,43 @@ impl Render for NavigationCatalogue {
                     self.last_command, if self.show_grid { "shown" } else { "hidden" }, self.selection, self.theme)))
                 .child(div().h(px(1.)).bg(rgb(0x334155)))
                 .child(navigation)
+                .child(Popover::new("navigation-keyboard-reference", &self.quick_help)
+                    .accessibility_label("Navigation keyboard reference")
+                    .side(Placement::Right)
+                    .align(Align::Start)
+                    .offset(px(8.))
+                    .trigger(|button| {
+                        trigger(button.accessibility_label("Keyboard reference"), "Keyboard reference", self.quick_help.read(cx).is_open())
+                    })
+                    .content(panel().w(px(280.)).p_3().gap_3()
+                        .child(div().id("navigation-keyboard-heading").role(Role::Heading).aria_level(3)
+                            .aria_label("Navigate with the keyboard")
+                            .font_weight(FontWeight::BOLD).child("Navigate with the keyboard"))
+                        .child(div().text_sm().child("Tab reaches each control. Arrow keys move between menu entries; Down opens a menu. Enter or Space activates the focused item, and Escape closes the current surface."))
+                        .child(Button::new("close-navigation-keyboard-reference")
+                            .accessibility_label("Got it")
+                            .track_focus(&self.quick_help_close).px_3().py_2().rounded_md()
+                            .bg(rgb(0x334155))
+                            .focus_visible(|style| style.bg(rgb(0x93c5fd)).text_color(rgb(0x0b1220)))
+                            .child("Got it")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.quick_help.update(cx, |state, cx| state.close(window, cx));
+                            })))))
+                .child(div().text_sm().text_color(rgb(0x94a3b8))
+                    .child("Reading alignment: choose Center or End. Press the selected option again to return to Start."))
+                .child(alignment_controls)
                 .child(div().p_4().rounded_md().bg(rgb(0x172033)).flex().flex_col().gap_2()
+                    .when(alignment.is_pressed(0), |this| this.text_center())
+                    .when(alignment.is_pressed(1), |this| {
+                        if self.direction.is_rtl() { this.text_left() } else { this.text_right() }
+                    })
                     .child(div().font_weight(FontWeight::BOLD).child(format!("Page: {}", self.page)))
-                    .child(description)),
+                    .child(description))
+                .child(div().text_sm().text_color(rgb(0x94a3b8))
+                    .child("Navigation help · Both answers can stay open."))
+                .child(help_sections)
+                .child(div().text_lg().font_weight(FontWeight::BOLD).child("Project sidebar"))
+                .child(project_sidebar),
         )
     }
 }

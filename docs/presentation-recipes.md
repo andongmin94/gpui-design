@@ -9,22 +9,67 @@ consumer's `Palette` or application-supplied `Styled` values.
 
 ## Copy into an application
 
+The source CLI copies a recipe with its transitive recipe dependencies, light/dark
+token source, module declarations, license and required assets:
+
+```sh
+cargo run -p gpui-design-cli --locked -- list
+cargo run -p gpui-design-cli --locked -- add data-table avatar --to ../my-app/src/ui
+```
+
+Declare `mod ui;` in the consumer and use `ui::recipes::{DataTable, Avatar}` and
+`ui::Appearance::Settings.palette()` or `ui::Appearance::Compact.palette()`.
+Use the matching Cargo dependencies in the README. The CLI does not change the
+consumer's manifest. It embeds the repository's current recipe source when built;
+there is no remote registry or update service.
+
+Keep the README's consumer feature declaration:
+
+```toml
+[features]
+test-support = ["gpui-design/test-support"]
+```
+
+Copied recipe tests are guarded by this consumer feature. Declaring it also makes
+their `cfg` values known to Rust; enable it to run the existing GPUI tests.
+
+Run `add` again with more names to extend the same directory. Existing recipe
+and palette edits are preserved. Generated `mod.rs` declarations and
+`recipes/.gpui-design` track the installed set; if those scaffolds were edited,
+the CLI stops before writing and explains how to add declarations manually.
+Conflicting new files are also rejected. The copied source belongs to the
+application.
+
+To copy manually:
+
 1. Copy the desired files from
    [`crates/base/examples/recipes`](../crates/base/examples/recipes) into an
    application module, preserving the repository's license terms.
 2. Declare the copied modules and re-export the types, following the small
    [`mod.rs`](../crates/base/examples/recipes/mod.rs). Copy only the modules needed
    by the application and list only those modules.
-3. For recipes that import `use super::super::Palette`, use the application's
-   token type and adapt the field names or recipe styling. The example's
-   `Palette` and its compact and settings values show the fields used by these
-   recipes. AspectRatio takes no palette; its consumer supplies the visual style.
+3. Copy [`presentation.rs`](../crates/base/examples/presentation.rs) beside the
+   application's `recipes` directory. It contains the actual `Palette` and both
+   appearances used by the tested example, without the Demo or its behavior.
+   Declare it and expose its tokens in the recipes' parent module:
+
+   ```rust,ignore
+   mod presentation;
+   pub(crate) use presentation::{Appearance, Palette};
+   mod recipes;
+   ```
+
+   Choose `Appearance::Settings.palette()` or `Appearance::Compact.palette()` in
+   the application view. Recipe imports such as `use super::super::Palette`
+   work directly. Change the copied token values to fit the application, or replace Palette with an
+   existing token type. AspectRatio takes no palette; its consumer supplies the
+   visual style. Bubble and Chart currently keep their own copyable styling.
 4. Import the types from that application module. They use `pub(crate)` visibility
    and are not exported from `gpui_design`. No extra dependency is required.
 
-The source in this repository is the distribution mechanism. There is no recipe
-registry, installer, or separate theme provider. The existing crate continues to
-own interactive behavior; the application owns the copied recipe source.
+The palette module and recipes are application source, outside the library
+exports. The CLI provides local source distribution; these visual tokens do not
+install a global theme provider. The library continues to own interactive behavior.
 
 Some recipes compose other recipe modules. Copy those modules and their re-exports
 alongside the desired recipe:
@@ -263,7 +308,7 @@ outside this recipe's scope.
 
 [`data_table.rs`](../crates/base/examples/recipes/data_table.rs) provides a working
 client-side text-table composition. It uses the existing native Input/Field,
-Table, ScrollArea, and Button, plus the InputGroup, EmptyState, and Pagination
+Table, ScrollArea, Checkbox, DropdownMenu, and Button, plus the InputGroup, EmptyState, and Pagination
 recipes. Columns and immutable rows belong to the consuming application.
 
 ```rust,ignore
@@ -286,7 +331,7 @@ DataTable::new("preset-catalogue", &state, palette)
     .selected_value(current_preset)
     .on_action(move |id, window, cx| {
         preset.update(cx, |state, cx| {
-            state.set_selected_value(Some(id.as_ref()), window, cx);
+            state.set_selected_values([id.as_ref()], window, cx);
         });
     })
 ```
@@ -312,18 +357,32 @@ the application even after filtering, sorting, or paging. Current and unavailabl
 rows have disabled action Buttons. The selected value remains in the application
 when its row is filtered out or appears on another page.
 
+Checkbox selection is independent of that current preset. The header checkbox
+selects only enabled rows on the displayed page and shows a mixed state for a
+partial selection. Selected stable IDs survive filtering, sorting, paging and
+unmounting; unavailable rows cannot be selected. `is_row_selected` and
+`filtered_selected_count` expose the selection. The footer counts selected rows
+within the current filter, including other pages. Application row actions do not
+change these checkboxes.
+
+Columns opens a native checked menu. Toggle any text column, including all of
+them; selection and action columns remain mounted. Hiding a column preserves
+filtering, sorting, selection and pagination; filtering still searches its text.
+`is_column_visible` exposes each source column's visibility.
+
 An empty result replaces the row viewport with EmptyState and Clear filter.
 Clearing restores the rows and query focus without applying a row action. With
-results, focus follows query → sort Buttons → enabled row actions → enabled page
-Buttons. Horizontal and vertical ScrollArea scrolling reveals focused controls;
+results, focus follows query → Columns → page checkbox → visible sort Buttons →
+enabled row checkboxes/actions → enabled page Buttons. Horizontal and vertical ScrollArea scrolling reveals focused controls;
 there is no grid-style arrow navigation. Query, sort, and page survive unmounting
 the view while its state entity is retained.
 
-Native Table indices describe the displayed page. Header Button names announce
-the current sorting description and next action; native sort-direction metadata
-is not supplied by the pinned Table/GPUI API. The columns are fixed-width text,
-with one application action column. Numeric/date ordering, custom cell renderers,
-multi-column sorting, multiple row selection, column hiding/reordering, mutable
+Native Table indices describe the displayed page. `TableRow::selected` exposes
+the checkbox selection. `TableCell::sort_direction` exposes the active native
+column-header direction; body/footer cells ignore it. Header Button names also
+announce the sorting description and next action. The columns are fixed-width text,
+with selection and application action columns. Numeric/date ordering, custom cell renderers,
+multi-column sorting, column reordering, mutable
 row sources, remote data, and virtualization are outside the current scope.
 Adapt the copied source when an application needs different data operations.
 
@@ -455,10 +514,11 @@ does not add controls to HoverCard's noninteractive content.
 ## Sheet
 
 [`sheet.rs`](../crates/base/examples/recipes/sheet.rs) presents existing Dialog
-content in a full-height panel at the right edge of the window:
+content at a chosen window edge, defaulting to a full-height right panel:
 
 ```rust,ignore
 Sheet::new("session-settings", &dialog, &fields_scroll, "Session settings", palette)
+    .side(SheetSide::Right)
     .description("Choose the session's drawing and toolbar settings.")
     .child(form_fields)
     .footer(
@@ -485,11 +545,18 @@ reopening, native reveal of the initial focus target can adjust its offset.
 The consumer must keep the header and footer's combined content within the
 viewport height. Long form content belongs in the scrolling body.
 
-`Styled` customizes the popup surface. Use `.w(...)` to change its preferred width
-and retain the default maximum width, height, and flex layout to preserve the
-Sheet's sizing contract. This recipe covers right-edge presentation; other edges,
-drag gestures, and transition animation are outside its current scope. It does
-not implement Drawer interaction.
+Use `.side(SheetSide::Left | Right | Top | Bottom)` to choose an edge. Left/right
+fill the height and use `palette.dialog_width` as preferred width; top/bottom fill
+the width and use that token as preferred height. Both dimensions are capped at
+the viewport. `Styled` overrides apply after edge defaults, so `.w(...)` changes a
+vertical panel's preferred width and `.h(...)` a horizontal panel's height,
+regardless of builder order. Retain the viewport caps and flex layout. All sides
+keep the same fixed header/footer and scrolling body. Drag gestures and transition
+animation are outside this recipe; Drawer owns its drag interaction.
+
+The catalogue's Forms section opens the current session help from all four edges
+using one retained DialogState and ScrollHandle. Closing restores the chosen
+trigger. The help text and session values stay application-owned.
 
 The application supplies footer controls, including any `DialogClose` and its
 disabled state. Keyboard interaction stays with the supplied controls and
@@ -563,9 +630,22 @@ and focus handles. Compact continues to use its own horizontal TabList and
 TabPanel composition. Breadcrumb's Session settings action explicitly selects
 Preferences and focuses its navigation entry in either appearance.
 
-The recipe adds no routing, navigation history, disclosure state, nested groups,
-or separate selection model. Its application-owned layout uses the existing
-Sheet's scrolling body and modal focus containment.
+Use `.group("Workspace", ["preferences", "help"])` for named groups with native
+headings. Values must name existing items and occur in at most one group. Items
+outside groups appear first. Grouping changes presentation order, while item IDs
+and focus handles retain their source indices.
+
+Retain and observe `CollapsibleState::new(cx).default_open(true)` to add
+`.collapsible(&sidebar_disclosure)` or
+`.collapsible_group("Session", ["schedule", "presets"], &session_disclosure)`.
+The existing Collapsible owns expanded/disabled metadata, keyboard activation,
+active-only content and focus restoration when closure removes a focused entry.
+The disclosure trigger stays mounted. Closing navigation preserves the selected
+page; the application continues to own its separate Region. The catalogue's
+Project sidebar demonstrates whole and group closure, including narrow layout.
+
+The recipe adds no routing, navigation history, icon rail or separate selection
+model. Settings uses the existing Sheet's scrolling body and modal focus containment.
 
 ## Typography
 
@@ -714,7 +794,7 @@ presentation; supply a bounded width and allow the label's height to grow. The
 recipe uses GPUI's existing text layout and adds no text renderer or timeline state.
 
 Both appearances place Marker between Schedule's DatePicker and its notes/plan
-panes. The consumer reads `CalendarState::selected_date()` and formats
+panes. The consumer reads `CalendarState::selection().first_date()` and formats
 `Selected date · YYYY-MM-DD`, or `No date selected` when the selection is empty.
 Moving the calendar cursor without committing a selection does not change this
 boundary. Date formatting remains application-owned, and the marker does not

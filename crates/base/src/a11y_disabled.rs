@@ -4,8 +4,9 @@
 //! GPUI has no `aria_disabled` setter, so a disabled control would reach
 //! assistive technology as one that accepts input. [`A11yDisabledExt`] wraps the
 //! control's root element without adding a layout node, a focus stop or an
-//! accessibility node. Inputs also use this same adapter for required and
-//! invalid state, which GPUI does not expose through its fluent builders.
+//! accessibility node. The same adapter exposes required and invalid input
+//! state, read-only inputs, modal dialogs, multiselectable containers, and
+//! table-header sort direction, which GPUI does not expose through its fluent builders.
 use gpui::{
     App, Bounds, Element, ElementId, GlobalElementId, InspectorElementId, InteractiveElement,
     Interactivity, IntoElement, LayoutId, Pixels, Window, accesskit,
@@ -15,8 +16,12 @@ use gpui::{
 pub(crate) struct A11yDisabled<E> {
     inner: E,
     disabled: bool,
+    readonly: bool,
+    modal: bool,
     required: bool,
     invalid: bool,
+    multiselectable: bool,
+    sort_direction: Option<accesskit::SortDirection>,
 }
 
 impl<E> A11yDisabled<E> {
@@ -24,14 +29,38 @@ impl<E> A11yDisabled<E> {
         Self {
             inner,
             disabled,
+            readonly: false,
+            modal: false,
             required: false,
             invalid: false,
+            multiselectable: false,
+            sort_direction: None,
         }
+    }
+
+    pub(crate) fn with_readonly(mut self, readonly: bool) -> Self {
+        self.readonly = readonly;
+        self
+    }
+
+    pub(crate) fn with_modal(mut self, modal: bool) -> Self {
+        self.modal = modal;
+        self
     }
 
     pub(crate) fn with_validation(mut self, required: bool, invalid: bool) -> Self {
         self.required = required;
         self.invalid = invalid;
+        self
+    }
+
+    fn with_multiselectable(mut self, multiselectable: bool) -> Self {
+        self.multiselectable = multiselectable;
+        self
+    }
+
+    fn with_sort_direction(mut self, direction: Option<accesskit::SortDirection>) -> Self {
+        self.sort_direction = direction;
         self
     }
 }
@@ -43,15 +72,27 @@ impl<E> A11yDisabled<E> {
 pub(crate) trait A11yDisabledExt: Sized {
     type Output: IntoElement;
 
-    fn a11y_disabled(self, disabled: bool) -> Self::Output;
+    fn a11y_disabled(self, disabled: bool) -> Self::Output {
+        self.a11y_selection(disabled, false)
+    }
+
+    /// Marks native list/grid selection semantics in the same root adapter.
+    fn a11y_selection(self, disabled: bool, multiselectable: bool) -> Self::Output;
+
+    /// Sets the native sort direction on the existing column-header node.
+    fn a11y_sort(self, direction: Option<accesskit::SortDirection>) -> Self::Output;
 }
 
 #[cfg(not(feature = "test-support"))]
 impl<E: Element + InteractiveElement> A11yDisabledExt for E {
     type Output = A11yDisabled<E>;
 
-    fn a11y_disabled(self, disabled: bool) -> Self::Output {
-        A11yDisabled::new(self, disabled)
+    fn a11y_selection(self, disabled: bool, multiselectable: bool) -> Self::Output {
+        A11yDisabled::new(self, disabled).with_multiselectable(multiselectable)
+    }
+
+    fn a11y_sort(self, direction: Option<accesskit::SortDirection>) -> Self::Output {
+        A11yDisabled::new(self, false).with_sort_direction(direction)
     }
 }
 
@@ -59,8 +100,12 @@ impl<E: Element + InteractiveElement> A11yDisabledExt for E {
 impl<E: Element + InteractiveElement> A11yDisabledExt for gpui::Stateful<E> {
     type Output = A11yDisabled<Self>;
 
-    fn a11y_disabled(self, disabled: bool) -> Self::Output {
-        A11yDisabled::new(self, disabled)
+    fn a11y_selection(self, disabled: bool, multiselectable: bool) -> Self::Output {
+        A11yDisabled::new(self, disabled).with_multiselectable(multiselectable)
+    }
+
+    fn a11y_sort(self, direction: Option<accesskit::SortDirection>) -> Self::Output {
+        A11yDisabled::new(self, false).with_sort_direction(direction)
     }
 }
 
@@ -70,8 +115,14 @@ impl<E: Element<PrepaintState = Option<gpui::Hitbox>> + InteractiveElement> A11y
 {
     type Output = crate::test_support::Observed<A11yDisabled<E>>;
 
-    fn a11y_disabled(self, disabled: bool) -> Self::Output {
-        self.map_inner(|inner| A11yDisabled::new(inner, disabled))
+    fn a11y_selection(self, disabled: bool, multiselectable: bool) -> Self::Output {
+        self.map_inner(|inner| {
+            A11yDisabled::new(inner, disabled).with_multiselectable(multiselectable)
+        })
+    }
+
+    fn a11y_sort(self, direction: Option<accesskit::SortDirection>) -> Self::Output {
+        self.map_inner(|inner| A11yDisabled::new(inner, false).with_sort_direction(direction))
     }
 }
 
@@ -147,11 +198,23 @@ impl<E: Element> Element for A11yDisabled<E> {
         if self.disabled {
             node.set_disabled();
         }
+        if self.readonly {
+            node.set_read_only();
+        }
+        if self.modal {
+            node.set_modal();
+        }
         if self.required {
             node.set_required();
         }
         if self.invalid {
             node.set_invalid(accesskit::Invalid::True);
+        }
+        if self.multiselectable {
+            node.set_multiselectable();
+        }
+        if let Some(direction) = self.sort_direction {
+            node.set_sort_direction(direction);
         }
     }
 
@@ -168,7 +231,10 @@ impl<E: Element> Element for A11yDisabled<E> {
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use gpui::{Context, IntoElement, Render, RenderOnce, TestAppContext, canvas};
+    use gpui::{
+        Context, IntoElement, Render, RenderOnce, StatefulInteractiveElement as _, TestAppContext,
+        canvas,
+    };
 
     use super::*;
     use crate::Button;
@@ -221,6 +287,23 @@ mod tests {
         for (name, disabled, node) in nodes.iter() {
             assert_ne!(node.role(), gpui::Role::Unknown, "{name} wrote no node");
             assert_eq!(node.is_disabled(), *disabled, "{name}, disabled {disabled}");
+        }
+    }
+
+    #[test]
+    fn selection_metadata_uses_the_existing_root_node() {
+        for role in [gpui::Role::ListBox, gpui::Role::Grid] {
+            for multiple in [false, true] {
+                let node = node_of(
+                    gpui::div()
+                        .id("selection")
+                        .role(role)
+                        .a11y_selection(false, multiple),
+                );
+                assert_eq!(node.role(), role);
+                assert_eq!(node.is_multiselectable(), multiple);
+                assert!(!node.is_disabled());
+            }
         }
     }
 

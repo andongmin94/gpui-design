@@ -123,9 +123,14 @@ item removes the currently focused content, the caller must move focus to a
 retained navigation entry or another valid target. This method does not choose
 that target or turn an ordinary navigation Button into a Tab.
 
-TabList activation is automatic: moving focus to an enabled tab also selects it.
-This includes pointer, keyboard, and programmatic focus. Each list has one Tab
-stop, at its selected tab.
+TabList activation is automatic by default: moving focus to an enabled tab also
+selects it, including programmatic and accessibility focus. Configure
+`TabsState::new(items, cx).manual_activation()` to keep focus and selection
+independent. In manual mode arrows and Home/End move focus while the current
+panel stays mounted; click, Enter, or Space commits the focused tab. Each list
+has one Tab stop: the selected tab in automatic mode, or the last focused tab
+(initially selected) in manual mode. `select_value` preserves manual focus entry.
+The catalogue uses manual activation; Compact's session tabs remain automatic.
 
 | Input | Horizontal list | Vertical list |
 | --- | --- | --- |
@@ -168,8 +173,11 @@ Navigation/Button/Region semantics rather than the TabList/Tab/TabPanel roles.
 
 `AccordionState` owns a fixed, ordered collection of `AccordionItem::new(value,
 label)` entries. Values must be unique. The initial state is fully collapsed;
-`.default_open(value)` opens one enabled entry. An unknown or disabled default is
-a configuration error and panics. Mark unavailable entries with `.disabled(true)`.
+`.default_open([value])` opens an enabled entry. Use
+`.multiple(true).default_open(["general", "details"])` to allow several open
+panels. Defaults must identify enabled items; more than one distinct default in
+single-open mode is a configuration error and panics. Mark unavailable entries
+with `.disabled(true)`.
 
 Render `Accordion::new(id, &state)` around the headers and panels, then pair each
 `AccordionHeader::new(&state, index)` with its `AccordionPanel::new(&state, index)`
@@ -179,11 +187,11 @@ a focus scope and keyboard handling, without choosing a layout or appearance.
 The header contains a native heading and a button. Its children and styles apply
 to the button; use `.heading_level(level)` to change the heading level from 3.
 Place only non-interactive content inside the header. The application draws the
-indicator and may use `open_index()` to distinguish open and closed headers.
+indicator and uses `is_open(index)` to distinguish open and closed headers.
 
 | Input on a header | Behavior |
 | --- | --- |
-| Click / Enter / Space | Open this panel, closing the previous one; collapse if already open |
+| Click / Enter / Space | Toggle this panel; single-open mode also closes the previous panel |
 | Up / Down | Focus the previous / next enabled header, wrapping at either end |
 | Home / End | Focus the first / last enabled header |
 | Tab / Shift-Tab | Follow normal document order through enabled headers and open content |
@@ -193,11 +201,14 @@ stop. Navigation actions only apply when a header itself has focus, so an Input
 inside a panel retains its own Home/End and arrow behavior. Disabled headers do
 not activate or participate in keyboard focus traversal.
 
-State methods include `items`, `open_index`, `open_item`, `trigger_focus_handle`,
+State methods include `items`, `is_open`, `open_values`, `trigger_focus_handle`,
 `panel_focus_handle`, `toggle(index, window, cx)`, and `close(window, cx)`. Subscribe
-to `AccordionEvent::Change(Some(value))` when a section opens and `Change(None)`
-when all sections close. A no-op does not emit another event. Observe the state
-to redraw the consumer.
+to `AccordionEvent::Change(values)` for the open values in original item order;
+an empty vector means all panels are closed. `close` closes every open panel. A
+no-op does not emit another event. Observe the state to redraw the consumer.
+The catalogue's Navigation help mounts two independent answers with
+`.multiple(true)`, so opening the command explanation preserves the alignment
+answer. The session Help keeps the default single-open contract.
 
 Closing a panel removes its layout, focus stops, and accessibility nodes. Keep
 form values and child entities in the application view if they must survive
@@ -260,8 +271,13 @@ Build `Popover::new(id, &state)` with:
   appearance using the existing Button API.
 - `.accessibility_label(...)` to name the popup's non-modal dialog surface.
 - `.content(...)` for application-owned popup contents and surface styling.
-- `.anchor(...)` and `.offset(...)` when the existing Popup geometry needs a
-  different attachment point or gap.
+- `.anchor(...)` for corner anchoring and `.offset(...)` for the trigger gap.
+- `.side(Placement::Right).align(Align::Start)` for a side-positioned popup with
+  collision flipping. Calling `.align(...)` alone chooses Bottom; its default
+  side alignment is Center. Top/Bottom Start/End follows the scoped logical
+  direction. The positioner tracks the trigger's current frame and clamps to
+  the viewport. Explicit corner anchors and context-menu pointer coordinates
+  retain their separate placement contracts.
 
 The library owns the trigger's activation, focus, disabled state, and expanded
 metadata. The supplied `id` identifies that trigger. Its button builder should
@@ -482,7 +498,7 @@ touch long-press are not included.
 
 ## Command
 
-Create `CommandState::new(items, window, cx)` from fixed, ordered
+Create `CommandState::new(items, window, cx)` from ordered
 `SearchItem::new(value, label)` entries with unique values. Optional `.keywords`
 add search aliases; `.disabled(true)` makes an action unavailable. Observe the
 state for result rendering and subscribe to `CommandEvent::Action(value)` to
@@ -490,8 +506,11 @@ handle execution in the application.
 
 `Command::new(id, &state)` hosts `CommandInput::new(id, &state)` and
 `CommandList::new(id, &state)`. Give the query and list accessible labels, and
-render `CommandOption::new(&state, index)` as direct list children for
-`visible_indices()`, in that order. Read `items()` for labels and
+render `CommandOption::new(&state, index)` for `visible_indices()`, in that order.
+For `.group(label)` items, wrap matching options in named `CommandGroup` parts;
+`visible_groups()` and `visible_group_indices(Some(label))` expose the filtered
+collection. Keep each group contiguous in source order; empty groups disappear.
+Group headings have no focus stop and do not affect keyboard navigation. Read `items()` for labels and
 `highlighted_index()` for application-owned active-row styling. The list uses
 the existing GPUI ScrollHandle; give it a height or maximum height so the active
 result can scroll into view. Render an application-owned empty message when no
@@ -502,7 +521,10 @@ The existing InputState is the query's source of truth, exposed through `input()
 query term must appear, ignoring case, in the item's value, label, or keywords.
 Matching retains item order and includes disabled matches for display. A changed
 query highlights its first enabled result; empty or all-disabled results have no
-active command. There is no asynchronous source, fuzzy ranking, or grouped list.
+active command. `set_items(items, window, cx)` replaces the collection while
+preserving the native query and focus; it retains an enabled matching highlight
+by value or picks the first enabled result. Applications own fetching and request
+ordering. Fuzzy ranking and a network controller are not provided.
 
 | Input | Behavior |
 | --- | --- |
@@ -631,6 +653,18 @@ static separator; Resizable pane-divider interaction is not implied.
 Use ordinary GPUI styles for its dimensions and color, such as
 `.h(px(1.)).w_full().bg(border)` for a horizontal line. Axis does not impose a
 visual layout. Separators have no children or Tab stop.
+
+## Dialog
+
+`Dialog::new(&state)` is modal: it exposes native modal metadata and blocks
+background pointer/wheel input even without a decorative backdrop. The
+application supplies the accessible name, popup and visual backdrop. Keep it
+mounted under Root so Tab and Shift-Tab remain in the active dialog.
+
+The existing state owns opening, initial focus, Escape and return focus. Backdrop
+press dismissal is provided when a backdrop is supplied and enabled; omitting
+that visual element still keeps background controls inert. Popover is non-modal
+and does not set the modal flag. AlertDialog, Drawer and Sheet reuse Dialog.
 
 ## AlertDialog
 

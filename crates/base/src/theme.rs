@@ -5,15 +5,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::{ScrollbarMode, ScrollbarMotion, ScrollbarStyles, input::CursorBlink};
 
-/// Application-wide defaults for Base behavior modules.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum ThemeAppearance {
-    #[default]
-    Light,
-    Dark,
-}
-
 /// Baseline colors for text editing, independent of any application design system.
 ///
 /// Explicit colors in [`crate::InputEditorStyle`] take precedence. These defaults
@@ -46,7 +37,6 @@ impl Default for InputColors {
 #[derive(Clone, Default)]
 #[non_exhaustive]
 pub struct Theme {
-    pub appearance: ThemeAppearance,
     /// Baseline colors used when an input has no explicit projected color.
     pub input_colors: InputColors,
     pub scrollbar: ScrollbarTheme,

@@ -82,7 +82,9 @@ pub use alert_dialog::AlertDialog;
 pub(crate) use auto_scroll::AutoScroll;
 pub use breadcrumb::{Breadcrumb, BreadcrumbItem, BreadcrumbList};
 pub use button::{Button, ButtonStyles};
-pub use calendar::{Calendar, CalendarDay, CalendarEvent, CalendarState, NaiveDate};
+pub use calendar::{
+    Calendar, CalendarDay, CalendarEvent, CalendarSelection, CalendarState, NaiveDate, Weekday,
+};
 pub use carousel::{Carousel, CarouselControl, CarouselEvent, CarouselSlide, CarouselState};
 pub use chart::{Chart, ChartEvent, ChartSeries, ChartState};
 pub use checkbox::{Checkbox, CheckboxState, CheckboxStyles};
@@ -90,10 +92,12 @@ pub use collapsible::{
     Collapsible, CollapsibleContent, CollapsibleEvent, CollapsibleState, CollapsibleTrigger,
 };
 pub use combobox::{
-    Combobox, ComboboxEvent, ComboboxInput, ComboboxList, ComboboxOption, ComboboxState,
+    Combobox, ComboboxEvent, ComboboxGroup, ComboboxInput, ComboboxList, ComboboxOption,
+    ComboboxState,
 };
 pub use command::{
-    Command, CommandEvent, CommandInput, CommandList, CommandOption, CommandState, SearchItem,
+    Command, CommandEvent, CommandGroup, CommandInput, CommandList, CommandOption, CommandState,
+    SearchItem,
 };
 pub use component_traits::Selectable;
 pub use context_menu::ContextMenu;
@@ -146,7 +150,7 @@ pub use scrollbar::{
 };
 pub use select::{Select, SelectEvent, SelectItem, SelectOption, SelectState};
 pub use separator::Separator;
-pub use slider::{Slider, SliderEvent, SliderState};
+pub use slider::{Slider, SliderEvent, SliderState, SliderThumb};
 pub use state_style::StateStyle;
 #[cfg(any(feature = "inspector", debug_assertions))]
 pub use styled::styled_ext_reflection_methods;
@@ -154,7 +158,7 @@ pub use styled::{RoleOverride, StyledExt, box_shadow, h_flex, v_flex};
 pub use switch::{Switch, SwitchStyles};
 pub use table::{Table, TableCaption, TableCell, TableColumn, TableRow};
 pub use tabs::{Tab, TabItem, TabList, TabPanel, TabsEvent, TabsState};
-pub use theme::{InputColors, ScrollbarTheme, Theme, ThemeAppearance};
+pub use theme::{InputColors, ScrollbarTheme, Theme};
 pub use toast::{Toast, ToastClose, ToastDismissReason, ToastEvent, ToastState};
 pub use toggle::Toggle;
 pub use toggle_group::{ToggleGroup, ToggleGroupEvent, ToggleGroupState, ToggleItem, ToggleOption};
