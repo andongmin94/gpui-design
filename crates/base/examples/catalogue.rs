@@ -14,7 +14,7 @@ use gpui::{
     AppContext as _, Context, Entity, FontWeight, InteractiveElement as _, IntoElement,
     ParentElement as _, Render, ScrollHandle, Styled as _, Subscription, Window, div, px, rgb,
 };
-use gpui_design::{ScrollArea, Tab, TabItem, TabList, TabPanel, TabsState};
+use gpui_design::{ScrollArea, Tab, TabItem, TabList, TabPanel, TabsEvent, TabsState};
 
 pub(crate) struct Catalogue {
     pub(crate) tabs: Entity<TabsState>,
@@ -24,6 +24,7 @@ pub(crate) struct Catalogue {
     conversation: Entity<ConversationCatalogue>,
     scroll: ScrollHandle,
     _selection: Subscription,
+    _tabs_observation: Subscription,
 }
 
 impl Catalogue {
@@ -38,11 +39,14 @@ impl Catalogue {
                 ],
                 cx,
             )
+            .manual_activation()
         });
-        let selection = cx.observe(&tabs, |this, _, cx| {
+        let selection = cx.subscribe(&tabs, |this, _, event, cx| {
+            let TabsEvent::Change(_) = event;
             this.scroll.set_offset(gpui::point(px(0.), px(0.)));
             cx.notify();
         });
+        let tabs_observation = cx.observe(&tabs, |_, _, cx| cx.notify());
         Self {
             tabs,
             navigation: cx.new(|cx| NavigationCatalogue::new(window, cx)),
@@ -51,6 +55,7 @@ impl Catalogue {
             conversation: cx.new(|cx| ConversationCatalogue::new(window, cx)),
             scroll: ScrollHandle::new(),
             _selection: selection,
+            _tabs_observation: tabs_observation,
         }
     }
 }
@@ -83,6 +88,8 @@ impl Render for Catalogue {
             .child(div().text_sm().text_color(rgb(0x94a3b8)).child("Native behavior. Application-owned presentation. Explore each working composition."))
             .child(TabList::new("catalogue-sections",&self.tabs).accessibility_label("Component catalogue")
                 .flex().flex_wrap().gap_2().children(entries))
+            .child(div().text_sm().text_color(rgb(0x94a3b8))
+                .child("Use Left/Right to focus a section, then Enter or Space to open it. You can also click a section."))
             .child(ScrollArea::new("catalogue-content",&self.scroll)
                 .accessibility_label("Catalogue content").flex_1().min_h_0().w_full()
                 .content_styles(|style| style.flex().flex_col().gap_4())

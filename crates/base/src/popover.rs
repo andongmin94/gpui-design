@@ -13,7 +13,7 @@ use gpui::{
 };
 
 use crate::{
-    Button, POPUP_PRIORITY, Popup, StyledExt as _, TestSupportExt as _,
+    Align, Button, POPUP_PRIORITY, Placement, Popup, StyledExt as _, TestSupportExt as _,
     actions::Cancel,
     global_state::{DeferredPopover, GlobalState},
 };
@@ -242,6 +242,8 @@ pub struct Popover {
     label: Option<SharedString>,
     content_role: Option<Role>,
     anchor: Anchor,
+    side: Option<Placement>,
+    align: Align,
     offset: Pixels,
     style: StyleRefinement,
 }
@@ -259,6 +261,8 @@ impl Popover {
             label: None,
             content_role: Some(Role::Dialog),
             anchor: Anchor::TopLeft,
+            side: None,
+            align: Align::Center,
             offset: px(0.),
             style: StyleRefinement::default(),
         }
@@ -278,6 +282,7 @@ impl Popover {
 
     pub(crate) fn at_position(mut self, position: Point<Pixels>) -> Self {
         self.position = Some(position);
+        self.side = None;
         self
     }
 
@@ -299,8 +304,27 @@ impl Popover {
         self
     }
 
+    /// Uses corner anchoring without side flipping, the default positioning mode.
     pub fn anchor(mut self, anchor: impl Into<Anchor>) -> Self {
         self.anchor = anchor.into();
+        self.side = None;
+        self
+    }
+
+    /// Places the content on this side of the trigger, flipping when needed.
+    /// Alignment defaults to center.
+    pub fn side(mut self, side: Placement) -> Self {
+        self.side = Some(side);
+        self.position = None;
+        self
+    }
+
+    /// Aligns content along its side. Without an explicit side, selects Bottom.
+    /// Start and End follow the inherited direction for Top and Bottom placement.
+    pub fn align(mut self, align: Align) -> Self {
+        self.align = align;
+        self.side.get_or_insert(Placement::Bottom);
+        self.position = None;
         self
     }
 
@@ -352,6 +376,7 @@ impl RenderOnce for Popover {
         let position_bounds = trigger_bounds.clone();
         let mut popup = Popup::new((self.id, "popover-host"), trigger)
             .anchor(self.anchor)
+            .when_some(self.side, |popup, side| popup.side(side).align(self.align))
             .offset(self.offset)
             .when_some(self.position, |popup, position| popup.at_position(position))
             .on_position(move |_, bounds| position_bounds.set(bounds));

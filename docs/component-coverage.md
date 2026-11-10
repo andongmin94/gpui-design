@@ -62,16 +62,16 @@ in the [form guide](form-controls.md),
 | Menubar | Available | Coordinated top-level menus with one Tab entry, logical Left/Right and Home/End movement, Down/Up opening, open-menu pointer switching and shared Menu command semantics. |
 | Native Select | Mapped | Use the existing GPUI `Select` for one value from fixed options, keyboard selection, disabled options and native accessibility metadata. HTML form submission, optgroup markup and browser/OS picker UI are not GPUI contracts. No duplicate NativeSelect export. |
 | Navigation Menu | Available | Named navigation with destination Links, explicit disclosure entries, coordinated popups, roving focus, logical arrows and open-menu pointer switching. Popup contents remain ordinary groups with normal Tab traversal; navigation destinations are application-owned. |
-| Popover | Available | Anchored non-modal content, retained open state, dismissal, normal focus traversal, and return focus. |
+| Popover | Available | Non-modal content with corner or collision-aware side/alignment placement, retained open state, dismissal, normal focus traversal, and return focus. |
 | Progress | Available | Controlled known progress or an indeterminate state; the application owns fill geometry and animation. |
 | Radio Group | Available | Fixed items, exclusive selection, roving Tab entry, and immediate arrow selection. |
 | Resizable | Available | Two retained panes, horizontal/vertical arrangement, pointer/keyboard resizing, fractional limits, and native splitter values. Groups can nest; collapse, pixel-based minimums, automatic persistence, and arbitrary multi-pane solving are not supplied. |
 | Scroll Area | Available | Native viewport with existing overlay scrollbar, vertical/horizontal/both axes, retained offsets, and scoped descendant reveal. No virtualization, streaming anchoring, or separate keyboard scroll focus. |
 | Select | Available | One committed value from fixed ordered options, with a separate open-popup cursor. Editable search and multiple selection are not included. |
 | Separator | Available | Horizontal/vertical, semantic or decorative separation; the application supplies its visual style. |
-| Slider | Available | One bounded linear value and one thumb, with stepped keyboard and pointer adjustment. |
+| Slider | Available | Ordered single/range/multiple values with per-thumb focus and numeric semantics, nearest-thumb pointer adjustment, noncrossing steps, vertical and RTL geometry. |
 | Switch | Available | Controlled boolean state, native activation, disabled state, and focus; the application supplies track and thumb. |
-| Tabs | Available | Fixed items, automatic activation, orientation-aware navigation, and active-only panels. |
+| Tabs | Available | Fixed items, automatic or manual activation, orientation-aware navigation, and active-only panels. |
 | Textarea | Available | Public multiline renderer over the existing `TextareaState` editing engine; no second editor implementation. |
 | Toast | Available | Retained notification lifetime and explicit/timeout dismissal; hover, contained focus and inactive windows pause remaining time. Showing never takes focus; explicit focused dismissal restores prior focus. Applications own message, actions and stacking; no queue service. |
 | Toggle | Available | Controlled pressed state composed from Button's activation and focus behavior. |
@@ -145,21 +145,25 @@ documented. Platform observations are recorded separately from automated checks.
 | Priority | Work | Exit condition | Current state |
 | --- | --- | --- | --- |
 | 1 | Existing correctness and core interaction gaps | Fix observed failures; support single-selection ToggleGroup and multiple-open Accordion; verify native values, keyboard/pointer activation, disabled state, and focus on closure | Implemented with focused tests and catalogue consumers |
-| 2 | Remaining common component contracts | Audit the official component examples against each scope above; implement manual Tabs activation, popup side/alignment, range inputs/date selection, and the remaining consumer-required selection/table/navigation capabilities with focused tests and examples | Open; these are additional contracts, not new component names |
-| 3 | Visual defaults and accessibility | Consistent visible keyboard focus, disabled/hover/selected/error states, reusable application-owned tokens, narrow-window layout, and usable light/dark presentations | Catalogue focus states implemented; wider native visual review pending |
-| 4 | Source distribution and developer experience | A small complete starter, compilable public examples, explicit supported API boundary, and a source-copy workflow that resolves recipe dependencies and tokens | Public-API starter and doctest gate implemented; source-copy workflow open |
+| 2 | Remaining common component contracts | Audit the official component examples against each scope above; implement manual Tabs activation, popup side/alignment, range inputs/date selection, and the remaining consumer-required selection/table/navigation capabilities with focused tests and examples | Manual Tabs, side/alignment popups and ordered Slider thumbs implemented; date selection, remaining selection/table/navigation contracts open |
+| 3 | Visual defaults and accessibility | Consistent visible keyboard focus, disabled/hover/selected/error states, reusable application-owned tokens, narrow-window layout, and usable light/dark presentations | Catalogue focus states and copyable light/dark token source implemented; wider native visual review pending |
+| 4 | Source distribution and developer experience | A small complete starter, compilable public examples, explicit supported API boundary, and a source-copy workflow that resolves recipe dependencies and tokens | Starter, doctest gate and recipe token source implemented; API boundary and automated source-copy workflow open |
 | 5 | Release validation | Existing formatting, lint, full behavior suite and native example builds pass; representative native IME, screen-reader, DPI, and visual flows have platform-specific observations | Not complete |
 
-The first change set addresses priority 1, missing catalogue focus presentation,
-and the starter/documentation entry point. It does not close the overall goal.
-The current Windows checkpoint passed 673 behavior/integration tests and 16
+Implemented work includes priority 1, catalogue focus presentation, the starter,
+manual Tabs, collision-aware side/alignment popups, single/range/multiple Slider
+thumbs, and a standalone application token module for copied recipes. These
+capabilities do not close the overall goal.
+The current Windows checkpoint passed 680 behavior/integration tests and 16
 doctests (two existing doctests remain ignored). Formatting, Clippy and the three
 default-feature example builds passed. Native observation covered the starter's
 initial input focus, editing, disabled-to-enabled button, Tab focus indication,
 and Enter activation, plus the catalogue's initial layout. Further catalogue
 pointer checks were interrupted by concurrent desktop input. These observations
 do not establish Korean/CJK IME, screen-reader delivery, DPI or other-platform
-validation.
+validation. The newest Tabs, Slider, popup positioning and token-source changes
+have automated coverage; no additional native visual observations were made for
+that change set.
 The official [Accordion multiple example](https://ui.shadcn.com/docs/components/base/accordion#multiple),
 [Toggle Group usage](https://ui.shadcn.com/docs/components/base/toggle-group#usage),
 [Slider range](https://ui.shadcn.com/docs/components/base/slider#range),

@@ -6,11 +6,12 @@ use gpui::{
     Styled as _, Subscription, Window, div, prelude::FluentBuilder as _, px, rgb,
 };
 use gpui_design::{
-    Accordion, AccordionHeader, AccordionItem, AccordionPanel, AccordionState, Button,
+    Accordion, AccordionHeader, AccordionItem, AccordionPanel, AccordionState, Align, Button,
     CheckboxState, Direction, DirectionProvider, MenuEvent, MenuItem, MenuOption, MenuState,
     MenuSubmenu, Menubar, MenubarItem, MenubarMenu, MenubarState, NavigationMenu,
     NavigationMenuEntry, NavigationMenuEvent, NavigationMenuItem, NavigationMenuLink,
-    NavigationMenuState, ToggleGroup, ToggleGroupState, ToggleItem, ToggleOption,
+    NavigationMenuState, Placement, Popover, PopoverState, ToggleGroup, ToggleGroupState,
+    ToggleItem, ToggleOption,
 };
 
 pub(crate) struct NavigationCatalogue {
@@ -21,6 +22,8 @@ pub(crate) struct NavigationCatalogue {
     export: Entity<MenuState>,
     alignment: Entity<ToggleGroupState>,
     help: Entity<AccordionState>,
+    quick_help: Entity<PopoverState>,
+    quick_help_close: FocusHandle,
     guide_focus: FocusHandle,
     reference_focus: FocusHandle,
     direction: Direction,
@@ -112,11 +115,14 @@ impl NavigationCatalogue {
             .multiple(true)
             .default_open(["alignment"])
         });
+        let quick_help_close = cx.focus_handle();
+        let quick_help = cx.new(|cx| PopoverState::new(cx).with_initial_focus(&quick_help_close));
         let mut subscriptions = vec![
             cx.observe(&bar, |_, _, cx| cx.notify()),
             cx.observe(&navigation, |_, _, cx| cx.notify()),
             cx.observe(&alignment, |_, _, cx| cx.notify()),
             cx.observe(&help, |_, _, cx| cx.notify()),
+            cx.observe(&quick_help, |_, _, cx| cx.notify()),
             cx.subscribe(&navigation, |this: &mut Self, _, event, cx| {
                 let NavigationMenuEvent::Navigate(value) = event;
                 this.page = value.clone();
@@ -150,6 +156,8 @@ impl NavigationCatalogue {
             export,
             alignment,
             help,
+            quick_help,
+            quick_help_close,
             guide_focus,
             reference_focus,
             direction: Direction::Ltr,
@@ -481,6 +489,27 @@ impl Render for NavigationCatalogue {
                     self.last_command, if self.show_grid { "shown" } else { "hidden" }, self.selection, self.theme)))
                 .child(div().h(px(1.)).bg(rgb(0x334155)))
                 .child(navigation)
+                .child(Popover::new("navigation-keyboard-reference", &self.quick_help)
+                    .accessibility_label("Navigation keyboard reference")
+                    .side(Placement::Right)
+                    .align(Align::Start)
+                    .offset(px(8.))
+                    .trigger(|button| {
+                        trigger(button, "Keyboard reference", self.quick_help.read(cx).is_open())
+                    })
+                    .content(panel().w(px(280.)).p_3().gap_3()
+                        .child(div().id("navigation-keyboard-heading").role(Role::Heading).aria_level(3)
+                            .aria_label("Navigate with the keyboard")
+                            .font_weight(FontWeight::BOLD).child("Navigate with the keyboard"))
+                        .child(div().text_sm().child("Tab reaches each control. Arrow keys move between menu entries; Down opens a menu. Enter or Space activates the focused item, and Escape closes the current surface."))
+                        .child(Button::new("close-navigation-keyboard-reference")
+                            .track_focus(&self.quick_help_close).px_3().py_2().rounded_md()
+                            .bg(rgb(0x334155))
+                            .focus_visible(|style| style.bg(rgb(0x93c5fd)).text_color(rgb(0x0b1220)))
+                            .child("Got it")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.quick_help.update(cx, |state, cx| state.close(window, cx));
+                            })))))
                 .child(div().text_sm().text_color(rgb(0x94a3b8))
                     .child("Reading alignment: choose Center or End. Press the selected option again to return to Start."))
                 .child(alignment_controls)

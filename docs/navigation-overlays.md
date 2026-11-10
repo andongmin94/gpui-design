@@ -123,9 +123,14 @@ item removes the currently focused content, the caller must move focus to a
 retained navigation entry or another valid target. This method does not choose
 that target or turn an ordinary navigation Button into a Tab.
 
-TabList activation is automatic: moving focus to an enabled tab also selects it.
-This includes pointer, keyboard, and programmatic focus. Each list has one Tab
-stop, at its selected tab.
+TabList activation is automatic by default: moving focus to an enabled tab also
+selects it, including programmatic and accessibility focus. Configure
+`TabsState::new(items, cx).manual_activation()` to keep focus and selection
+independent. In manual mode arrows and Home/End move focus while the current
+panel stays mounted; click, Enter, or Space commits the focused tab. Each list
+has one Tab stop: the selected tab in automatic mode, or the last focused tab
+(initially selected) in manual mode. `select_value` preserves manual focus entry.
+The catalogue uses manual activation; Compact's session tabs remain automatic.
 
 | Input | Horizontal list | Vertical list |
 | --- | --- | --- |
@@ -266,8 +271,13 @@ Build `Popover::new(id, &state)` with:
   appearance using the existing Button API.
 - `.accessibility_label(...)` to name the popup's non-modal dialog surface.
 - `.content(...)` for application-owned popup contents and surface styling.
-- `.anchor(...)` and `.offset(...)` when the existing Popup geometry needs a
-  different attachment point or gap.
+- `.anchor(...)` for corner anchoring and `.offset(...)` for the trigger gap.
+- `.side(Placement::Right).align(Align::Start)` for a side-positioned popup with
+  collision flipping. Calling `.align(...)` alone chooses Bottom; its default
+  side alignment is Center. Top/Bottom Start/End follows the scoped logical
+  direction. The positioner tracks the trigger's current frame and clamps to
+  the viewport. Explicit corner anchors and context-menu pointer coordinates
+  retain their separate placement contracts.
 
 The library owns the trigger's activation, focus, disabled state, and expanded
 metadata. The supplied `id` identifies that trigger. Its button builder should

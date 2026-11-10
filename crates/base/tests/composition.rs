@@ -2324,8 +2324,12 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
     draw(cx);
     cx.update(|window, cx| {
         let preview = demo.read(cx).preview.read(cx);
-        assert!(preview.focus_handle().is_focused(window));
-        assert_eq!(preview.value(), 40.0, "a label does not adjust the Slider");
+        assert!(preview.thumb_focus_handle(0).is_focused(window));
+        assert_eq!(
+            preview.values()[0],
+            40.0,
+            "a label does not adjust the Slider"
+        );
     });
     cx.simulate_keystrokes("shift-tab");
     draw(cx);
@@ -2345,8 +2349,8 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
     draw(cx);
     cx.update(|window, cx| {
         let preview = demo.read(cx).preview.read(cx);
-        assert!(preview.focus_handle().is_focused(window));
-        assert_eq!(preview.value(), 45.0);
+        assert!(preview.thumb_focus_handle(0).is_focused(window));
+        assert_eq!(preview.values()[0], 45.0);
         let progress = test_support::find(window, &[], &"preview-progress".into()).unwrap();
         assert_eq!(progress.role(), Some(Role::ProgressIndicator));
         assert_eq!(progress.label(), Some("Preview progress"));
@@ -2355,7 +2359,7 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
     cx.simulate_keystrokes("end");
     draw(cx);
     let progress_width = cx.update(|window, cx| {
-        assert_eq!(demo.read(cx).preview.read(cx).value(), 100.0);
+        assert_eq!(demo.read(cx).preview.read(cx).values()[0], 100.0);
         test_support::find(window, &[], &"preview-progress".into())
             .unwrap()
             .bounds()
@@ -2377,7 +2381,7 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
     activate_key(cx, "space");
     cx.update(|window, cx| {
         assert!(demo.read(cx).preview_indeterminate);
-        assert_eq!(demo.read(cx).preview.read(cx).value(), 100.0);
+        assert_eq!(demo.read(cx).preview.read(cx).values()[0], 100.0);
         let progress = test_support::find(window, &[], &"preview-progress".into()).unwrap();
         assert_eq!(progress.role(), Some(Role::ProgressIndicator));
         assert_eq!(progress.label(), Some("Preview progress"));
@@ -2445,7 +2449,7 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
         let demo = demo.read(cx);
         assert!(demo.reset_dialog.read(cx).is_open());
         assert!(demo.reset_cancel_focus.is_focused(window));
-        assert_eq!(demo.preview.read(cx).value(), 100.0);
+        assert_eq!(demo.preview.read(cx).values()[0], 100.0);
         assert!(demo.preview_indeterminate);
         assert!(test_support::snapshots(window).iter().any(|item| {
             item.role() == Some(Role::AlertDialog) && item.label() == Some("Reset preview?")
@@ -2464,7 +2468,7 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
     cx.update(|window, cx| {
         let demo = demo.read(cx);
         assert!(!demo.reset_dialog.read(cx).is_open());
-        assert_eq!(demo.preview.read(cx).value(), 100.0);
+        assert_eq!(demo.preview.read(cx).values()[0], 100.0);
         assert!(demo.preview_indeterminate);
         assert!(demo.actions.read(cx).focus_handle().is_focused(window));
         assert!(test_support::find(window, &[], &"preview-progress-placeholder".into()).is_some());
@@ -2478,7 +2482,7 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
     cx.update(|window, cx| {
         let demo = demo.read(cx);
         assert!(!demo.reset_dialog.read(cx).is_open());
-        assert_eq!(demo.preview.read(cx).value(), 40.0);
+        assert_eq!(demo.preview.read(cx).values()[0], 40.0);
         assert!(!demo.preview_indeterminate);
         assert!(demo.actions.read(cx).focus_handle().is_focused(window));
         assert!(test_support::find(window, &[], &"preview-progress-placeholder".into()).is_none());
@@ -2503,7 +2507,7 @@ fn compact_commands_and_sections_preserve_nested_focus(cx: &mut TestAppContext) 
                 .focus_handle()
                 .is_focused(window)
         );
-        assert_eq!(demo.preview.read(cx).value(), 40.0);
+        assert_eq!(demo.preview.read(cx).values()[0], 40.0);
         assert_eq!(
             demo.formatting.read(cx).selected_values(),
             ["bold", "italic"].map(gpui::SharedString::from),

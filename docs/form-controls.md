@@ -29,7 +29,7 @@ control a stable element ID and an accessible label.
 | Switch | Application `bool` | `on_change` reports the next value; store it and call `cx.notify()` |
 | RadioGroup | Retained `Entity<RadioGroupState>` | Observe the entity for rendering; subscribe to `RadioGroupEvent::Change` for user selection changes |
 | Select | Retained `Entity<SelectState>` | Observe the entity for rendering; subscribe to `SelectEvent::Change` for committed user changes |
-| Slider | Retained `Entity<SliderState>` | Observe for rendering; `SliderEvent::Change` reports a changed, normalized value |
+| Slider | Retained `Entity<SliderState>` | Observe for rendering; `SliderEvent::Change` reports the changed ordered values |
 | Progress | Application percentage and indeterminate flag | Pass the current value and state on each render; no interaction callback |
 
 Checkbox and Switch are controlled. Rendering them never changes application
@@ -117,13 +117,14 @@ interactive child content.
 let preview = self.preview.read(cx);
 let label = Label::new(
     "preview-percentage-label",
-    preview.focus_handle(),
+    preview.thumb_focus_handle(0),
     "Preview percentage",
 )
 .disabled(preview.is_disabled())
 .text_color(muted);
 let slider = Slider::new("preview-percentage", &self.preview)
-    .accessibility_label("Preview percentage");
+    .accessibility_label("Preview percentage")
+    .child(SliderThumb::new(&self.preview, 0).accessibility_label("Preview percentage"));
 
 div().flex().flex_col().gap_1().child(label).child(slider)
 ```
@@ -397,42 +398,49 @@ so Tab and Shift-Tab can still reach the neighboring control.
 
 ## Slider
 
-Create `SliderState::new(min..=max, step, cx)` once and optionally set an initial
-value with `.default_value(value)`. Bounds and values must be finite, `min < max`,
-and `step` must be positive. Values are clamped to the range and snapped to a
-step grid starting at the minimum. The range is inclusive at both ends.
+Create `SliderState::new(min..=max, step, [values...], cx)` once. A single value
+creates a single-thumb slider; two values describe a range, and more values add
+ordered stops. The nonempty collection fixes the thumb count. Bounds and values
+must be finite, `min < max`, and `step` must be positive. Values are clamped and
+snapped to a step grid starting at the minimum. The range includes both ends.
 
-Render `Slider::new(id, &state).accessibility_label(...)` and supply the track,
-fill, and thumb as children. `percentage()` gives the current position from 0 to
-1. The slider's root bounds define the thumb-center travel rail; place the thumb
+Render `Slider::new(id, &state).accessibility_label(...)` as the named group and
+rail. Supply the track and fill, and one
+`SliderThumb::new(&state, index).accessibility_label(...)` per value, in order.
+Each thumb owns its native Slider role, focus, keys, and value actions. Give range
+ends distinct names, such as "Trim start" and "Trim end". `percentage(index)`
+gives that thumb's position from 0 to 1. The root bounds define its travel rail; place the thumb
 center at that fraction of the root and offset by half the application's thumb
 size. The example uses a comfortable-height hit area and a thin track centered
 inside it. Neither colors nor control dimensions are imposed by the library.
 
-The state exposes `value`, `min_value`, `max_value`, `step_value`, `percentage`,
-`focus_handle`, and `is_disabled`. Use `set_value(value, window, cx)` for a
-programmatic update and `set_disabled(disabled, window, cx)` to change whether the
-user can interact. Programmatic value updates remain possible while disabled.
-Both programmatic and user changes emit `SliderEvent::Change(value)` only when
-the normalized value actually changes; observe the state to update the view.
+The state exposes `values`, `min_value`, `max_value`, `step_value`, `percentage`,
+`thumb_focus_handle(index)`, and `is_disabled`. Use
+`set_thumb_value(index, value, window, cx)` or `set_values(values, window, cx)`
+for programmatic updates and `set_disabled(disabled, window, cx)` to control user
+interaction. Programmatic updates remain possible while disabled. Individual
+thumbs stop at their neighbors without exchanging identities; equal values are
+allowed. `SliderEvent::Change(values)` reports the complete ordered values once
+when a normalized value changes. Observe the state to update application visuals.
 
-Pointer presses choose a position, and dragging continues until release even
-outside the rail. `axis(Axis::Vertical)` changes the geometric direction so the
-minimum is at the bottom; horizontal sliders increase from left to right.
-The control exposes a Slider role, accessible name, orientation, numeric bounds,
-current value, and step through native GPUI accessibility metadata.
+Rail presses choose the nearest thumb, and dragging keeps that thumb until
+release, including outside the rail. `axis(Axis::Vertical)` places the minimum
+at the bottom; horizontal values follow the logical direction. Each thumb
+exposes its accessible name, orientation, current value, step and numeric bounds
+limited by neighboring thumbs. Applications supply thumb focus presentation.
 
 | Input | Behavior |
 | --- | --- |
 | Left / Down | Decrease by one step |
 | Right / Up | Increase by one step |
-| Home / End | Set the minimum / maximum |
+| Home / End | Set the focused thumb's allowed minimum / maximum |
 | PageDown / PageUp | Decrease / increase by ten steps |
-| Tab / Shift-Tab | Follow normal focus traversal |
+| Tab / Shift-Tab | Visit each enabled thumb in value order, then leave the group |
 
 Disabled sliders ignore user changes and are skipped by Tab. A slider that is
 disabled while focused keeps its focus binding long enough for Tab to leave.
-This version provides a single linear value and one thumb.
+The session preview uses one thumb; the catalogue's media trim control uses two
+independent ends and switches between horizontal/vertical geometry and RTL.
 
 ## Progress
 

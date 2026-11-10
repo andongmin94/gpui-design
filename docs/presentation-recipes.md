@@ -15,16 +15,29 @@ consumer's `Palette` or application-supplied `Styled` values.
 2. Declare the copied modules and re-export the types, following the small
    [`mod.rs`](../crates/base/examples/recipes/mod.rs). Copy only the modules needed
    by the application and list only those modules.
-3. For recipes that import `use super::super::Palette`, use the application's
-   token type and adapt the field names or recipe styling. The example's
-   `Palette` and its compact and settings values show the fields used by these
-   recipes. AspectRatio takes no palette; its consumer supplies the visual style.
+3. Copy [`presentation.rs`](../crates/base/examples/presentation.rs) beside the
+   application's `recipes` directory. It contains the actual `Palette` and both
+   appearances used by the tested example, without the Demo or its behavior.
+   Declare it and expose its tokens in the recipes' parent module:
+
+   ```rust,ignore
+   mod presentation;
+   pub(crate) use presentation::{Appearance, Palette};
+   mod recipes;
+   ```
+
+   Choose `Appearance::Settings.palette()` or `Appearance::Compact.palette()` in
+   the application view. Recipe imports such as `use super::super::Palette`
+   work directly. Change the copied token values to fit the application, or replace Palette with an
+   existing token type. AspectRatio takes no palette; its consumer supplies the
+   visual style. Bubble and Chart currently keep their own copyable styling.
 4. Import the types from that application module. They use `pub(crate)` visibility
    and are not exported from `gpui_design`. No extra dependency is required.
 
-The source in this repository is the distribution mechanism. There is no recipe
-registry, installer, or separate theme provider. The existing crate continues to
-own interactive behavior; the application owns the copied recipe source.
+The source in this repository is the distribution mechanism. The palette module
+and recipes are application source, outside the library exports. There is no
+recipe registry, installer, or global theme provider for these visual tokens.
+The existing crate continues to own interactive behavior.
 
 Some recipes compose other recipe modules. Copy those modules and their re-exports
 alongside the desired recipe:

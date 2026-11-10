@@ -1,4 +1,4 @@
-//! Automatically activated tabs with roving focus and active-only panels.
+//! Tabs with automatic or manual activation, roving focus, and active-only panels.
 //! Derived from GPUI Kit v0.9.0's tab primitive; GPUI Design adds retained
 //! selection, keyboard navigation, focus activation, and panel lifecycle.
 
@@ -72,12 +72,15 @@ pub enum TabsEvent {
 /// Retained selection and focus for one tab list and its panels in one window.
 ///
 /// The first enabled tab starts selected. Moving focus to another enabled tab
-/// activates it, including arrow-key and accessibility/programmatic focus.
+/// activates it by default, including arrow-key and accessibility/programmatic
+/// focus. [`Self::manual_activation`] separates focus movement from activation.
 /// The application keeps panel data in its own retained entities; an inactive
 /// [`TabPanel`] contributes no element, focus stop, or accessibility node.
 pub struct TabsState {
     items: Vec<TabItem>,
     selected: Option<usize>,
+    cursor: Option<usize>,
+    manual_activation: bool,
     tab_focus: Vec<FocusHandle>,
     panel_focus: Vec<FocusHandle>,
     focus_subscriptions: Vec<Subscription>,
@@ -98,10 +101,23 @@ impl TabsState {
         Self {
             items,
             selected,
+            cursor: selected,
+            manual_activation: false,
             tab_focus,
             panel_focus,
             focus_subscriptions: Vec::new(),
         }
+    }
+
+    /// Requires a click, Enter, or Space to activate a focused tab.
+    ///
+    /// Set this before the state is first rendered. Arrow keys, Home/End, and
+    /// programmatic or accessibility focus only move the one Tab entry; they
+    /// leave the selected panel mounted. Tab re-enters at the last focused tab,
+    /// initially the selected tab.
+    pub fn manual_activation(mut self) -> Self {
+        self.manual_activation = true;
+        self
     }
 
     /// Selects an enabled value before the state is first rendered.
@@ -115,6 +131,7 @@ impl TabsState {
                 .position(|item| item.value.as_ref() == value.as_ref() && !item.disabled)
                 .expect("TabsState default_value must identify an enabled TabItem"),
         );
+        self.cursor = self.selected;
         self
     }
 
@@ -135,6 +152,7 @@ impl TabsState {
     /// Returns `true` when the selection changes. Missing, disabled, and
     /// already-selected values return `false` without emitting a change.
     /// The caller owns focus when removing the previously selected content.
+    /// In manual mode this preserves the last focused tab as the list's Tab entry.
     pub fn select_value(
         &mut self,
         value: impl AsRef<str>,
@@ -178,11 +196,11 @@ impl TabsState {
             .enumerate()
             .map(|(index, focus)| {
                 cx.on_focus(focus, window, move |_, window, cx| {
-                    // Focus notifications occur while drawing. Commit after the
-                    // draw so a second frame can mount the newly active panel.
+                    // Focus notifications occur while drawing. Apply the focus
+                    // cursor and any automatic activation after that draw.
                     cx.defer_in(window, move |state, window, cx| {
                         if state.tab_focus[index].is_focused(window) {
-                            state.select(index, window, cx);
+                            state.focus_tab(index, window, cx);
                         }
                     });
                 })
@@ -190,12 +208,34 @@ impl TabsState {
             .collect();
     }
 
+    fn focus_tab(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.manual_activation {
+            self.select(index, window, cx);
+            return;
+        }
+        if self.items[index].disabled {
+            return;
+        }
+        self.tab_focus[index].focus(window, cx);
+        if self.cursor != Some(index) {
+            self.cursor = Some(index);
+            cx.notify();
+            window.refresh();
+        }
+    }
+
     fn select(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if self.items[index].disabled {
             return;
         }
         self.tab_focus[index].focus(window, cx);
+        let cursor_changed = self.cursor != Some(index);
+        self.cursor = Some(index);
         if self.selected == Some(index) {
+            if cursor_changed {
+                cx.notify();
+                window.refresh();
+            }
             return;
         }
         self.selected = Some(index);
@@ -210,7 +250,7 @@ impl TabsState {
             .position(|focus| focus.is_focused(window))
     }
 
-    fn move_selection(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
+    fn move_focus(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
         let Some(current) = self.focused_index(window) else {
             cx.propagate();
             return;
@@ -226,11 +266,11 @@ impl TabsState {
             })
             .find(|&index| !self.items[index].disabled)
         {
-            self.select(next, window, cx);
+            self.focus_tab(next, window, cx);
         }
     }
 
-    fn select_edge(&mut self, last: bool, window: &mut Window, cx: &mut Context<Self>) {
+    fn focus_edge(&mut self, last: bool, window: &mut Window, cx: &mut Context<Self>) {
         if self.focused_index(window).is_none() {
             cx.propagate();
             return;
@@ -241,7 +281,7 @@ impl TabsState {
             self.items.iter().position(|item| !item.disabled)
         };
         if let Some(index) = index {
-            self.select(index, window, cx);
+            self.focus_tab(index, window, cx);
         }
     }
 }
@@ -257,8 +297,9 @@ fn part_id(state: EntityId, part: &'static str, index: usize) -> ElementId {
 /// The unstyled list of tab triggers. Render one [`Tab`] per item in order.
 ///
 /// The default horizontal list uses Left/Right. A vertical list uses Up/Down.
-/// Home/End select the first/last enabled tab. Other-axis arrows are left to the
-/// enclosing application. Axis sets semantics and keyboard behavior, not layout.
+/// Home/End focus the first/last enabled tab. Focus also activates by default;
+/// manual activation waits for a click, Enter, or Space. Other-axis arrows are
+/// left to the enclosing application. Axis sets semantics and keys, not layout.
 #[derive(IntoElement)]
 pub struct TabList {
     base: crate::ObservedElement<gpui::Stateful<gpui::Div>>,
@@ -336,10 +377,10 @@ impl RenderOnce for TabList {
             .role(Role::TabList)
             .when_some(self.label, |this, label| this.aria_label(label))
             .on_action(move |_: &SelectFirst, window, cx| {
-                first_state.update(cx, |state, cx| state.select_edge(false, window, cx));
+                first_state.update(cx, |state, cx| state.focus_edge(false, window, cx));
             })
             .on_action(move |_: &SelectLast, window, cx| {
-                last_state.update(cx, |state, cx| state.select_edge(true, window, cx));
+                last_state.update(cx, |state, cx| state.focus_edge(true, window, cx));
             });
 
         match self.axis {
@@ -348,22 +389,22 @@ impl RenderOnce for TabList {
                 .key_context("TabList axis=horizontal")
                 .on_action(move |_: &SelectLeft, window, cx| {
                     previous_state.update(cx, |state, cx| {
-                        state.move_selection(direction.horizontal_forward(false), window, cx)
+                        state.move_focus(direction.horizontal_forward(false), window, cx)
                     });
                 })
                 .on_action(move |_: &SelectRight, window, cx| {
                     next_state.update(cx, |state, cx| {
-                        state.move_selection(direction.horizontal_forward(true), window, cx)
+                        state.move_focus(direction.horizontal_forward(true), window, cx)
                     });
                 }),
             Axis::Vertical => base
                 .aria_orientation(accesskit::Orientation::Vertical)
                 .key_context("TabList axis=vertical")
                 .on_action(move |_: &SelectUp, window, cx| {
-                    previous_state.update(cx, |state, cx| state.move_selection(false, window, cx));
+                    previous_state.update(cx, |state, cx| state.move_focus(false, window, cx));
                 })
                 .on_action(move |_: &SelectDown, window, cx| {
-                    next_state.update(cx, |state, cx| state.move_selection(true, window, cx));
+                    next_state.update(cx, |state, cx| state.move_focus(true, window, cx));
                 }),
         }
         .children(self.children)
@@ -426,6 +467,11 @@ impl RenderOnce for Tab {
             .expect("Tab index must identify an item");
         let disabled = item.disabled;
         let selected = model.selected == Some(self.index);
+        let tab_stop = if model.manual_activation {
+            model.cursor == Some(self.index)
+        } else {
+            selected
+        };
         let focus = model.tab_focus_handle(self.index).clone();
         let label = item.label.clone();
         let size = model.items.len();
@@ -439,7 +485,7 @@ impl RenderOnce for Tab {
             .aria_position_in_set(index + 1)
             .aria_size_of_set(size)
             .when(!disabled || focus.is_focused(window), |this| {
-                this.track_focus(&focus.tab_stop(selected && !disabled))
+                this.track_focus(&focus.tab_stop(tab_stop && !disabled))
             })
             .when(disabled, |this| {
                 this.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -551,6 +597,7 @@ mod tests {
     struct Harness {
         state: Entity<TabsState>,
         axis: Axis,
+        direction: crate::Direction,
         before: FocusHandle,
         panel_button: FocusHandle,
         last_button: FocusHandle,
@@ -570,6 +617,7 @@ mod tests {
                 .enumerate()
                 .map(|(index, item)| {
                     Tab::new(&self.state, index)
+                        .debug_selector(move || format!("tab-{index}"))
                         .w(px(120.))
                         .h(px(32.))
                         .child(item.label().clone())
@@ -592,6 +640,7 @@ mod tests {
                 .child(
                     TabList::new("tabs", &self.state)
                         .axis(self.axis)
+                        .direction(self.direction)
                         .accessibility_label("Sections")
                         .flex()
                         .when(self.axis == Axis::Vertical, |this| this.flex_col())
@@ -640,15 +689,24 @@ mod tests {
         cx: &mut TestAppContext,
         axis: Axis,
         items: Vec<TabItem>,
+        manual_activation: bool,
     ) -> (&mut VisualTestContext, Entity<Harness>, Changes) {
         cx.update(crate::init);
         let (root, cx) = cx.add_window_view(move |window, cx| {
             let content = cx.new(|cx| {
-                let state = cx.new(|cx| TabsState::new(items, cx));
+                let state = cx.new(|cx| {
+                    let state = TabsState::new(items, cx);
+                    if manual_activation {
+                        state.manual_activation()
+                    } else {
+                        state
+                    }
+                });
                 let subscription = cx.observe(&state, |_, _, cx| cx.notify());
                 Harness {
                     state,
                     axis,
+                    direction: crate::Direction::Ltr,
                     before: cx.focus_handle().tab_stop(true),
                     panel_button: cx.focus_handle().tab_stop(true),
                     last_button: cx.focus_handle().tab_stop(true),
@@ -698,16 +756,25 @@ mod tests {
     }
 
     fn assert_tab(cx: &mut VisualTestContext, view: &Entity<Harness>, index: usize) {
+        assert_selection_and_focus(cx, view, index, index);
+    }
+
+    fn assert_selection_and_focus(
+        cx: &mut VisualTestContext,
+        view: &Entity<Harness>,
+        selected: usize,
+        focused: usize,
+    ) {
         cx.update(|window, cx| {
             let state = view.read(cx).state.read(cx);
-            assert_eq!(state.selected_index(), Some(index));
-            assert!(state.tab_focus_handle(index).is_focused(window));
+            assert_eq!(state.selected_index(), Some(selected));
+            assert!(state.tab_focus_handle(focused).is_focused(window));
         });
     }
 
     #[gpui::test]
     fn programmatic_selection_preserves_focus_and_emits_only_real_changes(cx: &mut TestAppContext) {
-        let (cx, view, changes) = harness(cx, Axis::Horizontal, items());
+        let (cx, view, changes) = harness(cx, Axis::Horizontal, items(), false);
         cx.update(|window, cx| {
             let state = view.read(cx).state.clone();
             assert!(view.read(cx).before.is_focused(window));
@@ -760,7 +827,7 @@ mod tests {
     fn horizontal_navigation_wraps_skips_disabled_and_preserves_other_axis(
         cx: &mut TestAppContext,
     ) {
-        let (cx, view, changes) = harness(cx, Axis::Horizontal, items());
+        let (cx, view, changes) = harness(cx, Axis::Horizontal, items(), false);
         cx.simulate_keystrokes("tab");
         draw(cx);
         assert_tab(cx, &view, 0);
@@ -804,7 +871,7 @@ mod tests {
 
     #[gpui::test]
     fn vertical_navigation_and_text_panel_focus_follow_their_contract(cx: &mut TestAppContext) {
-        let (cx, view, changes) = harness(cx, Axis::Vertical, items());
+        let (cx, view, changes) = harness(cx, Axis::Vertical, items(), false);
         cx.simulate_keystrokes("tab down");
         draw(cx);
         assert_tab(cx, &view, 2);
@@ -844,7 +911,7 @@ mod tests {
 
     #[gpui::test]
     fn pointer_and_native_activation_do_not_duplicate_selection(cx: &mut TestAppContext) {
-        let (cx, view, changes) = harness(cx, Axis::Horizontal, items());
+        let (cx, view, changes) = harness(cx, Axis::Horizontal, items(), false);
         cx.simulate_keystrokes("tab");
         draw(cx);
         press(cx, "space");
@@ -867,7 +934,7 @@ mod tests {
 
     #[gpui::test]
     fn direct_focus_activates_and_unmounts_previous_panel(cx: &mut TestAppContext) {
-        let (cx, view, changes) = harness(cx, Axis::Horizontal, items());
+        let (cx, view, changes) = harness(cx, Axis::Horizontal, items(), false);
         cx.simulate_keystrokes("tab tab");
         draw(cx);
         cx.update(|window, cx| {
@@ -889,12 +956,128 @@ mod tests {
     }
 
     #[gpui::test]
+    fn manual_navigation_waits_for_native_activation_and_preserves_one_tab_entry(
+        cx: &mut TestAppContext,
+    ) {
+        let (cx, view, changes) = harness(cx, Axis::Horizontal, items(), true);
+        view.update(cx, |view, cx| {
+            view.direction = crate::Direction::Rtl;
+            cx.notify();
+        });
+        draw(cx);
+        cx.simulate_keystrokes("tab");
+        draw(cx);
+        for (key, focused) in [
+            ("right", 3),
+            ("home", 0),
+            ("left", 2),
+            ("end", 3),
+            ("left", 0),
+            ("left", 2),
+        ] {
+            cx.simulate_keystrokes(key);
+            draw(cx);
+            assert_selection_and_focus(cx, &view, 0, focused);
+        }
+        assert!(changes.borrow().is_empty());
+        cx.simulate_keystrokes("tab");
+        draw(cx);
+        cx.update(|window, cx| assert!(view.read(cx).panel_button.is_focused(window)));
+        cx.simulate_keystrokes("shift-tab");
+        draw(cx);
+        assert_selection_and_focus(cx, &view, 0, 2);
+
+        #[cfg(feature = "test-support")]
+        cx.update(|window, cx| {
+            let state = view.read(cx).state.clone();
+            let focused =
+                crate::test_support::find(window, &[], &part_id(state.entity_id(), "tab", 2))
+                    .unwrap();
+            assert_eq!(focused.selected(), Some(false));
+            assert!(
+                crate::test_support::find(window, &[], &part_id(state.entity_id(), "tab-panel", 0))
+                    .is_some()
+            );
+            assert!(
+                crate::test_support::find(window, &[], &part_id(state.entity_id(), "tab-panel", 2))
+                    .is_none()
+            );
+        });
+        press(cx, "enter");
+        assert_tab(cx, &view, 2);
+        press(cx, "enter");
+        cx.simulate_keystrokes("end");
+        draw(cx);
+        assert_selection_and_focus(cx, &view, 2, 3);
+        press(cx, "space");
+        assert_tab(cx, &view, 3);
+        let general = cx.debug_bounds("tab-0").unwrap().center();
+        cx.simulate_click(general, Modifiers::default());
+        draw(cx);
+        assert_tab(cx, &view, 0);
+        let disabled = cx.debug_bounds("tab-1").unwrap().center();
+        cx.simulate_click(disabled, Modifiers::default());
+        draw(cx);
+        assert_tab(cx, &view, 0);
+        assert_eq!(
+            *changes.borrow(),
+            ["help", "advanced", "general"].map(SharedString::from)
+        );
+    }
+
+    #[gpui::test]
+    fn manual_direct_focus_and_selection_preserve_their_separate_targets(cx: &mut TestAppContext) {
+        let (cx, view, changes) = harness(cx, Axis::Vertical, items(), true);
+        cx.update(|window, cx| {
+            let focus = view.read(cx).state.read(cx).tab_focus_handle(3).clone();
+            focus.focus(window, cx);
+        });
+        draw(cx);
+        cx.run_until_parked();
+        draw(cx);
+        assert_selection_and_focus(cx, &view, 0, 3);
+        cx.simulate_keystrokes("up");
+        draw(cx);
+        assert_selection_and_focus(cx, &view, 0, 2);
+        cx.update(|_, cx| view.read(cx).unhandled_keys.borrow_mut().clear());
+        cx.simulate_keystrokes("left right");
+        draw(cx);
+        assert_selection_and_focus(cx, &view, 0, 2);
+        cx.update(|window, cx| {
+            assert_eq!(*view.read(cx).unhandled_keys.borrow(), ["left", "right"]);
+            let state = view.read(cx).state.clone();
+            assert!(state.update(cx, |state, cx| state.select_value("advanced", window, cx)));
+        });
+        draw(cx);
+        cx.run_until_parked();
+        draw(cx);
+        assert_selection_and_focus(cx, &view, 3, 2);
+        cx.simulate_keystrokes("tab");
+        draw(cx);
+        cx.update(|window, cx| {
+            assert!(view.read(cx).last_button.is_focused(window));
+            assert!(!view.read(cx).panel_button.is_focused(window));
+            assert!(
+                view.read(cx)
+                    .state
+                    .read(cx)
+                    .panel_focus_handle(3)
+                    .contains_focused(window, cx)
+            );
+        });
+        cx.simulate_keystrokes("shift-tab");
+        draw(cx);
+        assert_selection_and_focus(cx, &view, 3, 2);
+        assert_eq!(*changes.borrow(), [SharedString::from("advanced")]);
+    }
+
+    #[gpui::test]
     fn empty_all_disabled_and_single_enabled_collections_are_well_defined(cx: &mut TestAppContext) {
         for items in [
             Vec::new(),
             vec![TabItem::new("disabled", "Unavailable").disabled(true)],
         ] {
-            let (cx, view, changes) = harness(cx, Axis::Horizontal, items);
+            let (cx, view, changes) = harness(cx, Axis::Horizontal, items, false);
             cx.simulate_keystrokes("tab");
             draw(cx);
             cx.update(|window, cx| {
@@ -906,7 +1089,12 @@ mod tests {
             cx.update(|window, cx| assert!(view.read(cx).before.is_focused(window)));
             assert!(changes.borrow().is_empty());
         }
-        let (cx, view, changes) = harness(cx, Axis::Horizontal, vec![TabItem::new("only", "Only")]);
+        let (cx, view, changes) = harness(
+            cx,
+            Axis::Horizontal,
+            vec![TabItem::new("only", "Only")],
+            false,
+        );
         cx.simulate_keystrokes("tab right left home end");
         draw(cx);
         assert_tab(cx, &view, 0);
@@ -916,7 +1104,7 @@ mod tests {
     #[cfg(feature = "test-support")]
     #[gpui::test]
     fn accessibility_exposes_only_active_panel_and_selected_tab(cx: &mut TestAppContext) {
-        let (cx, view, _) = harness(cx, Axis::Horizontal, items());
+        let (cx, view, _) = harness(cx, Axis::Horizontal, items(), false);
         cx.update(|window, cx| {
             let state = view.read(cx).state.clone();
             let list = crate::test_support::find(window, &[], &"tabs".into()).unwrap();

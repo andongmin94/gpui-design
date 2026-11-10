@@ -5,10 +5,10 @@ use std::sync::Arc;
 
 use chrono::Datelike as _;
 use gpui::{
-    AppContext as _, Axis, Context, Entity, FocusHandle, Focusable as _, FontWeight, Hsla, Image,
-    ImageFormat, InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Rems, Render,
-    Role, ScrollHandle, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription,
-    Window, div, prelude::FluentBuilder as _, px, relative, rems, rgb,
+    AppContext as _, Axis, Context, Entity, FocusHandle, Focusable as _, FontWeight, Image,
+    ImageFormat, InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render, Role,
+    ScrollHandle, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Window,
+    div, prelude::FluentBuilder as _, px, relative, rems,
 };
 use gpui_design::{
     Accordion, AccordionHeader, AccordionItem, AccordionPanel, AccordionState, AlertDialog,
@@ -21,9 +21,10 @@ use gpui_design::{
     MenuOption, MenuState, NaiveDate, Popover, PopoverState, Progress, RadioGroup, RadioGroupState,
     RadioItem, RadioOption, Resizable, ResizableState, ScrollArea, ScrollbarAxis, ScrollbarMode,
     SearchItem, Select, SelectItem, SelectOption, SelectState, Separator, Slider, SliderState,
-    Switch, Tab, TabItem, TabList, TabPanel, Table, TableCaption, TableCell, TableColumn, TableRow,
-    TabsState, TestSupportExt as _, TestTextExt as _, Textarea, TextareaState, Toggle, ToggleGroup,
-    ToggleGroupState, ToggleItem, ToggleOption, Tooltip, TooltipState,
+    SliderThumb, Switch, Tab, TabItem, TabList, TabPanel, Table, TableCaption, TableCell,
+    TableColumn, TableRow, TabsState, TestSupportExt as _, TestTextExt as _, Textarea,
+    TextareaState, Toggle, ToggleGroup, ToggleGroupState, ToggleItem, ToggleOption, Tooltip,
+    TooltipState,
     input::{InputAccessibility, InputEditorStyle, InputEvent, InputState},
 };
 
@@ -35,86 +36,9 @@ use recipes::{
     Item, Kbd, KbdGroup, Marker, Message, Paragraph, Sheet, Sidebar, Skeleton, Spinner, Trace,
 };
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum Appearance {
-    Compact,
-    Settings,
-}
-
-// These tokens belong to this consumer, not the primitive library.
-#[derive(Clone, Copy)]
-pub(crate) struct Palette {
-    canvas: Hsla,
-    surface: Hsla,
-    field: Hsla,
-    foreground: Hsla,
-    muted: Hsla,
-    border: Hsla,
-    accent: Hsla,
-    accent_foreground: Hsla,
-    highlight: Hsla,
-    error: Hsla,
-    padding: Rems,
-    gap: Rems,
-    control_height: Rems,
-    font_size: Rems,
-    code_font_family: &'static str,
-    radius: Pixels,
-    dialog_width: Rems,
-}
-
-impl Appearance {
-    fn palette(self) -> Palette {
-        // The consumer chooses the code font for its supported desktop targets.
-        let code_font_family = if cfg!(target_os = "macos") {
-            "Menlo"
-        } else if cfg!(target_os = "windows") {
-            "Consolas"
-        } else {
-            "DejaVu Sans Mono"
-        };
-        match self {
-            Self::Compact => Palette {
-                canvas: rgb(0x10141c).into(),
-                surface: rgb(0x1a2130).into(),
-                field: rgb(0x121a28).into(),
-                foreground: rgb(0xf1f5f9).into(),
-                muted: rgb(0xa9b6c8).into(),
-                border: rgb(0x445269).into(),
-                accent: rgb(0x93c5fd).into(),
-                accent_foreground: rgb(0x10223d).into(),
-                highlight: rgb(0x2b4160).into(),
-                error: rgb(0xfca5a5).into(),
-                padding: rems(1.),
-                gap: rems(0.75),
-                control_height: rems(1.875),
-                font_size: rems(0.8125),
-                code_font_family,
-                radius: px(4.),
-                dialog_width: rems(22.),
-            },
-            Self::Settings => Palette {
-                canvas: rgb(0xf3f2ee).into(),
-                surface: rgb(0xffffff).into(),
-                field: rgb(0xfafaf8).into(),
-                foreground: rgb(0x243328).into(),
-                muted: rgb(0x606c63).into(),
-                border: rgb(0xa6b2a7).into(),
-                accent: rgb(0x286447).into(),
-                accent_foreground: rgb(0xffffff).into(),
-                highlight: rgb(0xe1eee3).into(),
-                error: rgb(0xb42318).into(),
-                padding: rems(1.75),
-                gap: rems(1.25),
-                control_height: rems(2.625),
-                font_size: rems(0.9375),
-                code_font_family,
-                radius: px(10.),
-                dialog_width: rems(28.),
-            },
-        }
-    }
-}
+#[path = "presentation.rs"]
+mod presentation;
+pub(crate) use presentation::{Appearance, Palette};
 
 pub(crate) struct Demo {
     appearance: Appearance,
@@ -328,7 +252,7 @@ impl Demo {
             )
             .default_open(["keyboard"])
         });
-        let preview = cx.new(|cx| SliderState::new(0.0..=100.0, 5.0, cx).default_value(40.0));
+        let preview = cx.new(|cx| SliderState::new(0.0..=100.0, 5.0, [40.0], cx));
         let preview_options = cx.new(CollapsibleState::new);
         let settings_trace = cx.new(CollapsibleState::new);
         let reset_cancel_focus = cx.focus_handle();
@@ -1136,7 +1060,7 @@ impl Demo {
                 "show_cursor": self.show_cursor,
             },
             "toolbar": { "pinned": self.keep_toolbar },
-            "preview_percent": self.preview.read(cx).value(),
+            "preview_percent": self.preview.read(cx).values()[0],
         });
         serde_json::to_string_pretty(&configuration)
             .expect("example settings are JSON values")
@@ -1379,7 +1303,7 @@ impl Demo {
                     .child(
                         Label::new(
                             "preview-percentage-label",
-                            preview.focus_handle(),
+                            preview.thumb_focus_handle(0),
                             preview_label.clone(),
                         )
                         .disabled(preview.is_disabled()),
@@ -1387,16 +1311,15 @@ impl Demo {
                     .child(if self.preview_indeterminate {
                         "· Unknown".to_string()
                     } else {
-                        format!("· {:.0}%", preview.value())
+                        format!("· {:.0}%", preview.values()[0])
                     }),
             )
             .child(
                 Slider::new("preview-percentage", &self.preview)
-                    .accessibility_label(preview_label)
+                    .accessibility_label(preview_label.clone())
                     .relative()
                     .h(palette.control_height)
                     .rounded(palette.radius)
-                    .focus_visible(|style| style.bg(palette.highlight))
                     .child(
                         div()
                             .absolute()
@@ -1415,19 +1338,25 @@ impl Demo {
                             .top(relative(0.5))
                             .mt(px(-2.))
                             .h(px(4.))
-                            .w(relative(preview.percentage()))
+                            .w(relative(preview.percentage(0)))
                             .rounded_full()
                             .bg(palette.accent),
                     )
                     .child(
-                        div()
+                        SliderThumb::new(&self.preview, 0)
+                            .accessibility_label(preview_label)
                             .absolute()
-                            .left(relative(preview.percentage()))
+                            .left(relative(preview.percentage(0)))
                             .top(relative(0.5))
                             .ml(px(-7.))
                             .mt(px(-7.))
                             .size(px(14.))
                             .rounded_full()
+                            .border_2()
+                            .border_color(palette.accent)
+                            .focus_visible(|style| {
+                                style.border_color(palette.foreground).bg(palette.highlight)
+                            })
                             .bg(palette.accent),
                     ),
             )
@@ -1454,7 +1383,7 @@ impl Demo {
                         row.child(
                             Progress::new("preview-progress")
                                 .accessibility_label("Preview progress")
-                                .value(preview.value())
+                                .value(preview.values()[0])
                                 .w_full()
                                 .h_2()
                                 .rounded_full()
@@ -1464,7 +1393,7 @@ impl Demo {
                                     div()
                                         .debug_selector(|| "preview-progress-fill".into())
                                         .h_full()
-                                        .w(relative(preview.percentage()))
+                                        .w(relative(preview.percentage(0)))
                                         .rounded_full()
                                         .bg(palette.accent),
                                 ),
@@ -1576,7 +1505,7 @@ impl Demo {
                             .on_click(move |_, window, cx| {
                                 owner.update(cx, |this, cx| {
                                     this.preview.update(cx, |state, cx| {
-                                        state.set_value(40.0, window, cx);
+                                        state.set_thumb_value(0, 40.0, window, cx);
                                     });
                                     this.preview_indeterminate = false;
                                     this.reset_dialog

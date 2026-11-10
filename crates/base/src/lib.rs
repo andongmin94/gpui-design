@@ -146,7 +146,7 @@ pub use scrollbar::{
 };
 pub use select::{Select, SelectEvent, SelectItem, SelectOption, SelectState};
 pub use separator::Separator;
-pub use slider::{Slider, SliderEvent, SliderState};
+pub use slider::{Slider, SliderEvent, SliderState, SliderThumb};
 pub use state_style::StateStyle;
 #[cfg(any(feature = "inspector", debug_assertions))]
 pub use styled::styled_ext_reflection_methods;

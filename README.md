@@ -36,15 +36,15 @@ validation. Catalogue coverage alone is not a claim of shadcn/ui-level completen
 | **Combobox** | Editable search over fixed options, separate committed selection, keyboard/pointer commit, and draft cancellation on dismissal | Query frame, suggestion surface, result rows, and empty state |
 | **Calendar** | Single date selection, separate focused date, bounded month/year navigation, and a Monday-first grid | Month controls, weekday/date labels, grid layout, and day styling |
 | **DatePicker** | Calendar selection inside Popover, selected-date or retained-cursor initial focus, commit-and-close, dismissal, and disabled state | Formatted trigger, calendar/month controls, and popup surface |
-| **Slider** | One numeric value, bounded steps, keyboard and pointer adjustment, disabled state, and focus | Track, fill, thumb, sizing, and state styling |
+| **Slider** | One or more ordered numeric values, bounded steps, per-thumb focus and accessibility, keyboard/pointer adjustment, disabled state, vertical and RTL geometry | Track, fill, thumbs, sizing, and state styling |
 | **Progress** | Controlled percentage or indeterminate progress, accessible name and numeric range | Track, fill, label, and any animation |
 | **Breadcrumb** | Named navigation, ordered path items, and native current-page metadata | Path labels, ancestor actions, separators, layout, and styling |
-| **Tabs** | Active panel, one tab-list stop, automatic activation, orientation-aware keys, and disabled tabs | Tab-list layout, tab styling, and panel contents |
+| **Tabs** | Active panel, one tab-list stop, automatic or manual activation, orientation-aware keys, and disabled tabs | Tab-list layout, tab styling, and panel contents |
 | **Accordion** | Single or multiple open sections, header navigation, disabled items, and focused-panel closure | Header, indicator, panel contents, and layout |
 | **Collapsible** | One disclosure, active-only content, disabled trigger, and focus on content closure | Trigger content, indicator, region contents, and layout |
 | **Tooltip** | Plain text description on Button hover/focus, delayed hover, Escape dismissal, and native tooltip positioning | Button and tooltip text-surface styling |
 | **HoverCard** | Delayed rich preview on hover, trigger-to-card pointer travel, focus preview without moving focus, and dismissal | Button action, preview content, surface, and placement |
-| **Popover** | Non-modal open/close state, anchored placement, focus, outside dismissal, and Escape | Trigger, popup contents, and surface styling |
+| **Popover** | Non-modal open/close state, corner or collision-aware side/alignment placement, focus, outside dismissal, and Escape | Trigger, popup contents, and surface styling |
 | **DropdownMenu** | Plain, checked/mixed/radio and nested submenu semantics, navigation, leaf dispatch, dismissal, and focus | Trigger, menu surface, command rendering, and controlled checked values |
 | **ContextMenu** | Secondary-click or keyboard opening, pointer placement, and the shared menu tree's commands, navigation, dismissal, and focus | Focusable target, menu surface, command rendering, and controlled checked values |
 | **Command** | Text search, enabled-result navigation, pointer/Enter action dispatch, and highlighted-result scrolling | Query frame, result rows, empty state, and optional Dialog composition |
@@ -359,6 +359,7 @@ The GPUI snapshot family is pinned to **`=0.3.11`**. Update those pins and
 | `crates/base/tests/` | Integration tests using the public API |
 | `crates/base/examples/starter.rs` | Small complete application using only public APIs |
 | `crates/base/examples/two_styles.rs` | Native example and application-owned styles |
+| `crates/base/examples/presentation.rs` | Copyable light/dark application tokens used by the presentation recipes |
 | `crates/base/examples/recipes/` | Twenty-three catalogue recipes and Chart's supporting presentation; copyable application-owned source |
 | `crates/base/examples/assets/` | Embedded example artwork used by the preset preview and its image-decoding regression |
 | `docs/form-controls.md` | Form control usage and interaction contracts |
@@ -429,8 +430,8 @@ positioning primitive with a retained non-modal focus and dismissal lifecycle.
 Accordion adds single/multiple-open state and header navigation. The shared Menu core
 composes Popover with command dispatch and a keyboard/pointer cursor;
 DropdownMenu and ContextMenu provide button and secondary-click entry points.
-Slider adapts the upstream pointer interaction to a single linear value with
-retained focus and keyboard adjustment. Progress retains the controlled numeric
+Slider adapts the upstream pointer interaction to ordered linear values with
+per-thumb native focus, value semantics and keyboard adjustment. Progress retains the controlled numeric
 semantics while the application supplies its track and fill.
 Toggle delegates activation to Button, and ToggleGroup adds retained multiple
 selection and roving focus to Toggle options.
