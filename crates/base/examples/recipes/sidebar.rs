@@ -1,11 +1,14 @@
-//! Application-owned navigation built from the existing TabsState and Button.
+//! Application-owned navigation composed from TabsState, Button and Collapsible.
 
 use gpui::{
-    App, Div, ElementId, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
-    RenderOnce, Role, SharedString, Stateful, StatefulInteractiveElement as _, StyleRefinement,
-    Styled, Window, div, prelude::FluentBuilder as _, rems,
+    AnyElement, App, Div, ElementId, Entity, FontWeight, InteractiveElement as _, IntoElement,
+    ParentElement as _, RenderOnce, Role, SharedString, Stateful, StatefulInteractiveElement as _,
+    StyleRefinement, Styled, Window, div, prelude::FluentBuilder as _, rems,
 };
-use gpui_design::{Button, ObservedElement, TestSupportExt as _};
+use gpui_design::{
+    Button, Collapsible, CollapsibleContent, CollapsibleState, CollapsibleTrigger, ObservedElement,
+    TestSupportExt as _,
+};
 
 use super::super::Palette;
 
@@ -24,6 +27,13 @@ use super::super::Palette;
 /// `tab_focus_handle(index)` for explicit focus restoration. Do not reuse this
 /// state with `TabList`, `Tab`, or `TabPanel`: TabList installs automatic focus
 /// selection, while this Sidebar activates only on Enter/Space or a click.
+///
+/// Optional named groups and whole-sidebar/group disclosures compose the existing
+/// `CollapsibleState`. The caller retains and observes those states. Closing a
+/// disclosure removes its navigation Buttons and returns contained focus to its
+/// trigger without changing the current section. Ungrouped entries render first;
+/// each group lists existing, unique item values in its desired display order.
+/// Expand a closed disclosure before programmatically focusing an entry in it.
 #[derive(IntoElement)]
 pub(crate) struct Sidebar {
     base: ObservedElement<Stateful<Div>>,
@@ -31,6 +41,14 @@ pub(crate) struct Sidebar {
     state: Entity<gpui_design::TabsState>,
     label: SharedString,
     palette: Palette,
+    collapse: Option<Entity<CollapsibleState>>,
+    groups: Vec<SidebarGroup>,
+}
+
+struct SidebarGroup {
+    label: SharedString,
+    values: Vec<SharedString>,
+    collapse: Option<Entity<CollapsibleState>>,
 }
 
 impl Sidebar {
@@ -57,7 +75,44 @@ impl Sidebar {
             state: state.clone(),
             label: label.into(),
             palette,
+            collapse: None,
+            groups: Vec::new(),
         }
+    }
+
+    /// Keeps a native disclosure trigger mounted when navigation is hidden.
+    #[allow(dead_code)] // Optional in consumers that use only flat navigation.
+    pub(crate) fn collapsible(mut self, state: &Entity<CollapsibleState>) -> Self {
+        self.collapse = Some(state.clone());
+        self
+    }
+
+    pub(crate) fn group(
+        mut self,
+        label: impl Into<SharedString>,
+        values: impl IntoIterator<Item = impl Into<SharedString>>,
+    ) -> Self {
+        self.groups.push(SidebarGroup {
+            label: label.into(),
+            values: values.into_iter().map(Into::into).collect(),
+            collapse: None,
+        });
+        self
+    }
+
+    #[allow(dead_code)] // Optional in consumers that use only static groups.
+    pub(crate) fn collapsible_group(
+        mut self,
+        label: impl Into<SharedString>,
+        values: impl IntoIterator<Item = impl Into<SharedString>>,
+        state: &Entity<CollapsibleState>,
+    ) -> Self {
+        self.groups.push(SidebarGroup {
+            label: label.into(),
+            values: values.into_iter().map(Into::into).collect(),
+            collapse: Some(state.clone()),
+        });
+        self
     }
 }
 
@@ -73,8 +128,17 @@ impl RenderOnce for Sidebar {
         let selected = model.selected_index();
         let items = model.items().to_vec();
         let palette = self.palette;
+        let mut grouped_values = Vec::new();
+        for value in self.groups.iter().flat_map(|group| &group.values) {
+            assert!(
+                !grouped_values.contains(value),
+                "Sidebar group item values must be unique"
+            );
+            grouped_values.push(value.clone());
+        }
 
-        let buttons = items.into_iter().enumerate().map(|(index, item)| {
+        let button = |index: usize| {
+            let item = &items[index];
             let value = item.value().clone();
             let label = item.label().clone();
             let disabled = item.is_disabled();
@@ -104,11 +168,125 @@ impl RenderOnce for Sidebar {
                         state.select_value(value.as_ref(), window, cx);
                     });
                 })
-        });
+        };
+
+        let mut content = div().w_full().min_w_0().flex().flex_col().gap_1().children(
+            items
+                .iter()
+                .enumerate()
+                .filter(|(_, item)| !grouped_values.contains(item.value()))
+                .map(|(index, _)| button(index)),
+        );
+        for (index, group) in self.groups.iter().enumerate() {
+            let id = (self.id.clone(), format!("group-{index}"));
+            let buttons = group.values.iter().map(|value| {
+                let index = items
+                    .iter()
+                    .position(|item| item.value() == value)
+                    .expect("Sidebar groups must reference existing item values");
+                button(index)
+            });
+            let group_content: AnyElement = if let Some(state) = &group.collapse {
+                Collapsible::new(id, state)
+                    .w_full()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(disclosure_trigger(state, group.label.clone(), palette, cx))
+                    .child(
+                        CollapsibleContent::new(state)
+                            .accessibility_label(group.label.clone())
+                            .w_full()
+                            .min_w_0()
+                            .flex()
+                            .flex_col()
+                            .gap_1()
+                            .children(buttons),
+                    )
+                    .into_any_element()
+            } else {
+                div()
+                    .id(id)
+                    .test_support()
+                    .role(Role::Group)
+                    .aria_label(group.label.clone())
+                    .w_full()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(
+                        div()
+                            .id((self.id.clone(), format!("group-{index}-heading")))
+                            .test_support()
+                            .role(Role::Heading)
+                            .aria_level(3)
+                            .aria_label(group.label.clone())
+                            .min_w_0()
+                            .px_2()
+                            .py_1()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(palette.muted)
+                            .child(group.label.clone()),
+                    )
+                    .children(buttons)
+                    .into_any_element()
+            };
+            content = content.child(group_content);
+        }
+
+        let content = if let Some(state) = self.collapse {
+            Collapsible::new((self.id.clone(), "disclosure"), &state)
+                .w_full()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(disclosure_trigger(&state, self.label.clone(), palette, cx))
+                .child(
+                    CollapsibleContent::new(&state)
+                        .accessibility_label(self.label.clone())
+                        .w_full()
+                        .min_w_0()
+                        .child(content),
+                )
+                .into_any_element()
+        } else {
+            content.into_any_element()
+        };
 
         self.base
             .role(Role::Navigation)
             .aria_label(self.label)
-            .children(buttons)
+            .child(content)
     }
+}
+
+fn disclosure_trigger(
+    state: &Entity<CollapsibleState>,
+    label: SharedString,
+    palette: Palette,
+    cx: &App,
+) -> CollapsibleTrigger {
+    let indicator = if state.read(cx).is_open() { "−" } else { "+" };
+    CollapsibleTrigger::new(state)
+        .accessibility_label(label.clone())
+        .w_full()
+        .min_w_0()
+        .justify_start()
+        .items_start()
+        .gap_2()
+        .px_2()
+        .py_2()
+        .rounded(palette.radius)
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_color(palette.foreground)
+        .hover(|style| style.bg(palette.highlight))
+        .focus_visible(|style| style.border_1().border_color(palette.accent))
+        .when(state.read(cx).is_disabled(), |trigger| {
+            trigger.opacity(0.45)
+        })
+        .child(div().flex_1().min_w_0().whitespace_normal().child(label))
+        .child(indicator)
 }

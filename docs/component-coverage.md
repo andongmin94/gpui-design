@@ -103,7 +103,7 @@ in the consumer, and are composed into the native two-style example.
 | Sheet | Recipe | Right-edge, full-height modal presentation using the existing Dialog lifecycle, a viewport-limited preferred width, fixed header/footer, and one vertical ScrollArea body. The application retains DialogState and ScrollHandle and supplies header/footer content that fits the viewport. No other edge placement, drag interaction, animation, or separate modal/scroll-key controller. |
 | Skeleton | Recipe | Static decorative placeholder with application-controlled width, height, rounding, and color. No focus stop, native role/name, shimmer, or loading state. |
 | Spinner | Recipe | Named indeterminate Progress with a rotating arc, size/color styling, and GPUI App reduced-motion support. The application controls mounting; no independent task, timer, or automatic live announcement. |
-| Table | Available | Shared fixed/flexible columns, a header row, body rows, footer, caption, and native table/row/cell semantics. No spans, sorting, filtering, selection controller, or virtualization. |
+| Table | Available | Shared fixed/flexible columns, header/body/footer rows, caption and native table/row/cell semantics, with optional application-supplied row selection and header sort direction. No spans, sorting/filtering engine, selection controller or virtualization. |
 | Typography | Recipe | Named Heading with an explicit positive level, Paragraph with native styled text runs for inline code, and independently named InlineCode with native Code semantics. Paragraph exposes one complete accessible name; its code ranges have visual styling without separate Code nodes. Palette, font choice, width, and visual size belong to the application. No Markdown parser, syntax highlighting, copy action, or editor. |
 
 ## Larger combined capabilities
@@ -121,14 +121,14 @@ popup, focus, and scrolling machinery.
 | Carousel | Available | Fixed single-slide viewport, bounded or looping previous/next, horizontal/vertical keys, RTL, discrete pointer swipe, active-only slides and safe focus when a slide disappears. App-owned media/actions; no autoplay, inertia or multi-slide sizing engine. |
 | Chart | Available | Headless categorical data, visible series and pointer/keyboard point inspection; copyable native line/bar/area plot with axes, legend Toggles, exact-value readout and same-data Table. Negative values and zero baselines are supported. No time/log scales, stacking, pie/radar charts or external chart engine. |
 | Code Block | Recipe | Read-only multiline code with a full-text native Code name, a Button that copies the original string, and bounded two-axis ScrollArea overflow. The application retains its scroll/focus handles. Focused-code arrow/page/Home/End navigation and contained wheel scrolling preserve parent boundaries. No parser, syntax highlighting, editor, selection model, line numbers, or copy-feedback state. |
-| Data Table | Recipe | Fixed text columns and immutable stable-ID rows, case-insensitive filtering, one-column ascending/descending text sorting, pagination, empty-state recovery, and application row actions. Current choice is supplied by the application. No multi-row selection, numeric/date comparators, column hiding/reordering, server data, virtualization, or native sort-direction metadata. |
+| Data Table | Recipe | Fixed text columns and immutable stable-ID rows, case-insensitive filtering, one-column text sorting, pagination, page/row checkbox selection, column visibility, empty-state recovery and application row actions. Selection survives filtering/paging and remains independent of the application's current choice. Native row selection and header sort metadata are supplied. No numeric/date comparators, column reordering, server data or virtualization. |
 | Date Picker | Available | Single/multiple/range Calendar values inside Popover; single/complete-range activation closes before events, partial/multiple values stay open. Preset Buttons use the same programmatic setter. Trigger formatting and appearance are application-owned; text parsing and preset fetching are not supplied. |
 | Drawer | Available | Bottom modal surface reusing Dialog focus, Escape and backdrop lifecycle, plus a dedicated downward drag handle with threshold dismissal and snap-back. Body scrolling/editing stays independent; no snap-point or nested-drag engine. |
 | Marker | Recipe | Static date/status boundary with one named native Label between two decorative Separators. The text wraps within a bounded width; its content and formatting belong to the application. Schedule reads the retained Calendar selection without another date or timeline state. No focus stop, action, or automatic live announcement. |
 | Message | Recipe | Read-only native Comment with application-supplied author/time Labels, a wrapping Paragraph body, and an optional existing action. Schedule presents the retained session note and its local edit time, with a Button returning focus to the shared Textarea. No message focus stop, delivery state, transport, history, streaming, or automatic live announcement. |
 | Message Scroller | Available | Existing ScrollArea with stable message keys, initial/append/stream bottom following, same-frame preservation of a visible history anchor, unread count and jump-to-latest. No virtualization, transport or forced focus changes. |
 | Questionnaire | Available | Typed application-owned answers with a linear question/review/complete state, validation-gated advance, Back and retained answers. The example connects real Input editors and app-owned focus changes; no schema interpreter or conditional branching. |
-| Sidebar | Recipe | Named navigation with ordinary Buttons, per-entry Tab traversal, explicit pointer/Enter/Space selection, and native current-page metadata over a dedicated retained TabsState. Settings renders only the selected named Region and stacks the Sidebar above it below 640 px; Compact keeps its separate tabbed presentation. No roving arrow selection, routing, collapse, nested groups, or reuse of a state previously bound by TabList. |
+| Sidebar | Recipe | Named navigation with ordinary Buttons, explicit activation and current-page metadata over dedicated TabsState; static groups and optional whole/group Collapsible state preserve selection and restore focus when entries unmount. Settings and the catalogue stack navigation above content below 640 px. No routing, icon rail, arbitrary nested menu tree or reuse of a state previously bound by TabList. |
 | Trace | Recipe | Application-supplied summary, named read-only Paragraph details, and an optional existing action over retained Collapsible state. Shared Button activation, expanded/disabled metadata, active-only content, and focus on closure are preserved. Help presents current form values rather than recorded operations. No execution history, streaming, parser, separate disclosure state, or scroll controller. |
 
 ## Completion criteria and current work
@@ -146,23 +146,27 @@ documented. Platform observations are recorded separately from automated checks.
 | Priority | Work | Exit condition | Current state |
 | --- | --- | --- | --- |
 | 1 | Existing correctness and core interaction gaps | Fix observed failures; support single-selection ToggleGroup and multiple-open Accordion; verify native values, keyboard/pointer activation, disabled state, and focus on closure | Implemented with focused tests and catalogue consumers |
-| 2 | Remaining common component contracts | Audit the official component examples against each scope above; implement manual Tabs activation, popup side/alignment, range inputs/date selection, and the remaining consumer-required selection/table/navigation capabilities with focused tests and examples | Manual Tabs, side/alignment popups, ordered Slider thumbs, date ranges/multiple dates and grouped multiple Combobox implemented; remaining table/navigation and date configuration contracts open |
+| 2 | Remaining common component contracts | Audit the official component examples against each scope above; implement manual Tabs activation, popup side/alignment, range inputs/date selection, and the remaining consumer-required selection/table/navigation capabilities with focused tests and examples | Manual Tabs, side/alignment popups, ordered Slider thumbs, date ranges/multiple dates, grouped multiple Combobox, table selection/column visibility and grouped collapsible Sidebar implemented; date configuration and broader component contract audit open |
 | 3 | Visual defaults and accessibility | Consistent visible keyboard focus, disabled/hover/selected/error states, reusable application-owned tokens, narrow-window layout, and usable light/dark presentations | Catalogue focus states and copyable light/dark token source implemented; wider native visual review pending |
-| 4 | Source distribution and developer experience | A small complete starter, compilable public examples, explicit supported API boundary, and a source-copy workflow that resolves recipe dependencies and tokens | Starter, doctest gate, recipe token source and local dependency-aware source CLI implemented; broader API boundary and distribution documentation audit open |
+| 4 | Source distribution and developer experience | A small complete starter, compilable public examples, explicit supported API boundary, and a source-copy workflow that resolves recipe dependencies and tokens | Starter, doctest gate, application tokens and dependency-aware source CLI implemented; supported input/control boundary and consumer test feature documented; unused ThemeAppearance removed |
 | 5 | Release validation | Existing formatting, lint, full behavior suite and native example builds pass; representative native IME, screen-reader, DPI, and visual flows have platform-specific observations | Not complete |
 
 Implemented work includes priority 1, catalogue focus presentation, the starter,
 manual Tabs, collision-aware side/alignment popups, single/range/multiple Slider
-thumbs, single/multiple/range dates, grouped multiple Combobox, and a local
-dependency-aware source CLI with standalone application tokens. These
+thumbs, single/multiple/range dates, grouped multiple Combobox, selectable tables
+with column visibility, grouped collapsible Sidebar, and a local dependency-aware
+source CLI with standalone application tokens. These
 capabilities do not close the overall goal.
-The current Windows checkpoint passed 687 behavior/integration tests, five source
+The current Windows checkpoint passed 690 behavior/integration tests, five source
 CLI tests and 16 doctests (two existing doctests remain ignored). Formatting,
 workspace Clippy, the source CLI binary and three default-feature example builds
-passed. All 24 CLI recipe modules compiled in a standalone consumer with default
-and test-support features; repeated add after consumer rustfmt preserved files.
+passed. All 24 current CLI recipe modules compiled in a standalone consumer with
+default features and with their copied tests enabled for compilation through
+test-support; repeated add after consumer rustfmt preserved files.
 The combined catalogue flow exercises range completion, grouped multiple targets,
-chip removal and item replacement. Native observation covered the starter's
+chip removal, item replacement and nested Sidebar closure/focus. The preset-table
+flow exercises column visibility, independent checkbox selection and native sort
+metadata. Narrow/wide Sidebar layout is checked at 320/980 px. Native observation covered the starter's
 initial input focus, editing, disabled-to-enabled button, Tab focus indication,
 and Enter activation, plus the catalogue's initial layout. Further catalogue
 pointer checks were interrupted by concurrent desktop input. These observations
@@ -174,7 +178,10 @@ The official [Accordion multiple example](https://ui.shadcn.com/docs/components/
 [Slider range](https://ui.shadcn.com/docs/components/base/slider#range),
 [Calendar](https://ui.shadcn.com/docs/components/base/calendar), and
 [Combobox](https://ui.shadcn.com/docs/components/base/combobox) provide concrete
-behavior references. The [introduction](https://ui.shadcn.com/docs) and
+behavior references. The [Data Table guide](https://ui.shadcn.com/docs/components/base/data-table)
+and [Sidebar](https://ui.shadcn.com/docs/components/base/sidebar) supply the
+selection, column visibility and collapse/group composition references.
+The [introduction](https://ui.shadcn.com/docs) and
 [theming guide](https://ui.shadcn.com/docs/theming) also make visual defaults and
 source reuse part of the target. Browser-specific APIs require an explicit native
 equivalent rather than an extra alias.

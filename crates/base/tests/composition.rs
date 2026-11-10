@@ -2,6 +2,10 @@
 //! Each distinct flow runs once, across representative compact and settings appearances.
 //! GPUI's input simulation does not run a platform IME or screen reader.
 
+// Each native binary owns its module tree; this test exercises both binaries'
+// source directly, including their shared palette and Sidebar recipe imports.
+#![allow(clippy::duplicate_mod)]
+
 #[path = "../examples/two_styles.rs"]
 mod two_styles;
 
@@ -3767,8 +3771,68 @@ fn preset_table_filters_sorts_pages_and_applies_stable_rows(cx: &mut TestAppCont
         );
     });
 
-    // Search, two sort buttons, then the only enabled page action.
+    // Column controls use native menu checks and restore the trigger on close.
+    cx.simulate_keystrokes("tab");
+    activate_key(cx, "enter");
+    cx.simulate_keystrokes("down");
+    activate_key(cx, "enter");
+    cx.update(|window, cx| {
+        assert!(!demo.read(cx).preset_table.read(cx).is_column_visible(1));
+        assert!(test_support::find(window, &[], &(id.clone(), "heading-1").into()).is_none());
+        assert_eq!(
+            test_support::find(window, &[], &(id.clone(), "columns").into())
+                .unwrap()
+                .focused(),
+            Some(true)
+        );
+    });
+    activate_key(cx, "enter");
+    cx.simulate_keystrokes("down");
+    activate_key(cx, "enter");
+    cx.simulate_keystrokes("tab");
+    activate_key(cx, "space");
+    cx.update(|window, cx| {
+        let state = demo.read(cx).preset_table.read(cx);
+        assert!(state.is_column_visible(1));
+        assert_eq!(
+            state.filtered_selected_count(),
+            1,
+            "unavailable Broadcast cannot be selected"
+        );
+        assert!(state.is_row_selected(&"balanced".into()));
+        let row = gpui::ElementId::from((id.clone(), "row-balanced"));
+        assert_eq!(
+            test_support::find(window, &[], &row).unwrap().selected(),
+            Some(true)
+        );
+        assert_eq!(
+            test_support::find(window, &[], &(id.clone(), "select-page").into())
+                .unwrap()
+                .checked(),
+            Some(true)
+        );
+    });
+    // The current preset can be independently selected and unselected.
     cx.simulate_keystrokes("tab tab tab");
+    activate_key(cx, "space");
+    cx.update(|window, cx| {
+        assert_eq!(
+            demo.read(cx)
+                .preset_table
+                .read(cx)
+                .filtered_selected_count(),
+            0
+        );
+        assert_eq!(
+            test_support::find(window, &[], &(id.clone(), "select-page").into())
+                .unwrap()
+                .checked(),
+            Some(false)
+        );
+    });
+    activate_key(cx, "space");
+    // Disabled Broadcast is skipped; the next page is the next Tab stop.
+    cx.simulate_keystrokes("tab");
     draw(cx);
     cx.update(|window, _| {
         assert_eq!(
@@ -3792,7 +3856,7 @@ fn preset_table_filters_sorts_pages_and_applies_stable_rows(cx: &mut TestAppCont
             Some(true)
         );
     });
-    cx.simulate_keystrokes("shift-tab shift-tab shift-tab shift-tab shift-tab");
+    cx.simulate_keystrokes("shift-tab shift-tab shift-tab shift-tab shift-tab shift-tab shift-tab");
     draw(cx);
     cx.update(|window, cx| {
         assert_eq!(
@@ -3812,6 +3876,12 @@ fn preset_table_filters_sorts_pages_and_applies_stable_rows(cx: &mut TestAppCont
             test_support::find(window, &[], &sort).unwrap().label(),
             Some("Preset, sorted ascending; sort descending")
         );
+        assert_eq!(
+            test_support::find(window, &[], &(id.clone(), "heading-0").into())
+                .unwrap()
+                .sort_direction(),
+            Some(gpui::accesskit::SortDirection::Ascending)
+        );
     });
     activate_key(cx, "enter");
     cx.update(|window, cx| {
@@ -3827,9 +3897,20 @@ fn preset_table_filters_sorts_pages_and_applies_stable_rows(cx: &mut TestAppCont
             test_support::find(window, &[], &sort).unwrap().label(),
             Some("Preset, sorted descending; sort ascending")
         );
+        assert_eq!(
+            state.filtered_selected_count(),
+            1,
+            "selection survives paging and sorting"
+        );
+        assert_eq!(
+            test_support::find(window, &[], &(id.clone(), "heading-0").into())
+                .unwrap()
+                .sort_direction(),
+            Some(gpui::accesskit::SortDirection::Descending)
+        );
     });
 
-    cx.simulate_keystrokes("shift-tab");
+    cx.simulate_keystrokes("shift-tab shift-tab shift-tab");
     cx.simulate_input("no matching preset");
     draw(cx);
     cx.update(|window, cx| {
@@ -3859,7 +3940,7 @@ fn preset_table_filters_sorts_pages_and_applies_stable_rows(cx: &mut TestAppCont
             Some("balanced")
         );
     });
-    cx.simulate_keystrokes("tab");
+    cx.simulate_keystrokes("tab tab");
     draw(cx);
     cx.update(|window, _| {
         assert_eq!(
@@ -3887,7 +3968,7 @@ fn preset_table_filters_sorts_pages_and_applies_stable_rows(cx: &mut TestAppCont
             "presentation"
         );
     });
-    cx.simulate_keystrokes("tab tab tab");
+    cx.simulate_keystrokes("tab tab tab tab tab tab");
     draw(cx);
     let row = gpui::ElementId::from((id.clone(), "row-presentation"));
     let action = gpui::ElementId::from((row, "action"));
@@ -4031,6 +4112,106 @@ fn catalogue_connects_confirmation_data_and_conversation(cx: &mut TestAppContext
                     && node.label() == Some("Documentation pages"))
         );
     });
+
+    // Exercise the actual nested Sidebar consumer once. Collapsing navigation
+    // unmounts its entries while the application's selected page stays mounted.
+    let (project, sidebar, tools) = cx.update(|window, cx| {
+        let navigation = view.read(cx).navigation.read(cx);
+        let states = (
+            navigation.sections.clone(),
+            navigation.sidebar.clone(),
+            navigation.tools.clone(),
+        );
+        let focus = states.1.read(cx).trigger_focus_handle().clone();
+        focus.focus(window, cx);
+        states
+    });
+    draw(cx);
+    cx.simulate_keystrokes("tab tab");
+    draw(cx);
+    cx.update(|window, cx| {
+        assert!(
+            tools.read(cx).trigger_focus_handle().is_focused(window),
+            "Tab skips unavailable Activity"
+        );
+        assert_eq!(project.read(cx).selected_index(), Some(0));
+        assert!(
+            test_support::snapshots(window)
+                .iter()
+                .any(|node| node.role() == Some(Role::Group) && node.label() == Some("Project"))
+        );
+    });
+    cx.simulate_keystrokes("tab");
+    activate_key(cx, "enter");
+    cx.update(|window, cx| {
+        assert_eq!(project.read(cx).selected_index(), Some(2));
+        let page = test_support::find(window, &[], &"project-section".into()).unwrap();
+        assert_eq!(page.role(), Some(Role::Region));
+        assert_eq!(page.label(), Some("Members"));
+        tools.update(cx, |tools, cx| tools.set_open(false, window, cx));
+    });
+    draw(cx);
+    cx.update(|window, cx| {
+        assert!(tools.read(cx).trigger_focus_handle().is_focused(window));
+        let member = (gpui::ElementId::from("project-sidebar"), "2".to_string()).into();
+        assert!(test_support::find(window, &[], &member).is_none());
+        assert_eq!(
+            test_support::find(window, &[], &"project-section".into())
+                .unwrap()
+                .label(),
+            Some("Members")
+        );
+    });
+    activate_key(cx, "enter");
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    cx.update(|window, cx| {
+        assert!(project.read(cx).tab_focus_handle(2).is_focused(window));
+        sidebar.update(cx, |sidebar, cx| sidebar.set_open(false, window, cx));
+    });
+    draw(cx);
+    cx.update(|window, cx| {
+        assert!(sidebar.read(cx).trigger_focus_handle().is_focused(window));
+        let nodes = test_support::snapshots(window);
+        assert!(
+            !nodes.iter().any(|node| node.role() == Some(Role::Button)
+                && node.label() == Some("Project overview"))
+        );
+        assert!(nodes.iter().any(|node| node.role() == Some(Role::Button)
+            && node.label() == Some("Project sections")
+            && node.expanded() == Some(false)));
+    });
+    activate_key(cx, "enter");
+    cx.update(|window, cx| {
+        assert_eq!(project.read(cx).selected_index(), Some(2));
+        assert_eq!(
+            test_support::find(window, &[], &"project-section".into())
+                .unwrap()
+                .label(),
+            Some("Members")
+        );
+    });
+
+    for width in [320., 980.] {
+        cx.simulate_resize(gpui::size(px(width), px(840.)));
+        draw(cx);
+        draw(cx);
+        cx.update(|window, _| {
+            let navigation = test_support::find(window, &[], &"project-sidebar".into())
+                .unwrap()
+                .bounds();
+            let content = test_support::find(window, &[], &"project-section".into())
+                .unwrap()
+                .bounds();
+            assert!(navigation.left() >= px(0.) && navigation.right() <= px(width));
+            assert!(content.left() >= px(0.) && content.right() <= px(width));
+            if width < 640. {
+                assert!(navigation.bottom() <= content.top());
+            } else {
+                assert!(navigation.right() <= content.left());
+            }
+        });
+    }
 
     let section = |cx: &mut VisualTestContext, index: usize| {
         cx.update(|window, cx| {

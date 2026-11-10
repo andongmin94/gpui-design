@@ -4,9 +4,9 @@
 //! GPUI has no `aria_disabled` setter, so a disabled control would reach
 //! assistive technology as one that accepts input. [`A11yDisabledExt`] wraps the
 //! control's root element without adding a layout node, a focus stop or an
-//! accessibility node. Inputs also use this same adapter for required and
-//! invalid state, and selectable containers use it for multiselectable state,
-//! which GPUI does not expose through its fluent builders.
+//! accessibility node. The same adapter exposes required and invalid input
+//! state, multiselectable containers, and table-header sort direction, which
+//! GPUI does not expose through its fluent builders.
 use gpui::{
     App, Bounds, Element, ElementId, GlobalElementId, InspectorElementId, InteractiveElement,
     Interactivity, IntoElement, LayoutId, Pixels, Window, accesskit,
@@ -19,6 +19,7 @@ pub(crate) struct A11yDisabled<E> {
     required: bool,
     invalid: bool,
     multiselectable: bool,
+    sort_direction: Option<accesskit::SortDirection>,
 }
 
 impl<E> A11yDisabled<E> {
@@ -29,6 +30,7 @@ impl<E> A11yDisabled<E> {
             required: false,
             invalid: false,
             multiselectable: false,
+            sort_direction: None,
         }
     }
 
@@ -40,6 +42,11 @@ impl<E> A11yDisabled<E> {
 
     fn with_multiselectable(mut self, multiselectable: bool) -> Self {
         self.multiselectable = multiselectable;
+        self
+    }
+
+    fn with_sort_direction(mut self, direction: Option<accesskit::SortDirection>) -> Self {
+        self.sort_direction = direction;
         self
     }
 }
@@ -57,6 +64,9 @@ pub(crate) trait A11yDisabledExt: Sized {
 
     /// Marks native list/grid selection semantics in the same root adapter.
     fn a11y_selection(self, disabled: bool, multiselectable: bool) -> Self::Output;
+
+    /// Sets the native sort direction on the existing column-header node.
+    fn a11y_sort(self, direction: Option<accesskit::SortDirection>) -> Self::Output;
 }
 
 #[cfg(not(feature = "test-support"))]
@@ -66,6 +76,10 @@ impl<E: Element + InteractiveElement> A11yDisabledExt for E {
     fn a11y_selection(self, disabled: bool, multiselectable: bool) -> Self::Output {
         A11yDisabled::new(self, disabled).with_multiselectable(multiselectable)
     }
+
+    fn a11y_sort(self, direction: Option<accesskit::SortDirection>) -> Self::Output {
+        A11yDisabled::new(self, false).with_sort_direction(direction)
+    }
 }
 
 #[cfg(feature = "test-support")]
@@ -74,6 +88,10 @@ impl<E: Element + InteractiveElement> A11yDisabledExt for gpui::Stateful<E> {
 
     fn a11y_selection(self, disabled: bool, multiselectable: bool) -> Self::Output {
         A11yDisabled::new(self, disabled).with_multiselectable(multiselectable)
+    }
+
+    fn a11y_sort(self, direction: Option<accesskit::SortDirection>) -> Self::Output {
+        A11yDisabled::new(self, false).with_sort_direction(direction)
     }
 }
 
@@ -87,6 +105,10 @@ impl<E: Element<PrepaintState = Option<gpui::Hitbox>> + InteractiveElement> A11y
         self.map_inner(|inner| {
             A11yDisabled::new(inner, disabled).with_multiselectable(multiselectable)
         })
+    }
+
+    fn a11y_sort(self, direction: Option<accesskit::SortDirection>) -> Self::Output {
+        self.map_inner(|inner| A11yDisabled::new(inner, false).with_sort_direction(direction))
     }
 }
 
@@ -170,6 +192,9 @@ impl<E: Element> Element for A11yDisabled<E> {
         }
         if self.multiselectable {
             node.set_multiselectable();
+        }
+        if let Some(direction) = self.sort_direction {
+            node.set_sort_direction(direction);
         }
     }
 

@@ -25,6 +25,7 @@ pub struct ElementSnapshot {
     checked: Option<bool>,
     indeterminate: Option<bool>,
     selected: Option<bool>,
+    sort_direction: Option<gpui::accesskit::SortDirection>,
     expanded: Option<bool>,
     value: Option<SharedString>,
     bounds: Bounds<Pixels>,
@@ -55,6 +56,7 @@ impl fmt::Debug for ElementSnapshot {
             .field("checked", &self.checked)
             .field("indeterminate", &self.indeterminate)
             .field("selected", &self.selected)
+            .field("sort_direction", &self.sort_direction)
             .field("expanded", &self.expanded)
             .field("value", &self.value)
             .field("bounds", &self.bounds)
@@ -84,6 +86,10 @@ impl ElementSnapshot {
     }
     pub fn selected(&self) -> Option<bool> {
         self.selected
+    }
+    /// The column header's native sort direction, if one is active.
+    pub fn sort_direction(&self) -> Option<gpui::accesskit::SortDirection> {
+        self.sort_direction
     }
     pub fn expanded(&self) -> Option<bool> {
         self.expanded
@@ -215,6 +221,7 @@ impl Registration {
             checked: semantics.checked,
             indeterminate: semantics.indeterminate,
             selected: semantics.selected,
+            sort_direction: semantics.sort_direction,
             expanded: semantics.expanded,
             value: semantics.value.clone(),
             focused: semantics.focused,
@@ -494,6 +501,7 @@ impl<E: Element<PrepaintState = Option<Hitbox>> + InteractiveElement> Element fo
             checked: toggled.map(|value| value == gpui::accesskit::Toggled::True),
             indeterminate: toggled.map(|value| value == gpui::accesskit::Toggled::Mixed),
             selected: node.is_selected(),
+            sort_direction: node.sort_direction(),
             expanded: node.is_expanded(),
             value: node.value().map(|value| value.to_owned().into()),
             bounds,

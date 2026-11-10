@@ -51,7 +51,7 @@ validation. Catalogue coverage alone is not a claim of shadcn/ui-level completen
 | **Dialog** | Open/close state, modal focus, initial focus, dismissal, and focus restoration | Backdrop, popup, title, description, and close control |
 | **AlertDialog** | Dialog's modal lifecycle with alert semantics and blocked backdrop dismissal | Decision text, cancellation control, and explicit application confirmation |
 | **Separator** | Semantic or decorative separation, with horizontal/vertical orientation | Length, thickness, color, and spacing |
-| **Table** | Shared fixed/flexible columns, header/body/footer structure, and native row/cell semantics | Width, cell content, typography, borders, and data operations |
+| **Table** | Shared fixed/flexible columns, header/body/footer structure, native row/cell semantics, row selection and header sort metadata | Width, cell content, typography, borders, and data operations |
 | **ScrollArea** | Native viewport, existing overlay scrollbar, retained offsets, and descendant reveal on enabled axes | Viewport dimensions, content layout, and scrollbar appearance |
 | **Resizable** | Two-pane ratio, pointer/keyboard resizing, fractional limits, retained sizes, and native splitter semantics | Frame size, pane content, divider thickness, and grip styling |
 | **Direction** | Scoped logical direction, nested overrides, and consistent horizontal keys/pointer geometry | Logical row layout through `Direction::row`, application spacing and typography |
@@ -68,6 +68,15 @@ validation. Catalogue coverage alone is not a claim of shadcn/ui-level completen
 Shared support includes the window root, popup positioning, input infrastructure,
 and opt-in test observations. Internal editing machinery retained for Input is
 not a separate editor product. Public APIs are still being developed.
+
+The [crate exports](crates/base/src/lib.rs) define the public control and support
+surface. The [input module](crates/base/src/input/mod.rs) intentionally also exposes
+`EditorState`, display mapping, diagnostics and provider types used by its shared
+engine; its standalone `Editor` renderer is available only to inherited tests.
+`Input` and `Textarea` are the supported rendered text controls. Native test
+observations require the `test-support` feature. Presentation recipes remain
+consumer-owned `pub(crate)` source. `Theme` configures input colors, cursor blink
+and scrollbars; application palettes own light/dark appearance.
 
 ### Copyable presentation recipes
 
@@ -88,13 +97,13 @@ These types live in the example, outside the `gpui_design` crate exports.
 | **Item** | Named content row with a title, description, and trailing action | Current recording preset beside its existing preview/edit control |
 | **Alert** | Inline title and description, with separate destructive styling and explicit urgency | Informational schedule notice and a missing-name warning after closing invalid settings |
 | **Pagination** | Controlled previous/next buttons, current-page text, and empty/first/last-page boundaries | Moving through the preset catalogue |
-| **DataTable** | Client-side text filtering, one-column text sorting, pagination, and stable-ID row actions over Table | Searching the existing recording presets and applying one to the retained settings |
+| **DataTable** | Text filtering/sorting, pagination, page/row checkbox selection, column visibility, and stable-ID row actions | Browsing recording presets, selecting rows independently, and applying a preset |
 | **Spinner** | Named indeterminate Progress with a rotating arc that respects GPUI's reduced-motion setting | The unknown-progress preview |
 | **Skeleton** | Static decorative placeholder with application-controlled size and shape | The preview's unavailable percentage display |
 | **Avatar** | Named circular image with explicit fallback text, using GPUI's image loader and cache | Preset artwork or initials in the existing HoverCard preview |
 | **AspectRatio** | Clipped media frame with a finite positive width/height ratio and application-owned content | A recording-frame illustration driven by the retained preset and session name |
 | **Sheet** | Right-edge modal presentation over Dialog, with a viewport-limited width, fixed header/footer, and one scrolling body | Session settings in both appearances, using the existing form and retained state |
-| **Sidebar** | Named navigation with ordinary Buttons, native current-page metadata, and explicit selection through retained TabsState | The Settings appearance's sections, beside their current named Region or stacked above it in a narrow window |
+| **Sidebar** | Named grouped navigation, ordinary Buttons, current-page metadata, and optional whole/group Collapsible state | Grouped Settings sections and the catalogue's collapsible project navigation |
 | **Typography** | Named headings with explicit levels, paragraphs with native inline-code text runs, and independently named code elements | Help headings, state-ownership explanations, and the example's source identifier |
 | **CodeBlock** | Read-only multiline code, an exact full-text Copy action, and bounded two-axis scrolling with keyboard access | A JSON snapshot of the retained session settings in Help |
 | **Marker** | One named date/status label between decorative separators, with wrapping text and no focus stop | The currently selected Calendar date above Schedule's notes and recording plan |
@@ -227,12 +236,13 @@ An informational Alert explains that the example retains preferences without
 scheduling an actual recording. Its date bounds are 2026–2027.
 
 The separate [catalogue example](crates/base/examples/catalogue.rs) connects the
-remaining families into four retained views. Navigation demonstrates coordinated
-menus and destination links; Forms and feedback runs numeric code entry through
+remaining families into five retained views. Navigation demonstrates coordinated
+menus, destination links and collapsible grouped project navigation; Forms and feedback runs numeric code entry through
 a confirmation Drawer into a pausing Toast; Media and data supplies RTL-aware
 Carousel slides and inspectable line/bar/area charts with an exact data table;
 Conversation combines incoming/outgoing bubbles, anchored history/streaming,
-reactions and a validated question/review/complete flow. These examples are local
+reactions and a validated question/review/complete flow. Selection combines date
+ranges, independent dates and grouped multiple recording targets. These examples are local
 and make no network requests.
 
 ## Layers and source ownership
@@ -345,9 +355,13 @@ GPUI snapshots, replacing the path with your checkout:
 gpui-design = { path = "../gpui-design/crates/base" }
 gpui = { package = "gpui-pre", version = "=0.3.11" }
 gpui_platform = { package = "gpui-pre-platform", version = "=0.3.11", features = ["font-kit", "x11", "wayland", "runtime_shaders"] }
+
+[features]
+test-support = ["gpui-design/test-support"]
 ```
 
-Use the repository's pinned Rust toolchain and native prerequisites above. Copy
+The feature declaration supports the test guards in copied recipe source;
+enable it when running those GPUI tests. Use the repository's pinned Rust toolchain and native prerequisites above. Copy
 the desired presentation recipes into the application using their
 [dependency and token instructions](docs/presentation-recipes.md#copy-into-an-application).
 

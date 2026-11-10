@@ -1924,6 +1924,8 @@ impl Render for Demo {
         let stacked_sections = window.viewport_size().width < px(640.);
         let navigation = if sidebar {
             Sidebar::new("session-sections", &self.tabs, "Session sections", palette)
+                .group("Workspace", ["preferences", "sync", "help"])
+                .group("Session", ["schedule", "presets"])
                 .flex_shrink_0()
                 .when(stacked_sections, |sidebar| sidebar.w_full())
                 .into_any_element()

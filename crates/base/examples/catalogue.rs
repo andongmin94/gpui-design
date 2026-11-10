@@ -7,6 +7,11 @@ mod catalogue_forms;
 mod catalogue_navigation;
 mod catalogue_selection;
 
+#[path = "presentation.rs"]
+#[allow(dead_code)] // The Sidebar consumes a subset of the shared application tokens.
+mod presentation;
+use presentation::{Appearance, Palette};
+
 use catalogue_conversation::ConversationCatalogue;
 use catalogue_data::DataCatalogue;
 use catalogue_forms::CatalogueForms;
@@ -20,7 +25,7 @@ use gpui_design::{ScrollArea, Tab, TabItem, TabList, TabPanel, TabsEvent, TabsSt
 
 pub(crate) struct Catalogue {
     pub(crate) tabs: Entity<TabsState>,
-    navigation: Entity<NavigationCatalogue>,
+    pub(crate) navigation: Entity<NavigationCatalogue>,
     forms: Entity<CatalogueForms>,
     data: Entity<DataCatalogue>,
     conversation: Entity<ConversationCatalogue>,

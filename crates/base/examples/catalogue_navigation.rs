@@ -1,5 +1,9 @@
 //! Command and document navigation with application-owned layout and state.
 
+#[path = "recipes/sidebar.rs"]
+mod sidebar;
+use sidebar::Sidebar;
+
 use gpui::{
     AppContext as _, Context, Entity, FocusHandle, FontWeight, InteractiveElement as _,
     IntoElement, ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _,
@@ -7,11 +11,11 @@ use gpui::{
 };
 use gpui_design::{
     Accordion, AccordionHeader, AccordionItem, AccordionPanel, AccordionState, Align, Button,
-    CheckboxState, Direction, DirectionProvider, MenuEvent, MenuItem, MenuOption, MenuState,
-    MenuSubmenu, Menubar, MenubarItem, MenubarMenu, MenubarState, NavigationMenu,
+    CheckboxState, CollapsibleState, Direction, DirectionProvider, MenuEvent, MenuItem, MenuOption,
+    MenuState, MenuSubmenu, Menubar, MenubarItem, MenubarMenu, MenubarState, NavigationMenu,
     NavigationMenuEntry, NavigationMenuEvent, NavigationMenuItem, NavigationMenuLink,
-    NavigationMenuState, Placement, Popover, PopoverState, ToggleGroup, ToggleGroupState,
-    ToggleItem, ToggleOption,
+    NavigationMenuState, Placement, Popover, PopoverState, TabItem, TabsState, TestSupportExt as _,
+    ToggleGroup, ToggleGroupState, ToggleItem, ToggleOption,
 };
 
 pub(crate) struct NavigationCatalogue {
@@ -32,6 +36,9 @@ pub(crate) struct NavigationCatalogue {
     show_grid: bool,
     selection: CheckboxState,
     theme: SharedString,
+    pub(crate) sections: Entity<TabsState>,
+    pub(crate) sidebar: Entity<CollapsibleState>,
+    pub(crate) tools: Entity<CollapsibleState>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -117,7 +124,23 @@ impl NavigationCatalogue {
         });
         let quick_help_close = cx.focus_handle();
         let quick_help = cx.new(|cx| PopoverState::new(cx).with_initial_focus(&quick_help_close));
+        let sections = cx.new(|cx| {
+            TabsState::new(
+                [
+                    TabItem::new("overview", "Project overview"),
+                    TabItem::new("activity", "Activity (unavailable)").disabled(true),
+                    TabItem::new("members", "Members"),
+                    TabItem::new("exports", "Exports"),
+                ],
+                cx,
+            )
+        });
+        let sidebar = cx.new(|cx| CollapsibleState::new(cx).default_open(true));
+        let tools = cx.new(|cx| CollapsibleState::new(cx).default_open(true));
         let mut subscriptions = vec![
+            cx.observe(&sections, |_, _, cx| cx.notify()),
+            cx.observe(&sidebar, |_, _, cx| cx.notify()),
+            cx.observe(&tools, |_, _, cx| cx.notify()),
             cx.observe(&bar, |_, _, cx| cx.notify()),
             cx.observe(&navigation, |_, _, cx| cx.notify()),
             cx.observe(&alignment, |_, _, cx| cx.notify()),
@@ -166,6 +189,9 @@ impl NavigationCatalogue {
             show_grid: true,
             selection: CheckboxState::Indeterminate,
             theme: "system".into(),
+            sections,
+            sidebar,
+            tools,
             _subscriptions: subscriptions,
         }
     }
@@ -253,7 +279,7 @@ fn trigger(button: Button, label: &'static str, open: bool) -> Button {
 }
 
 impl Render for NavigationCatalogue {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let open_menu = self.bar.read(cx).open_index(cx);
         let open_navigation = self.navigation.read(cx).open_index(cx);
         let export_highlighted = self.file.read(cx).highlighted_index() == Some(2);
@@ -427,6 +453,26 @@ impl Render for NavigationCatalogue {
             }
         };
         let help = self.help.read(cx);
+        let section = self.sections.read(cx);
+        let selected_section = section.selected_index().unwrap_or(0);
+        let section_label = section.items()[selected_section].label().clone();
+        let project_sidebar = div().w_full().min_w_0().flex().gap_4()
+            .when(window.viewport_size().width < px(640.), |layout| layout.flex_col())
+            .child(Sidebar::new("project-sidebar", &self.sections, "Project sections", super::Appearance::Compact.palette())
+                .collapsible(&self.sidebar)
+                .group("Project", ["overview", "activity"])
+                .collapsible_group("Project tools", ["members", "exports"], &self.tools)
+                .flex_shrink_0()
+                .when(window.viewport_size().width < px(640.), |sidebar| sidebar.w_full()))
+            .child(div().id("project-section").test_support().role(Role::Region)
+                .aria_label(section_label.clone()).flex_1().min_w_0().p_4()
+                .rounded_md().bg(rgb(0x172033))
+                .child(div().font_weight(FontWeight::BOLD).child(section_label))
+                .child(div().text_sm().whitespace_normal().child(match selected_section {
+                    2 => "Members of this local project. Closing navigation keeps the current page open.",
+                    3 => "Export options for this local project. Navigation selection survives closing a group.",
+                    _ => "Use Tab and Enter to choose a page. Collapse Project tools or the full sidebar without losing the current page.",
+                })));
         let help_sections = Accordion::new("navigation-help", &self.help)
             .w_full()
             .flex()
@@ -522,7 +568,9 @@ impl Render for NavigationCatalogue {
                     .child(description))
                 .child(div().text_sm().text_color(rgb(0x94a3b8))
                     .child("Navigation help · Both answers can stay open."))
-                .child(help_sections),
+                .child(help_sections)
+                .child(div().text_lg().font_weight(FontWeight::BOLD).child("Project sidebar"))
+                .child(project_sidebar),
         )
     }
 }

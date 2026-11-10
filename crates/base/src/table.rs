@@ -3,10 +3,10 @@
 use gpui::{
     AnyElement, App, Div, ElementId, InteractiveElement as _, IntoElement, ParentElement, Pixels,
     RenderOnce, Role, SharedString, StatefulInteractiveElement as _, StyleRefinement, Styled,
-    Window, div, prelude::FluentBuilder as _, px,
+    Window, accesskit::SortDirection, div, prelude::FluentBuilder as _, px,
 };
 
-use crate::{StyledExt as _, TestSupportExt as _};
+use crate::{StyledExt as _, TestSupportExt as _, a11y_disabled::A11yDisabledExt as _};
 
 /// One column track, shared by every row in a [`Table`].
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -206,6 +206,12 @@ impl TableRow {
         self
     }
 
+    /// Exposes application-owned row selection without adding a focus stop.
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.base = self.base.aria_selected(selected);
+        self
+    }
+
     fn render_row(
         self,
         columns: &[TableColumn],
@@ -256,6 +262,7 @@ pub struct TableCell {
     children: Vec<AnyElement>,
     row_header: bool,
     label: Option<SharedString>,
+    sort_direction: Option<SortDirection>,
 }
 
 impl TableCell {
@@ -266,6 +273,7 @@ impl TableCell {
             children: Vec::new(),
             row_header: false,
             label: None,
+            sort_direction: None,
         }
     }
 
@@ -277,6 +285,14 @@ impl TableCell {
     /// Marks a body or footer cell as a row header. Column-header rows take precedence.
     pub fn row_header(mut self, row_header: bool) -> Self {
         self.row_header = row_header;
+        self
+    }
+
+    /// Exposes the active sort direction on a column-header cell.
+    ///
+    /// `None` omits the property. Body and footer cells ignore this value.
+    pub fn sort_direction(mut self, direction: Option<SortDirection>) -> Self {
+        self.sort_direction = direction;
         self
     }
 
@@ -316,6 +332,7 @@ impl TableCell {
                 .refine_style(&self.style)
                 .children(self.children),
         )
+        .a11y_sort(self.sort_direction.filter(|_| header))
     }
 }
 
@@ -425,6 +442,46 @@ mod tests {
         });
     }
 
+    #[gpui::test]
+    fn selection_and_sort_direction_use_existing_native_nodes(cx: &mut TestAppContext) {
+        let window = cx.add_empty_window();
+        window.update(|_, _| {
+            for selected in [false, true] {
+                let row = TableRow::new("row")
+                    .selected(selected)
+                    .cell(TableCell::new("value"))
+                    .render_row(&[TableColumn::flex(1.)], 1, false)
+                    .into_element();
+                let mut node = accesskit::Node::new(Role::Row);
+                row.write_a11y_info(&mut node);
+                assert_eq!(node.is_selected(), Some(selected));
+                assert!(!node.supports_action(accesskit::Action::Focus));
+            }
+            for direction in [
+                None,
+                Some(SortDirection::Ascending),
+                Some(SortDirection::Descending),
+            ] {
+                for header in [false, true] {
+                    let cell = TableCell::new("heading")
+                        .sort_direction(direction)
+                        .render_cell(TableColumn::flex(1.), 0, 0, header)
+                        .into_element();
+                    let role = if header {
+                        Role::ColumnHeader
+                    } else {
+                        Role::Cell
+                    };
+                    let mut node = accesskit::Node::new(role);
+                    cell.write_a11y_info(&mut node);
+                    assert_eq!(cell.a11y_role(), Some(role));
+                    assert_eq!(node.sort_direction(), direction.filter(|_| header));
+                    assert!(!node.supports_action(accesskit::Action::Click));
+                }
+            }
+        });
+    }
+
     #[cfg(feature = "test-support")]
     #[gpui::test]
     fn shared_tracks_align_cells_and_keep_child_button_traversal(cx: &mut TestAppContext) {
@@ -461,13 +518,18 @@ mod tests {
                             ],
                         )
                         .w(px(450.))
-                        .header(TableRow::new("header").cells([
-                            TableCell::new("head-0").p_3().child("Code"),
-                            TableCell::new("head-1").p_3().child("Name"),
-                            TableCell::new("head-2").p_3().child("Action"),
-                        ]))
+                        .header(
+                            TableRow::new("header").cells([
+                                TableCell::new("head-0")
+                                    .sort_direction(Some(SortDirection::Ascending))
+                                    .p_3()
+                                    .child("Code"),
+                                TableCell::new("head-1").p_3().child("Name"),
+                                TableCell::new("head-2").p_3().child("Action"),
+                            ]),
+                        )
                         .row(
-                            TableRow::new("body-row").cells([
+                            TableRow::new("body-row").selected(true).cells([
                                 TableCell::new("body-0").p_1().child("AB12"),
                                 TableCell::new("body-1").p_1().child("A long session name"),
                                 TableCell::new("body-2").p_1().child(
@@ -522,6 +584,18 @@ mod tests {
                 let expected = [90., 120., 240.][index];
                 assert_eq!(body.bounds().size.width, px(expected));
             }
+            assert_eq!(
+                test_support::find(window, &[], &"head-0".into())
+                    .unwrap()
+                    .sort_direction(),
+                Some(SortDirection::Ascending),
+            );
+            assert_eq!(
+                test_support::find(window, &[], &"body-row".into())
+                    .unwrap()
+                    .selected(),
+                Some(true),
+            );
         });
         cx.simulate_keystrokes("tab");
         draw(cx);

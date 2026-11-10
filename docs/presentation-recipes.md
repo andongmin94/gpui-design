@@ -23,6 +23,16 @@ Use the matching Cargo dependencies in the README. The CLI does not change the
 consumer's manifest. It embeds the repository's current recipe source when built;
 there is no remote registry or update service.
 
+Keep the README's consumer feature declaration:
+
+```toml
+[features]
+test-support = ["gpui-design/test-support"]
+```
+
+Copied recipe tests are guarded by this consumer feature. Declaring it also makes
+their `cfg` values known to Rust; enable it to run the existing GPUI tests.
+
 Run `add` again with more names to extend the same directory. Existing recipe
 and palette edits are preserved. Generated `mod.rs` declarations and
 `recipes/.gpui-design` track the installed set; if those scaffolds were edited,
@@ -298,7 +308,7 @@ outside this recipe's scope.
 
 [`data_table.rs`](../crates/base/examples/recipes/data_table.rs) provides a working
 client-side text-table composition. It uses the existing native Input/Field,
-Table, ScrollArea, and Button, plus the InputGroup, EmptyState, and Pagination
+Table, ScrollArea, Checkbox, DropdownMenu, and Button, plus the InputGroup, EmptyState, and Pagination
 recipes. Columns and immutable rows belong to the consuming application.
 
 ```rust,ignore
@@ -347,18 +357,32 @@ the application even after filtering, sorting, or paging. Current and unavailabl
 rows have disabled action Buttons. The selected value remains in the application
 when its row is filtered out or appears on another page.
 
+Checkbox selection is independent of that current preset. The header checkbox
+selects only enabled rows on the displayed page and shows a mixed state for a
+partial selection. Selected stable IDs survive filtering, sorting, paging and
+unmounting; unavailable rows cannot be selected. `is_row_selected` and
+`filtered_selected_count` expose the selection. The footer counts selected rows
+within the current filter, including other pages. Application row actions do not
+change these checkboxes.
+
+Columns opens a native checked menu. Toggle any text column, including all of
+them; selection and action columns remain mounted. Hiding a column preserves
+filtering, sorting, selection and pagination; filtering still searches its text.
+`is_column_visible` exposes each source column's visibility.
+
 An empty result replaces the row viewport with EmptyState and Clear filter.
 Clearing restores the rows and query focus without applying a row action. With
-results, focus follows query → sort Buttons → enabled row actions → enabled page
-Buttons. Horizontal and vertical ScrollArea scrolling reveals focused controls;
+results, focus follows query → Columns → page checkbox → visible sort Buttons →
+enabled row checkboxes/actions → enabled page Buttons. Horizontal and vertical ScrollArea scrolling reveals focused controls;
 there is no grid-style arrow navigation. Query, sort, and page survive unmounting
 the view while its state entity is retained.
 
-Native Table indices describe the displayed page. Header Button names announce
-the current sorting description and next action; native sort-direction metadata
-is not supplied by the pinned Table/GPUI API. The columns are fixed-width text,
-with one application action column. Numeric/date ordering, custom cell renderers,
-multi-column sorting, multiple row selection, column hiding/reordering, mutable
+Native Table indices describe the displayed page. `TableRow::selected` exposes
+the checkbox selection. `TableCell::sort_direction` exposes the active native
+column-header direction; body/footer cells ignore it. Header Button names also
+announce the sorting description and next action. The columns are fixed-width text,
+with selection and application action columns. Numeric/date ordering, custom cell renderers,
+multi-column sorting, column reordering, mutable
 row sources, remote data, and virtualization are outside the current scope.
 Adapt the copied source when an application needs different data operations.
 
@@ -598,9 +622,22 @@ and focus handles. Compact continues to use its own horizontal TabList and
 TabPanel composition. Breadcrumb's Session settings action explicitly selects
 Preferences and focuses its navigation entry in either appearance.
 
-The recipe adds no routing, navigation history, disclosure state, nested groups,
-or separate selection model. Its application-owned layout uses the existing
-Sheet's scrolling body and modal focus containment.
+Use `.group("Workspace", ["preferences", "help"])` for named groups with native
+headings. Values must name existing items and occur in at most one group. Items
+outside groups appear first. Grouping changes presentation order, while item IDs
+and focus handles retain their source indices.
+
+Retain and observe `CollapsibleState::new(cx).default_open(true)` to add
+`.collapsible(&sidebar_disclosure)` or
+`.collapsible_group("Session", ["schedule", "presets"], &session_disclosure)`.
+The existing Collapsible owns expanded/disabled metadata, keyboard activation,
+active-only content and focus restoration when closure removes a focused entry.
+The disclosure trigger stays mounted. Closing navigation preserves the selected
+page; the application continues to own its separate Region. The catalogue's
+Project sidebar demonstrates whole and group closure, including narrow layout.
+
+The recipe adds no routing, navigation history, icon rail or separate selection
+model. Settings uses the existing Sheet's scrolling body and modal focus containment.
 
 ## Typography
 
