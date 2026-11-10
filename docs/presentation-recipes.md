@@ -1,6 +1,6 @@
 # Presentation recipes
 
-These nineteen recipes are reusable application source, used by the native
+These twenty recipes are reusable application source, used by the native
 [two-style example](../crates/base/examples/two_styles.rs). They compose GPUI
 layout with the existing controls and keep colors, spacing, and sizing in the
 consumer's `Palette` or application-supplied `Styled` values.
@@ -715,6 +715,60 @@ edit timestamp is not a send or delivery receipt. Closing settings retains the
 note and its metadata; there is no second note value, transcript, transport,
 streaming renderer, or timeline state.
 
+## Attachment
+
+[`attachment.rs`](../crates/base/examples/recipes/attachment.rs) presents a file's
+name, media type, and size as application-supplied text, with an optional existing
+action. It describes metadata; the content itself remains with the application.
+
+```rust,ignore
+Attachment::new(
+    "configuration-attachment",
+    "session-configuration.json",
+    "application/json",
+    format!("{} bytes (UTF-8)", configuration.len()),
+    palette,
+)
+.action(inspect_json_button)
+```
+
+The native Group's accessible name is the complete filename. Its description is
+the same `media_type · size_label` text shown below the filename. The visible
+filename and metadata children have no separate native role or name, so each
+value is exposed once through the group. Supplied action Buttons retain their
+own names and roles. The attachment frame adds no Tab stop, whole-row click,
+selection state, link destination, or live announcement.
+
+All three metadata values are supplied strings. The application chooses units,
+localization, and how to describe unavailable metadata; the recipe does not
+parse filenames, infer types, inspect files, format byte quantities, or validate
+the claimed size. Zero bytes can be displayed literally. An ordinary Group is
+used because metadata does not itself supply a document viewer or a file link.
+Unlike Item's generic title/description row, Attachment has explicit file
+metadata. Unlike Message's authored Comment and body, it identifies a separate
+content resource without claiming authorship or delivery.
+
+The frame fills a bounded parent. Filename and metadata wrap without truncation,
+and the frame grows vertically; an action sits below the text so it does not
+compete with the filename's width. `Styled` customizes the frame and inherited
+text presentation. Long collections belong in the application's existing
+ScrollArea. `.action(...)` accepts one element, including an existing Button or
+an application-owned container whose controls fit the available width. Button
+continues to own enabled state, pointer/Enter/Space activation, focus, and
+Tab/Shift+Tab traversal. The application owns focus policy if it removes a
+focused action; Attachment has no new focus controller.
+
+Both appearances use Attachment in Help's State ownership panel above the
+existing CodeBlock. The consumer serializes the current settings once, uses the
+same string for the code and metadata, and displays `session-configuration.json`,
+`application/json`, and its UTF-8 byte count. Editing a name or note changes that
+metadata with the displayed JSON. Inspect JSON focuses the existing code viewport
+and uses its existing scrolling and keyboard behavior. The explanatory text
+identifies this content as in memory and not saved. No file is created or opened,
+and no upload or download occurs. The existing CodeBlock Copy action remains
+independent; Attachment adds no clipboard operation, preview renderer, progress
+state, transport, or storage mechanism.
+
 ## Verification scope
 
 The existing composition suite runs the same recipe modules as the native
@@ -803,3 +857,13 @@ local edit metadata, empty-state transitions, Edit note focus, and existing
 Sheet scrolling and dismissal. These are headless metadata, layout, and input
 checks; native screen-reader speech and desktop visual validation remain
 separate.
+
+Attachment coverage checks the full filename name and combined metadata
+description without duplicate child semantics, long Korean and English filenames,
+narrow-width wrapping, and both appearances. Optional-action checks preserve
+Button naming, keyboard and pointer activation, disabled behavior, and ordinary
+focus traversal. The Help consumer checks that the byte count follows the
+current UTF-8 JSON, Inspect JSON reaches the existing code focus target, and
+CodeBlock keeps its complete copy and scrolling behavior. Clipboard assertions
+remain limited to GPUI's test clipboard; native file access, screen-reader speech,
+and desktop visual observations are not established by these checks.

@@ -4,6 +4,7 @@
 
 mod alert;
 mod aspect_ratio;
+mod attachment;
 mod avatar;
 mod badge;
 mod button_group;
@@ -24,6 +25,7 @@ mod typography;
 
 pub(crate) use alert::Alert;
 pub(crate) use aspect_ratio::AspectRatio;
+pub(crate) use attachment::Attachment;
 pub(crate) use avatar::Avatar;
 pub(crate) use badge::Badge;
 pub(crate) use button_group::ButtonGroup;

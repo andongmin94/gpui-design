@@ -6,9 +6,9 @@ Its main catalogue contains **66 entries**, each listed once below. The separate
 AI Elements catalogue is outside this comparison; conversation components already
 in the main catalogue remain included.
 
-GPUI Design currently documents **31 public library families and nineteen copyable
-presentation/composition recipes**, covering **50 catalogue entries** within the scopes below.
-This is not 50/66 feature parity: a family can exist with a deliberately limited
+GPUI Design currently documents **31 public library families and twenty copyable
+presentation/composition recipes**, covering **51 catalogue entries** within the scopes below.
+This is not 51/66 feature parity: a family can exist with a deliberately limited
 contract, and several shadcn entries describe combinations of other parts.
 These counts do not measure performance, accessibility conformance, or completion
 of native desktop validation.
@@ -111,7 +111,7 @@ popup, focus, and scrolling machinery.
 
 | Catalogue entry | Status | Current scope or gap |
 | --- | --- | --- |
-| Attachment | Pending | File/media metadata, progress, and actions have no reusable attachment composition. |
+| Attachment | Recipe | Static native Group named by its full filename, with a visible media-type/size description and optional existing actions. Help derives in-memory JSON metadata from the same string as CodeBlock; Inspect JSON focuses that code viewport. Formatting and action behavior belong to the application. No file access, upload/download, progress, preview renderer, or container focus stop. |
 | Bubble | Pending | Conversation surfaces, grouping, and reactions have no published composition. |
 | Calendar | Available | Single-date selection, separate focused date, six Monday-first weeks, month/year navigation, and inclusive date bounds. Range/multiple selection, arbitrary disabled-day rules, and locale/week-start configuration are not included. |
 | Carousel | Pending | Coordinated item navigation and viewport behavior are not supplied. |
@@ -132,12 +132,12 @@ popup, focus, and scrolling machinery.
 1. Extend data-table operations only where an application needs them, including
    typed ordering or row selection. Preserve shared focus and activation behavior
    instead of duplicating those public foundations.
-2. Extend the source-owned recipe set alongside working flows. Attachment is a
-   candidate for read-only file metadata and existing Button actions alongside
-   Message. Define a real consumer and the ownership of file access before
-   implementing it; uploads, transport, progress tracking, and transcript
-   anchoring remain separate capabilities. This candidate is recorded for future
-   work.
+2. Extend the source-owned recipe set alongside working flows. Trace is a
+   candidate for an application-supplied summary with read-only source or activity
+   details, composing the existing Collapsible lifecycle. Define a truthful
+   consumer before implementing it; execution history, streaming, transport, and
+   transcript anchoring remain separate capabilities. This candidate is recorded
+   for future work.
 3. Extend menu composition where real screens need it, starting with checked
    commands and submenus. Continue composing panes with Resizable/ScrollArea;
    virtualization and transcript anchoring remain separate work.

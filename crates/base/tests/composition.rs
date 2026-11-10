@@ -1169,7 +1169,8 @@ fn configuration_code_copies_current_values_and_contains_nested_scrolling(cx: &m
             cx.write_to_clipboard(gpui::ClipboardItem::new_string("test sentinel".into()));
         });
         draw(cx);
-        cx.simulate_keystrokes("tab");
+        // The attachment's Inspect action now precedes the existing Copy action.
+        cx.simulate_keystrokes("tab tab");
         draw(cx);
         let first_code = cx.update(|window, cx| {
             let copy = test_support::find(window, &[], &copy_id).unwrap();
@@ -1348,6 +1349,279 @@ fn configuration_code_copies_current_values_and_contains_nested_scrolling(cx: &m
             assert!(demo.input.focus_handle(cx).is_focused(window));
             assert_eq!(demo.tabs.read(cx).selected_index(), Some(2));
             assert_eq!(demo.accordion.read(cx).open_index(), Some(2));
+        });
+    }
+}
+
+#[gpui::test]
+fn configuration_attachment_tracks_utf8_content_and_keyboard_inspection(cx: &mut TestAppContext) {
+    let attachment_id = gpui::ElementId::from("configuration-attachment");
+    let code_id = (gpui::ElementId::from("session-configuration"), "code").into();
+    let copy_id = (gpui::ElementId::from("session-configuration"), "copy").into();
+    let viewport_id = (gpui::ElementId::from("session-settings"), "body").into();
+    let assert_metadata = |window: &gpui::Window, code: &str| {
+        let attachment = test_support::find(window, &[], &attachment_id).unwrap();
+        let description = format!("application/json · {} bytes (UTF-8)", code.len());
+        assert_eq!(attachment.role(), Some(Role::Group));
+        assert_eq!(attachment.label(), Some("session-configuration.json"));
+        assert_eq!(attachment.description(), Some(description.as_str()));
+        assert_eq!(attachment.focused(), None);
+        assert_eq!(
+            test_support::find(window, &[], &code_id).unwrap().label(),
+            Some(code)
+        );
+        assert!(
+            code.len() > code.chars().count(),
+            "metadata counts UTF-8 bytes, not characters"
+        );
+        assert!(
+            code.contains('\n'),
+            "the size includes pretty-printed JSON line breaks"
+        );
+        let descendants = test_support::snapshots(window);
+        assert_eq!(
+            descendants
+                .iter()
+                .filter(|part| {
+                    part.path().contains(&attachment_id)
+                        && part.label() == Some("session-configuration.json")
+                })
+                .count(),
+            1,
+            "the filename is named once"
+        );
+        for part in descendants.iter().filter(|part| {
+            part.path().contains(&attachment_id) && part.role() != Some(Role::Button)
+        }) {
+            assert_eq!(
+                part.focused(),
+                None,
+                "static attachment metadata has no focus stop"
+            );
+            if part.path().last() != Some(&attachment_id) {
+                assert_eq!(part.role(), None);
+                assert_eq!(part.label(), None);
+                assert_eq!(part.description(), None);
+            }
+        }
+        attachment.bounds()
+    };
+
+    // Different palette padding must not clip the filename or its metadata.
+    for appearance in [Appearance::Compact, Appearance::Settings] {
+        let (cx, demo) = harness(cx, appearance);
+        cx.simulate_resize(gpui::size(px(320.), px(480.)));
+        draw(cx);
+        open_dialog(cx, &demo);
+        cx.update(|window, cx| {
+            let input = demo.read(cx).input.clone();
+            input.update(cx, |state, cx| state.set_value("Draft 초안 🔍", window, cx));
+            let notes = demo.read(cx).notes.clone();
+            notes.update(cx, |state, cx| {
+                state.set_value("원본 노트📝\nBefore editing.\n", window, cx)
+            });
+            let help = demo.read(cx).tabs.read(cx).tab_focus_handle(2).clone();
+            help.focus(window, cx);
+        });
+        draw(cx);
+        cx.run_until_parked();
+        draw(cx);
+        cx.update(|window, cx| {
+            let sections = demo.read(cx).accordion.clone();
+            sections.update(cx, |state, cx| state.toggle(2, window, cx));
+        });
+        draw(cx);
+        let original = cx.update(|_, cx| demo.read(cx).configuration_code(cx));
+        for width in [320., 280.] {
+            cx.simulate_resize(gpui::size(px(width), px(480.)));
+            draw(cx);
+            draw(cx);
+            let (position, delta) = cx.update(|window, _| {
+                let viewport = test_support::find(window, &[], &viewport_id)
+                    .unwrap()
+                    .bounds();
+                let attachment = assert_metadata(window, original.as_ref());
+                (
+                    point(viewport.left() + px(2.), viewport.center().y),
+                    viewport.center().y - attachment.center().y,
+                )
+            });
+            cx.simulate_event(ScrollEvent {
+                position,
+                delta: ScrollDelta::Pixels(point(px(0.), delta)),
+                ..Default::default()
+            });
+            draw(cx);
+            cx.update(|window, cx| {
+                let viewport = test_support::find(window, &[], &viewport_id)
+                    .unwrap()
+                    .bounds();
+                let attachment = assert_metadata(window, original.as_ref());
+                assert!(attachment.left() >= viewport.left());
+                assert!(attachment.right() <= viewport.right() + px(1.));
+                let texts = test_support::texts(window);
+                let texts: Vec<_> = texts
+                    .iter()
+                    .filter(|text| text.path().contains(&attachment_id))
+                    .collect();
+                assert!(
+                    texts
+                        .iter()
+                        .any(|text| text.text() == "session-configuration.json")
+                );
+                assert!(texts.iter().any(|text| text.text()
+                    == format!("application/json · {} bytes (UTF-8)", original.len())));
+                for text in texts {
+                    assert!(text.visible());
+                    assert!(text.bounds().left() >= attachment.left());
+                    assert!(text.bounds().right() <= attachment.right() + px(1.));
+                }
+                assert_eq!(demo.read(cx).fields_scroll.offset().x, px(0.));
+                assert!(
+                    demo.read(cx)
+                        .tabs
+                        .read(cx)
+                        .tab_focus_handle(2)
+                        .is_focused(window)
+                );
+            });
+        }
+
+        if matches!(appearance, Appearance::Compact) {
+            cx.simulate_keystrokes("escape");
+            draw(cx);
+            continue;
+        }
+
+        // One real edit flow proves the attachment follows current form values;
+        // its Inspect action uses the existing CodeBlock without creating a file.
+        cx.update(|window, cx| demo.read(cx).input.focus_handle(cx).focus(window, cx));
+        draw(cx);
+        let select_all = if cfg!(target_os = "macos") {
+            "cmd-a"
+        } else {
+            "ctrl-a"
+        };
+        cx.simulate_keystrokes(select_all);
+        let name = "다음 세션 🎯 Updated configuration";
+        cx.simulate_input(name);
+        cx.update(|window, cx| {
+            let preferences = demo.read(cx).tabs.read(cx).tab_focus_handle(0).clone();
+            preferences.focus(window, cx);
+        });
+        draw(cx);
+        cx.run_until_parked();
+        draw(cx);
+        cx.update(|window, cx| demo.read(cx).notes.focus_handle(cx).focus(window, cx));
+        draw(cx);
+        cx.simulate_keystrokes(select_all);
+        let notes = "첫 줄 🚀\nEnglish body with a quoted \"value\".\n\n마지막 줄\n";
+        cx.simulate_input(notes);
+        cx.update(|window, cx| {
+            let help = demo.read(cx).tabs.read(cx).tab_focus_handle(2).clone();
+            help.focus(window, cx);
+        });
+        draw(cx);
+        cx.run_until_parked();
+        draw(cx);
+        let current = cx.update(|window, cx| {
+            let code = demo.read(cx).configuration_code(cx);
+            assert_ne!(code, original);
+            let value: serde_json::Value = serde_json::from_str(code.as_ref()).unwrap();
+            assert_eq!(value["session_name"], name);
+            assert_eq!(value["notes"], notes);
+            assert_metadata(window, code.as_ref());
+            let panel = demo
+                .read(cx)
+                .accordion
+                .read(cx)
+                .panel_focus_handle(2)
+                .clone();
+            panel.focus(window, cx);
+            code
+        });
+        draw(cx);
+        cx.simulate_keystrokes("tab");
+        draw(cx);
+        cx.update(|window, _| {
+            let inspect = test_support::find(window, &[], &"inspect-configuration".into()).unwrap();
+            assert_eq!(inspect.role(), Some(Role::Button));
+            assert_eq!(inspect.label(), Some("Inspect session configuration JSON"));
+            assert_eq!(inspect.focused(), Some(true));
+        });
+        cx.simulate_keystrokes("tab");
+        draw(cx);
+        cx.update(|window, _| {
+            assert_eq!(
+                test_support::find(window, &[], &copy_id).unwrap().focused(),
+                Some(true)
+            )
+        });
+        cx.simulate_keystrokes("tab");
+        draw(cx);
+        cx.update(|window, cx| assert!(demo.read(cx).configuration_focus.is_focused(window)));
+        cx.simulate_keystrokes("shift-tab");
+        draw(cx);
+        cx.update(|window, _| {
+            assert_eq!(
+                test_support::find(window, &[], &copy_id).unwrap().focused(),
+                Some(true)
+            )
+        });
+        cx.simulate_keystrokes("shift-tab");
+        draw(cx);
+        cx.update(|window, _| {
+            assert_eq!(
+                test_support::find(window, &[], &"inspect-configuration".into())
+                    .unwrap()
+                    .focused(),
+                Some(true)
+            )
+        });
+        for key in ["enter", "space"] {
+            activate_key(cx, key);
+            draw(cx);
+            cx.update(|window, cx| {
+                let viewport = test_support::find(window, &[], &viewport_id)
+                    .unwrap()
+                    .bounds();
+                let code = test_support::find(window, &[], &code_id).unwrap();
+                assert!(demo.read(cx).configuration_focus.is_focused(window));
+                assert_eq!(code.role(), Some(Role::Code));
+                assert_eq!(code.label(), Some(current.as_ref()));
+                assert!(code.visible());
+                assert!(code.bounds().top() >= viewport.top() - px(1.));
+                assert!(code.bounds().bottom() <= viewport.bottom() + px(1.));
+                assert!(code.bounds().left() >= viewport.left());
+                assert!(code.bounds().right() <= viewport.right() + px(1.));
+                assert_metadata(window, current.as_ref());
+            });
+            if key == "enter" {
+                cx.simulate_keystrokes("shift-tab shift-tab");
+                draw(cx);
+            }
+        }
+        cx.simulate_keystrokes("escape");
+        draw(cx);
+        cx.update(|window, cx| {
+            assert!(!demo.read(cx).dialog.read(cx).is_open());
+            assert!(
+                demo.read(cx)
+                    .edit_hint
+                    .read(cx)
+                    .focus_handle()
+                    .is_focused(window)
+            );
+        });
+        open_dialog(cx, &demo);
+        cx.update(|window, cx| {
+            let demo = demo.read(cx);
+            assert_eq!(demo.input.read(cx).value(), name);
+            assert_eq!(demo.notes.read(cx).value(), notes);
+            assert_eq!(demo.configuration_code(cx), current);
+            assert_eq!(demo.tabs.read(cx).selected_index(), Some(2));
+            assert_eq!(demo.accordion.read(cx).open_index(), Some(2));
+            assert_metadata(window, current.as_ref());
         });
     }
 }

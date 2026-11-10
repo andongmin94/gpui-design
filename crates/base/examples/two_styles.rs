@@ -30,9 +30,9 @@ use gpui_design::{
 #[path = "recipes/mod.rs"]
 mod recipes;
 use recipes::{
-    Alert, AspectRatio, Avatar, Badge, ButtonGroup, Card, CodeBlock, DataTable, DataTableColumn,
-    DataTableRow, DataTableState, EmptyState, Heading, InlineCode, InputGroup, Item, Kbd, KbdGroup,
-    Marker, Message, Paragraph, Sheet, Skeleton, Spinner,
+    Alert, AspectRatio, Attachment, Avatar, Badge, ButtonGroup, Card, CodeBlock, DataTable,
+    DataTableColumn, DataTableRow, DataTableState, EmptyState, Heading, InlineCode, InputGroup,
+    Item, Kbd, KbdGroup, Marker, Message, Paragraph, Sheet, Skeleton, Spinner,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -1119,15 +1119,38 @@ impl Demo {
     }
 
     fn render_configuration(&self, palette: Palette, cx: &Context<Self>) -> gpui::AnyElement {
-        CodeBlock::new(
-            "session-configuration",
-            self.configuration_code(cx),
-            "Session configuration",
-            &self.configuration_scroll,
-            &self.configuration_focus,
+        let code = self.configuration_code(cx);
+        let focus = self.configuration_focus.clone();
+        let attachment = Attachment::new(
+            "configuration-attachment",
+            "session-configuration.json",
+            "application/json",
+            format!("{} bytes (UTF-8)", code.len()),
             palette,
         )
-        .into_any_element()
+        .action(Self::button(
+            palette,
+            Button::new("inspect-configuration")
+                .accessibility_label("Inspect session configuration JSON")
+                .on_click(move |_, window, cx| focus.focus(window, cx))
+                .child("Inspect JSON"),
+        ));
+        div()
+            .w_full()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .gap(palette.gap)
+            .child(attachment)
+            .child(CodeBlock::new(
+                "session-configuration",
+                code,
+                "Session configuration",
+                &self.configuration_scroll,
+                &self.configuration_focus,
+                palette,
+            ))
+            .into_any_element()
     }
 
     fn render_help_sections(
@@ -1204,7 +1227,7 @@ impl Demo {
                         )
                         .child(
                             Paragraph::new("help-configuration-description", palette)
-                                .text("This read-only JSON reflects the current session settings. Copy the complete configuration or scroll to inspect it."),
+                                .text("This JSON is generated in memory from the current settings and has not been saved to a file. The attachment describes the JSON below; inspect it or copy its complete text."),
                         )
                         .child(configuration)
                         .child(

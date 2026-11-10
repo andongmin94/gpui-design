@@ -8,7 +8,7 @@ Headless separates control behavior from application-owned presentation; the
 examples render native GPUI windows.
 
 This is an early foundation for an independent component ecosystem. It currently
-includes 31 public library families and nineteen copyable presentation recipes. An
+includes 31 public library families and twenty copyable presentation recipes. An
 executable example gives the same behavior two visual treatments. The source is
 maintained in this repository, with GPUI kept as an exactly pinned rendering
 dependency.
@@ -82,12 +82,13 @@ These types live in the example, outside the `gpui_design` crate exports.
 | **CodeBlock** | Read-only multiline code, an exact full-text Copy action, and bounded two-axis scrolling with keyboard access | A JSON snapshot of the retained session settings in Help |
 | **Marker** | One named date/status label between decorative separators, with wrapping text and no focus stop | The currently selected Calendar date above Schedule's notes and recording plan |
 | **Message** | Read-only comment with author/time metadata, a wrapping paragraph, and optional existing actions | Schedule's current session note, with Edit note returning to the shared Textarea |
+| **Attachment** | Named file-metadata group with a filename, supplied media type and size, and optional existing actions | The current configuration JSON's in-memory metadata, with Inspect JSON focusing the existing CodeBlock |
 
 The breadth target is the range of screens and interactions supported by
 shadcn/ui. The [component coverage map](docs/component-coverage.md) compares all
 66 entries in its current main catalogue with the actual public scope here.
 It distinguishes behavior, source-owned presentation recipes, and larger
-compositions. The 31 library families and nineteen recipes cover 50 catalogue entries
+compositions. The 31 library families and twenty recipes cover 51 catalogue entries
 within defined scopes. The map records each entry's limits and the work still
 needed; this count does not establish full shadcn/ui feature parity.
 
@@ -130,6 +131,10 @@ summary's context-menu hint, without registering shortcuts.
 The State ownership panel uses Typography for its explanations and CodeBlock for
 a JSON snapshot of the current session settings. Copy writes that complete
 snapshot through GPUI's clipboard API; the preview does not edit or apply it.
+Attachment describes the same string as `session-configuration.json`, with
+`application/json` and its current UTF-8 byte count. Inspect JSON focuses the
+existing code viewport. The example identifies the content as in memory and not
+saved; it does not create, open, upload, or download a file.
 CodeBlock bounds long lines and bodies with the existing ScrollArea and keeps
 code scrolling separate from the surrounding Sheet body.
 A slider on the summary card drives a progress preview, using the same retained
@@ -276,7 +281,7 @@ The GPUI snapshot family is pinned to **`=0.3.11`**. Update those pins and
 | `crates/base/src/` | The `gpui-design` library and its behavior-level tests |
 | `crates/base/tests/` | Integration tests using the public API |
 | `crates/base/examples/two_styles.rs` | Native example and application-owned styles |
-| `crates/base/examples/recipes/` | Nineteen copyable presentation/composition recipes, including messages, markers, code blocks, typography, sheets, media frames, avatars, data tables, loading indicators, and keycaps |
+| `crates/base/examples/recipes/` | Twenty copyable presentation/composition recipes, including attachments, messages, markers, code blocks, typography, sheets, media frames, avatars, data tables, loading indicators, and keycaps |
 | `crates/base/examples/assets/` | Embedded example artwork used by the preset preview and its image-decoding regression |
 | `docs/form-controls.md` | Form control usage and interaction contracts |
 | `docs/navigation-overlays.md` | Breadcrumb, Tabs, Accordion, command menus, and composed focus behavior |
