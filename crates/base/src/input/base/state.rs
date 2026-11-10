@@ -3296,14 +3296,13 @@ impl<M: InputModeKind> InputBaseState<M> {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(mut new_text) = clipboard.text().filter(|text| !text.is_empty()) else {
+        let Some(new_text) = clipboard.text().filter(|text| !text.is_empty()) else {
             return;
         };
         // A paste is one atomic edit, never part of a typing run.
         self.undo_manager.set_pending_intent(EditIntent::Atomic);
 
         if !self.is_multi_line() {
-            new_text = new_text.replace('\n', "");
             self.replace_text_in_range_silent(None, &new_text, window, cx);
             self.scroll_to(self.cursor(), None, cx);
             return;
@@ -3314,7 +3313,12 @@ impl<M: InputModeKind> InputBaseState<M> {
         if !self.selections.is_single() {
             self.selections.merge_overlapping();
         }
-        let lines: Vec<String> = new_text.split('\n').map(|s| s.to_string()).collect();
+        // Split LF and CRLF separators without leaving carriage returns at
+        // individual cursors. Keep a trailing empty line as a paste target.
+        let lines: Vec<_> = new_text
+            .lines()
+            .chain(new_text.ends_with('\n').then_some(""))
+            .collect();
         let count = self.selections.len();
         if count > 1 && lines.len() == count {
             let mut selections: Vec<CursorSelection> = self.selections.iter().copied().collect();
@@ -3322,7 +3326,7 @@ impl<M: InputModeKind> InputBaseState<M> {
             let edits: Vec<(Range<usize>, String)> = selections
                 .iter()
                 .zip(lines)
-                .map(|(sel, line)| (sel.start..sel.end, line))
+                .map(|(sel, line)| (sel.start..sel.end, line.to_owned()))
                 .collect();
             self.replace_text_in_ranges(&edits, window, cx);
         } else {
@@ -12440,17 +12444,29 @@ mod tests {
         let mut cx = VisualTestContext::from_window(view.window_handle.into(), cx);
         let input = view.input;
 
-        setup_cursors(&mut cx, &input, "|1\n|2\n|3");
-        cx.update(|_, cx| {
-            cx.write_to_clipboard(ClipboardItem::new_string("x\ny\nz".to_string()));
-        });
-        cx.update(|window, cx| {
-            input.update(cx, |state, cx| {
-                state.paste(&Paste, window, cx);
+        for (clipboard, expected) in [
+            ("x\ny\nz", "x|1\ny|2\nz|3"),
+            ("x\r\ny\r\nz", "x|1\ny|2\nz|3"),
+            ("x\ny\nz\r", "x|1\ny|2\nz\r|3"),
+            ("x\ny\n", "x|1\ny|2\n|3"),
+            ("x\r\ny\r\n", "x|1\ny|2\n|3"),
+        ] {
+            setup_cursors(&mut cx, &input, "|1\n|2\n|3");
+            cx.update(|window, cx| {
+                cx.write_to_clipboard(ClipboardItem::new_string(clipboard.to_string()));
+                input.update(cx, |state, cx| state.paste(&Paste, window, cx));
             });
-        });
-        // One clipboard line per cursor.
-        assert_cursors(&mut cx, &input, "x|1\ny|2\nz|3");
+            // Line separators are not inserted into the destination lines.
+            assert_cursors(&mut cx, &input, expected);
+            cx.update(|window, cx| {
+                input.update(cx, |state, cx| state.undo(&Undo, window, cx));
+            });
+            assert_cursors(&mut cx, &input, "|1\n|2\n|3");
+            cx.update(|window, cx| {
+                input.update(cx, |state, cx| state.redo(&Redo, window, cx));
+            });
+            assert_cursors(&mut cx, &input, expected);
+        }
     }
 
     #[gpui::test]

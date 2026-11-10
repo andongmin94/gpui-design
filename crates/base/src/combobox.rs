@@ -67,9 +67,12 @@ impl ComboboxState {
                     state.show_results(window, cx);
                 }
                 InputEvent::Blur => {
-                    // Input reports blur while the focus tree is being drawn.
-                    cx.defer_in(window, |state, window, cx| {
-                        if !window.is_window_active() || !state.focus.is_focused(window) {
+                    // A detached input can report blur while its retained handle
+                    // still owns focus. Discard that draft after drawing too.
+                    let detached = state.focus.is_focused(window);
+                    cx.defer_in(window, move |state, window, cx| {
+                        if detached || !window.is_window_active() || !state.focus.is_focused(window)
+                        {
                             state.close(window, cx);
                         }
                     });
@@ -196,10 +199,12 @@ impl ComboboxState {
         if self.open || self.disabled || self.is_composing(window, cx) {
             return;
         }
-        let selected = self.selected;
+        let highlighted = self
+            .selected
+            .or_else(|| self.items(cx).iter().position(|item| !item.is_disabled()));
         self.search.update(cx, |search, cx| {
             search.set_query("", window, cx);
-            if let Some(index) = selected {
+            if let Some(index) = highlighted {
                 search.highlight(index, window, cx);
             }
         });
@@ -600,6 +605,7 @@ mod tests {
 
     use gpui::{
         KeyDownEvent, KeyUpEvent, Keystroke, Modifiers, Render, TestAppContext, VisualTestContext,
+        prelude::FluentBuilder as _,
     };
 
     use super::*;
@@ -607,6 +613,7 @@ mod tests {
 
     struct Harness {
         combo: Entity<ComboboxState>,
+        shown: bool,
         after: FocusHandle,
         outer_cancels: Rc<Cell<usize>>,
         _observation: Subscription,
@@ -621,22 +628,26 @@ mod tests {
                 .flex()
                 .flex_col()
                 .on_action(move |_: &Escape, _, _| cancels.set(cancels.get() + 1))
-                .child(
-                    Combobox::new("preset", &self.combo)
-                        .input(|input| input.accessibility_label("Preset").w_full().h(px(32.)))
-                        .content(
-                            ComboboxList::new("preset-results", &self.combo)
-                                .accessibility_label("Presets")
-                                .w(px(320.))
-                                .max_h(px(160.))
-                                .children(state.visible_indices(cx).iter().map(|&index| {
-                                    ComboboxOption::new(&self.combo, index)
-                                        .debug_selector(move || format!("choice-{index}").into())
-                                        .h(px(32.))
-                                        .child(state.items(cx)[index].label().clone())
-                                })),
-                        ),
-                )
+                .when(self.shown, |this| {
+                    this.child(
+                        Combobox::new("preset", &self.combo)
+                            .input(|input| input.accessibility_label("Preset").w_full().h(px(32.)))
+                            .content(
+                                ComboboxList::new("preset-results", &self.combo)
+                                    .accessibility_label("Presets")
+                                    .w(px(320.))
+                                    .max_h(px(160.))
+                                    .children(state.visible_indices(cx).iter().map(|&index| {
+                                        ComboboxOption::new(&self.combo, index)
+                                            .debug_selector(move || {
+                                                format!("choice-{index}").into()
+                                            })
+                                            .h(px(32.))
+                                            .child(state.items(cx)[index].label().clone())
+                                    })),
+                            ),
+                    )
+                })
                 .child(
                     Button::new("after")
                         .track_focus(&self.after)
@@ -672,6 +683,7 @@ mod tests {
                 let observation = cx.observe(&combo, |_, _, cx| cx.notify());
                 Harness {
                     combo,
+                    shown: true,
                     after: cx.focus_handle(),
                     outer_cancels: Rc::new(Cell::new(0)),
                     _observation: observation,
@@ -796,6 +808,20 @@ mod tests {
                 assert_eq!(input.value(), Some("High quality"));
             }
         });
+        cx.update(|window, cx| {
+            view.read(cx).combo.clone().update(cx, |state, cx| {
+                state.set_selected_value(None, window, cx);
+            });
+        });
+        press(cx, "down");
+        press(cx, "down");
+        press(cx, "escape");
+        press(cx, "down");
+        cx.update(|_, cx| {
+            let state = view.read(cx).combo.read(cx);
+            assert_eq!(state.selected_index(), None);
+            assert_eq!(state.highlighted_index(cx), Some(0));
+        });
     }
 
     #[gpui::test]
@@ -859,5 +885,23 @@ mod tests {
             });
         });
         assert_eq!(changes.borrow().len(), 1);
+        cx.update(|window, cx| {
+            view.read(cx).combo.clone().update(cx, |state, cx| {
+                state.set_disabled(false, window, cx);
+                state.set_query("hq", window, cx);
+            });
+        });
+        draw(cx);
+        view.update(cx, |view, cx| {
+            view.shown = false;
+            cx.notify();
+        });
+        draw(cx);
+        cx.update(|_, cx| {
+            let state = view.read(cx).combo.read(cx);
+            assert!(!state.is_open());
+            assert_eq!(state.input().read(cx).value(), "Presentation");
+            assert!(!GlobalState::is_in_deferred_context(cx));
+        });
     }
 }

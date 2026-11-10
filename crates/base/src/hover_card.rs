@@ -308,44 +308,50 @@ impl Styled for HoverCard {
 impl RenderOnce for HoverCard {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let weak_state = self.state.downgrade();
-        let mount =
-            window.use_keyed_state((self.id.clone(), "hover-card-mount"), cx, |window, cx| {
-                let _ = weak_state.update(cx, |state, _| state.mounted = true);
-                let visible = Rc::new(Cell::new(false));
-                let escape_visible = visible.clone();
-                let release_visible = visible.clone();
-                let release_state = weak_state.clone();
-                let owner_window = window.window_handle();
-                let keys = cx.intercept_keystrokes(move |event, window, cx| {
-                    if window.window_handle() != owner_window {
-                        return;
-                    }
-                    let _ = weak_state.update(cx, |state, cx| match event.keystroke.key.as_str() {
-                        "escape" if state.open || state.open_task.is_some() => {
-                            let consume = state.open
-                                && escape_visible.get()
-                                && state.focus_when_open == window.focused(cx);
-                            state.close(window, cx);
-                            if consume {
-                                cx.stop_propagation();
-                            }
+        let mount = window.with_element_namespace(self.id.clone(), |window| {
+            window.use_keyed_state(
+                ("hover-card-mount", self.state.entity_id()),
+                cx,
+                |window, cx| {
+                    let _ = weak_state.update(cx, |state, _| state.mounted = true);
+                    let visible = Rc::new(Cell::new(false));
+                    let escape_visible = visible.clone();
+                    let release_visible = visible.clone();
+                    let release_state = weak_state.clone();
+                    let owner_window = window.window_handle();
+                    let keys = cx.intercept_keystrokes(move |event, window, cx| {
+                        if window.window_handle() != owner_window {
+                            return;
                         }
-                        "enter" | "space" if state.focus.is_focused(window) => {
-                            state.close(window, cx);
-                        }
-                        _ => {}
+                        let _ =
+                            weak_state.update(cx, |state, cx| match event.keystroke.key.as_str() {
+                                "escape" if state.open || state.open_task.is_some() => {
+                                    let consume = state.open
+                                        && escape_visible.get()
+                                        && state.focus_when_open == window.focused(cx);
+                                    state.close(window, cx);
+                                    if consume {
+                                        cx.stop_propagation();
+                                    }
+                                }
+                                "enter" | "space" if state.focus.is_focused(window) => {
+                                    state.close(window, cx);
+                                }
+                                _ => {}
+                            });
                     });
-                });
-                let release = cx.on_release(move |_, cx| {
-                    release_visible.set(false);
-                    let _ = release_state.update(cx, |state, cx| state.unmount(cx));
-                });
-                HoverCardMount {
-                    visible,
-                    _keys: keys,
-                    _release: release,
-                }
-            });
+                    let release = cx.on_release(move |_, cx| {
+                        release_visible.set(false);
+                        let _ = release_state.update(cx, |state, cx| state.unmount(cx));
+                    });
+                    HoverCardMount {
+                        visible,
+                        _keys: keys,
+                        _release: release,
+                    }
+                },
+            )
+        });
         let visible = mount.read(cx).visible.clone();
         visible.set(false);
         if self.state.read(cx).open && self.state.read(cx).focus_when_open != window.focused(cx) {
@@ -738,6 +744,33 @@ mod tests {
         cx.update(|window, cx| {
             let view = view.read(cx);
             assert!(view.before.is_focused(window));
+            assert!(!view.state.read(cx).is_open());
+            assert_eq!(view.escapes.get(), 2);
+        });
+
+        // Replacing a controller at the same UI position transfers the mount
+        // and its key interception to the newly supplied state.
+        let previous = view.read_with(cx, |view, _| view.state.clone());
+        cx.update(|window, cx| {
+            view.update(cx, |view, cx| {
+                view.state = cx.new(|cx| HoverCardState::new(&view.trigger, window, cx));
+                view._observation = cx.observe(&view.state, |_, _, cx| cx.notify());
+                cx.notify();
+            });
+        });
+        settle(cx);
+        cx.simulate_keystrokes("tab");
+        settle(cx);
+        cx.update(|window, cx| {
+            let view = view.read(cx);
+            assert!(view.trigger.is_focused(window));
+            assert!(view.state.read(cx).is_open());
+            assert!(!previous.read(cx).is_open());
+        });
+        cx.simulate_keystrokes("escape");
+        settle(cx);
+        cx.update(|_, cx| {
+            let view = view.read(cx);
             assert!(!view.state.read(cx).is_open());
             assert_eq!(view.escapes.get(), 2);
         });

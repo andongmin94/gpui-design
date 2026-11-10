@@ -391,36 +391,36 @@ impl RenderOnce for ResizableHandle {
                     .cursor_col_resize()
                     .aria_orientation(Orientation::Vertical)
                     .key_context("ResizableHandle axis=horizontal")
+                    .on_action(
+                        window.listener_for(&self.state, |state, _: &SelectLeft, window, cx| {
+                            state.nudge(-STEP, window, cx)
+                        }),
+                    )
+                    .on_action(
+                        window.listener_for(&self.state, |state, _: &SelectRight, window, cx| {
+                            state.nudge(STEP, window, cx)
+                        }),
+                    )
             })
             .when(axis == Axis::Vertical, |this| {
                 this.my_0()
                     .cursor_row_resize()
                     .aria_orientation(Orientation::Horizontal)
                     .key_context("ResizableHandle axis=vertical")
+                    .on_action(
+                        window.listener_for(&self.state, |state, _: &SelectUp, window, cx| {
+                            state.nudge(-STEP, window, cx)
+                        }),
+                    )
+                    .on_action(
+                        window.listener_for(&self.state, |state, _: &SelectDown, window, cx| {
+                            state.nudge(STEP, window, cx)
+                        }),
+                    )
             })
             .when(!disabled || focus.is_focused(window), |this| {
                 this.track_focus(&focus.tab_stop(!disabled))
             })
-            .on_action(
-                window.listener_for(&self.state, |state, _: &SelectLeft, window, cx| {
-                    state.nudge(-STEP, window, cx);
-                }),
-            )
-            .on_action(
-                window.listener_for(&self.state, |state, _: &SelectRight, window, cx| {
-                    state.nudge(STEP, window, cx);
-                }),
-            )
-            .on_action(
-                window.listener_for(&self.state, |state, _: &SelectUp, window, cx| {
-                    state.nudge(-STEP, window, cx);
-                }),
-            )
-            .on_action(
-                window.listener_for(&self.state, |state, _: &SelectDown, window, cx| {
-                    state.nudge(STEP, window, cx);
-                }),
-            )
             .on_action(
                 window.listener_for(&self.state, |state, _: &SelectFirst, window, cx| {
                     state.edge(false, window, cx);
@@ -660,6 +660,14 @@ mod tests {
             draw(cx);
             assert_ratio(cx, &view, 0.52);
             cx.simulate_keystrokes(other_axis);
+            draw(cx);
+            assert_ratio(cx, &view, 0.52);
+            // Application bindings can dispatch the same shared actions.
+            if axis == Axis::Horizontal {
+                cx.dispatch_action(SelectDown);
+            } else {
+                cx.dispatch_action(SelectRight);
+            }
             draw(cx);
             assert_ratio(cx, &view, 0.52);
             cx.simulate_keystrokes(decrease);

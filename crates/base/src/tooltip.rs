@@ -24,6 +24,7 @@ const HOVER_DELAY: Duration = Duration::from_millis(500);
 /// styles belong to the application; this state does not own a second focus stop.
 pub struct TooltipState {
     focus: FocusHandle,
+    mounted: bool,
     hovered: bool,
     open: bool,
     suppressed: bool,
@@ -57,6 +58,7 @@ impl TooltipState {
         ];
         Self {
             focus: focus.clone(),
+            mounted: false,
             hovered: false,
             open: false,
             suppressed: false,
@@ -76,7 +78,7 @@ impl TooltipState {
 
     fn show(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.hover_task = None;
-        if self.open || !window.is_window_active() {
+        if self.open || !self.mounted || !window.is_window_active() {
             return;
         }
         self.open = true;
@@ -198,55 +200,64 @@ impl RenderOnce for Tooltip {
         let focus = self.state.read(cx).focus.clone();
         let weak_state = self.state.downgrade();
         let surface_id = (self.id.clone(), "tooltip-content").into();
-        let mount = window.use_keyed_state((self.id.clone(), "tooltip-mount"), cx, |window, cx| {
-            let visible = Rc::new(Cell::new(false));
-            let escape_visible = visible.clone();
-            let release_visible = visible.clone();
-            let release_state = weak_state.clone();
-            let owner_window = window.window_handle();
-            let surface = cx.new(|_| TooltipSurface {
-                id: surface_id,
-                description: self.description.clone(),
-                style: self.style.clone(),
-            });
-            let escape = cx.intercept_keystrokes(move |event, window, cx| {
-                if window.window_handle() != owner_window
-                    || !matches!(event.keystroke.key.as_str(), "escape" | "enter" | "space")
-                {
-                    return;
-                }
-                let _ = weak_state.update(cx, |state, cx| match event.keystroke.key.as_str() {
-                    "escape" if state.open || state.hover_task.is_some() => {
-                        let was_visible = escape_visible.get();
-                        state.dismiss(window, cx);
-                        if was_visible {
-                            cx.stop_propagation();
+        let mount = window.with_element_namespace(self.id.clone(), |window| {
+            window.use_keyed_state(
+                ("tooltip-mount", self.state.entity_id()),
+                cx,
+                |window, cx| {
+                    let _ = weak_state.update(cx, |state, _| state.mounted = true);
+                    let visible = Rc::new(Cell::new(false));
+                    let escape_visible = visible.clone();
+                    let release_visible = visible.clone();
+                    let release_state = weak_state.clone();
+                    let owner_window = window.window_handle();
+                    let surface = cx.new(|_| TooltipSurface {
+                        id: surface_id,
+                        description: self.description.clone(),
+                        style: self.style.clone(),
+                    });
+                    let escape = cx.intercept_keystrokes(move |event, window, cx| {
+                        if window.window_handle() != owner_window
+                            || !matches!(event.keystroke.key.as_str(), "escape" | "enter" | "space")
+                        {
+                            return;
                         }
+                        let _ =
+                            weak_state.update(cx, |state, cx| match event.keystroke.key.as_str() {
+                                "escape" if state.open || state.hover_task.is_some() => {
+                                    let was_visible = escape_visible.get();
+                                    state.dismiss(window, cx);
+                                    if was_visible {
+                                        cx.stop_propagation();
+                                    }
+                                }
+                                "enter" | "space" if state.focus.is_focused(window) => {
+                                    state.dismiss(window, cx);
+                                }
+                                _ => {}
+                            });
+                    });
+                    let release = cx.on_release(move |_, cx| {
+                        release_visible.set(false);
+                        let _ = release_state.update(cx, |state, cx| {
+                            state.mounted = false;
+                            state.hover_task = None;
+                            state.hovered = false;
+                            state.suppressed = false;
+                            if state.open {
+                                state.open = false;
+                                cx.notify();
+                            }
+                        });
+                    });
+                    TooltipMount {
+                        surface,
+                        visible,
+                        _escape: escape,
+                        _release: release,
                     }
-                    "enter" | "space" if state.focus.is_focused(window) => {
-                        state.dismiss(window, cx);
-                    }
-                    _ => {}
-                });
-            });
-            let release = cx.on_release(move |_, cx| {
-                release_visible.set(false);
-                let _ = release_state.update(cx, |state, cx| {
-                    state.hover_task = None;
-                    state.hovered = false;
-                    state.suppressed = false;
-                    if state.open {
-                        state.open = false;
-                        cx.notify();
-                    }
-                });
-            });
-            TooltipMount {
-                surface,
-                visible,
-                _escape: escape,
-                _release: release,
-            }
+                },
+            )
         });
         let surface = mount.read(cx).surface.clone();
         surface.update(cx, |surface, _| {
@@ -463,6 +474,33 @@ mod tests {
             assert_eq!(view.activations.get(), 1);
             assert!(!view.tooltip.read(cx).is_open());
             assert!(view.trigger.is_focused(window));
+        });
+
+        cx.simulate_keystrokes("tab");
+        settle(cx);
+        let previous = view.read_with(cx, |view, _| view.tooltip.clone());
+        cx.update(|window, cx| {
+            view.update(cx, |view, cx| {
+                view.tooltip = cx.new(|cx| TooltipState::new(&view.trigger, window, cx));
+                view._observation = cx.observe(&view.tooltip, |_, _, cx| cx.notify());
+                cx.notify();
+            });
+        });
+        settle(cx);
+        cx.simulate_keystrokes("shift-tab");
+        settle(cx);
+        cx.update(|window, cx| {
+            let view = view.read(cx);
+            assert!(view.trigger.is_focused(window));
+            assert!(view.tooltip.read(cx).is_open());
+            assert!(!previous.read(cx).is_open());
+        });
+        cx.simulate_keystrokes("escape");
+        settle(cx);
+        cx.update(|_, cx| {
+            let view = view.read(cx);
+            assert!(!view.tooltip.read(cx).is_open());
+            assert_eq!(view.escapes.get(), 1);
         });
     }
 

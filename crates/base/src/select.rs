@@ -2,10 +2,10 @@
 //! Modified for GPUI Design: retained option navigation and focus lifecycle.
 
 use gpui::{
-    AccessibleAction, AnyElement, App, Context, ElementId, Entity, EventEmitter, FocusHandle,
-    InteractiveElement, Interactivity, IntoElement, KeyBinding, ParentElement, RenderOnce, Role,
-    SharedString, StatefulInteractiveElement, StyleRefinement, Styled, Subscription, Window, div,
-    prelude::FluentBuilder as _,
+    AccessibleAction, AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter,
+    FocusHandle, InteractiveElement, Interactivity, IntoElement, KeyBinding, MouseButton,
+    ParentElement, RenderOnce, Role, SharedString, StatefulInteractiveElement, StyleRefinement,
+    Styled, Subscription, Window, div, prelude::FluentBuilder as _,
 };
 
 use crate::{
@@ -80,6 +80,7 @@ pub struct SelectState {
     highlighted: Option<usize>,
     open: bool,
     disabled: bool,
+    open_on_pointer_down: bool,
     focus: FocusHandle,
     content_focus: FocusHandle,
     deferred_context: Option<DeferredPopover>,
@@ -101,6 +102,7 @@ impl SelectState {
             highlighted: None,
             open: false,
             disabled: false,
+            open_on_pointer_down: false,
             focus: cx.focus_handle().tab_stop(true),
             content_focus: cx.focus_handle(),
             deferred_context: None,
@@ -174,15 +176,20 @@ impl SelectState {
         self.deferred_context = Some(GlobalState::register_deferred_popover(cx));
         self.dismiss_subscription =
             Some(
-                cx.on_focus_out(&self.content_focus, window, |_, _, window, cx| {
+                cx.on_focus_out(&self.content_focus, window, |_, event, window, cx| {
                     // Focus callbacks run while drawing. Close after that phase so
-                    // notify/refresh can schedule the frame that removes the popup.
-                    cx.defer_in(window, |state, window, cx| {
+                    // notify/refresh can remove the popup. A detached focus handle
+                    // can remain focused; never restore its now-hidden trigger.
+                    cx.defer_in(window, move |state, window, cx| {
+                        let detached = event
+                            .blurred
+                            .upgrade()
+                            .is_some_and(|focus| focus.is_focused(window));
                         if !window.is_window_active()
-                            || (!state.content_focus.is_focused(window)
-                                && !state.content_focus.contains_focused(window, cx))
+                            || detached
+                            || !state.content_focus.contains_focused(window, cx)
                         {
-                            state.close(window, cx);
+                            state.dismiss(window, cx);
                         }
                     });
                 }),
@@ -196,16 +203,23 @@ impl SelectState {
         if !self.open {
             return;
         }
-        self.open = false;
-        self.highlighted = None;
-        self.deferred_context = None;
-        self.dismiss_subscription = None;
         // A pointer press or an ancestor closing may already have moved focus.
         // Do not move it back into a control the user has just left.
         if self.content_focus.is_focused(window) || self.content_focus.contains_focused(window, cx)
         {
             self.focus.focus(window, cx);
         }
+        self.dismiss(window, cx);
+    }
+
+    fn dismiss(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.open {
+            return;
+        }
+        self.open = false;
+        self.highlighted = None;
+        self.deferred_context = None;
+        self.dismiss_subscription = None;
         cx.notify();
         window.refresh();
     }
@@ -336,6 +350,7 @@ impl RenderOnce for Select {
         let content_focus = model.content_focus.clone();
         let value = model.selected_item().map(|item| item.label.clone());
         let trigger_state = self.state.clone();
+        let press_state = self.state.clone();
         let accessible_state = self.state.clone();
         let up_state = self.state.clone();
         let down_state = self.state.clone();
@@ -348,11 +363,18 @@ impl RenderOnce for Select {
         let trigger = div()
             .id("select-trigger")
             .when(!disabled, |this| {
-                this.on_click(move |_, window, cx| {
+                this.on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                    // Outside-down dismissal may already have changed the state.
+                    press_state.update(cx, |state, _| state.open_on_pointer_down = open);
+                })
+                .on_click(move |event, window, cx| {
                     trigger_state.update(cx, |state, cx| {
-                        // Use the rendered state: an outside-down handler may
-                        // already have closed the list before this click.
-                        if open {
+                        let was_open = if matches!(event, ClickEvent::Mouse(_)) {
+                            state.open_on_pointer_down
+                        } else {
+                            state.open
+                        };
+                        if was_open {
                             state.close(window, cx);
                         } else {
                             state.open(window, cx);
@@ -495,5 +517,91 @@ impl RenderOnce for SelectOption {
             .children(self.children)
             .refine_style(&self.style)
             .a11y_disabled(disabled)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Root;
+    use gpui::{AppContext as _, Modifiers, MouseButton, Render, TestAppContext, px};
+
+    struct Harness {
+        select: Entity<SelectState>,
+        shown: bool,
+        _observation: Subscription,
+    }
+
+    impl Render for Harness {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().size_full().when(self.shown, |this| {
+                this.child(
+                    Select::new("select", &self.select)
+                        .trigger(
+                            div()
+                                .debug_selector(|| "trigger".into())
+                                .w(px(180.))
+                                .h(px(32.))
+                                .child("Choose"),
+                        )
+                        .content(
+                            div().w(px(180.)).child(
+                                SelectOption::new(&self.select, 0).h(px(32.)).child("First"),
+                            ),
+                        ),
+                )
+            })
+        }
+    }
+
+    #[gpui::test]
+    fn trigger_toggle_and_host_unmount_clear_retained_popup(cx: &mut TestAppContext) {
+        cx.update(crate::init);
+        let (root, cx) = cx.add_window_view(|window, cx| {
+            let view = cx.new(|cx| {
+                let select = cx.new(|cx| SelectState::new([SelectItem::new("first", "First")], cx));
+                let observation = cx.observe(&select, |_, _, cx| cx.notify());
+                Harness {
+                    select,
+                    shown: true,
+                    _observation: observation,
+                }
+            });
+            Root::new(view, window, cx)
+        });
+        let view = root
+            .read_with(cx, |root, _| root.view().clone())
+            .downcast::<Harness>()
+            .unwrap();
+        cx.update(|window, cx| {
+            window.activate_window();
+            window.draw(cx).clear(cx);
+        });
+        let trigger = cx.debug_bounds("trigger").unwrap().center();
+        cx.simulate_click(trigger, Modifiers::default());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        cx.update(|_, cx| assert!(view.read(cx).select.read(cx).is_open()));
+        cx.simulate_mouse_down(trigger, MouseButton::Left, Modifiers::default());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        cx.simulate_mouse_up(trigger, MouseButton::Left, Modifiers::default());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        cx.update(|_, cx| assert!(!view.read(cx).select.read(cx).is_open()));
+
+        cx.simulate_click(trigger, Modifiers::default());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        cx.update(|_, cx| assert!(view.read(cx).select.read(cx).is_open()));
+        view.update(cx, |view, cx| {
+            view.shown = false;
+            cx.notify();
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        cx.run_until_parked();
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        cx.update(|window, cx| {
+            let state = view.read(cx).select.read(cx);
+            assert!(!state.is_open());
+            assert!(!state.focus_handle().is_focused(window));
+            assert!(!GlobalState::is_in_deferred_context(cx));
+        });
     }
 }

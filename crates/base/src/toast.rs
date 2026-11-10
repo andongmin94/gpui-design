@@ -353,17 +353,21 @@ impl RenderOnce for Toast {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let weak = self.state.downgrade();
         let owner_window = window.window_handle();
-        window.use_keyed_state((self.id.clone(), "toast-mount"), cx, |_, cx| ToastMount {
-            _release: cx.on_release(move |_, cx| {
-                let _ = owner_window.update(cx, |_, window, cx| {
-                    let _ = weak.update(cx, |state, cx| {
-                        state.mounted = false;
-                        // Removing the host can also remove its return target.
-                        state.previous_focus = None;
-                        state.dismiss(window, cx);
-                    });
-                });
-            }),
+        window.with_element_namespace(self.id.clone(), |window| {
+            window.use_keyed_state(("toast-mount", self.state.entity_id()), cx, |_, cx| {
+                ToastMount {
+                    _release: cx.on_release(move |_, cx| {
+                        let _ = owner_window.update(cx, |_, window, cx| {
+                            let _ = weak.update(cx, |state, cx| {
+                                state.mounted = false;
+                                // Removing the host can also remove its return target.
+                                state.previous_focus = None;
+                                state.dismiss(window, cx);
+                            });
+                        });
+                    }),
+                }
+            })
         });
         self.state.update(cx, |state, cx| {
             state.mounted = true;
@@ -589,6 +593,29 @@ mod tests {
         cx.update(|window, cx| {
             assert!(!view.read(cx).state.read(cx).is_open());
             assert!(view.read(cx).trigger.is_focused(window));
+        });
+        let replaced = cx.update(|window, cx| {
+            let previous = view.read(cx).state.clone();
+            previous.update(cx, |state, cx| state.show(window, cx));
+            window.draw(cx).clear(cx);
+            let replacement =
+                cx.new(|cx| ToastState::new(window, cx).with_duration(Duration::from_secs(4)));
+            replacement.update(cx, |state, cx| state.show(window, cx));
+            view.update(cx, |view, cx| {
+                view._subscription = cx.observe(&replacement, |_, _, cx| cx.notify());
+                view.state = replacement;
+                cx.notify();
+            });
+            window.draw(cx).clear(cx);
+            previous
+        });
+        cx.run_until_parked();
+        cx.update(|_, cx| {
+            assert!(
+                !replaced.read(cx).is_open(),
+                "replacing the state at the same UI ID must release the old notification"
+            );
+            assert!(view.read(cx).state.read(cx).is_open());
         });
         cx.update(|window, cx| {
             let state = view.read(cx).state.clone();
