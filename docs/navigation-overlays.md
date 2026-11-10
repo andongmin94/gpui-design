@@ -498,7 +498,7 @@ touch long-press are not included.
 
 ## Command
 
-Create `CommandState::new(items, window, cx)` from fixed, ordered
+Create `CommandState::new(items, window, cx)` from ordered
 `SearchItem::new(value, label)` entries with unique values. Optional `.keywords`
 add search aliases; `.disabled(true)` makes an action unavailable. Observe the
 state for result rendering and subscribe to `CommandEvent::Action(value)` to
@@ -506,8 +506,11 @@ handle execution in the application.
 
 `Command::new(id, &state)` hosts `CommandInput::new(id, &state)` and
 `CommandList::new(id, &state)`. Give the query and list accessible labels, and
-render `CommandOption::new(&state, index)` as direct list children for
-`visible_indices()`, in that order. Read `items()` for labels and
+render `CommandOption::new(&state, index)` for `visible_indices()`, in that order.
+For `.group(label)` items, wrap matching options in named `CommandGroup` parts;
+`visible_groups()` and `visible_group_indices(Some(label))` expose the filtered
+collection. Keep each group contiguous in source order; empty groups disappear.
+Group headings have no focus stop and do not affect keyboard navigation. Read `items()` for labels and
 `highlighted_index()` for application-owned active-row styling. The list uses
 the existing GPUI ScrollHandle; give it a height or maximum height so the active
 result can scroll into view. Render an application-owned empty message when no
@@ -518,7 +521,10 @@ The existing InputState is the query's source of truth, exposed through `input()
 query term must appear, ignoring case, in the item's value, label, or keywords.
 Matching retains item order and includes disabled matches for display. A changed
 query highlights its first enabled result; empty or all-disabled results have no
-active command. There is no asynchronous source, fuzzy ranking, or grouped list.
+active command. `set_items(items, window, cx)` replaces the collection while
+preserving the native query and focus; it retains an enabled matching highlight
+by value or picks the first enabled result. Applications own fetching and request
+ordering. Fuzzy ranking and a network controller are not provided.
 
 | Input | Behavior |
 | --- | --- |

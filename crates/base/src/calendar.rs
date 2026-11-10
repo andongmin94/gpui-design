@@ -1,4 +1,4 @@
-//! Single-date selection with a month grid and independent keyboard focus.
+//! Single, multiple, or range selection with independent calendar keyboard focus.
 
 pub use chrono::NaiveDate;
 use chrono::{Datelike as _, Days, Months};
@@ -38,21 +38,48 @@ pub(crate) fn init(cx: &mut App) {
     ]);
 }
 
-/// Emitted once when user activation selects a different enabled date.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CalendarEvent {
-    Change(NaiveDate),
+/// A calendar's selection mode and retained value.
+///
+/// Multiple dates are stored in ascending order without duplicates. A range
+/// starts empty, then retains a start without an end until a second activation
+/// completes it. Completed endpoints are inclusive and ordered; the same date
+/// can be both endpoints. Activating a completed range starts a new one.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CalendarSelection {
+    Single(Option<NaiveDate>),
+    Multiple(Vec<NaiveDate>),
+    Range {
+        start: Option<NaiveDate>,
+        end: Option<NaiveDate>,
+    },
 }
 
-// Compositions such as DatePicker close after every successful activation,
-// including the already selected date, without duplicating Change events.
-#[derive(Clone, Copy)]
+impl CalendarSelection {
+    /// The first selected date, or None when selection is empty.
+    pub fn first_date(&self) -> Option<NaiveDate> {
+        match self {
+            Self::Single(date) => *date,
+            Self::Multiple(dates) => dates.iter().copied().min(),
+            Self::Range { start, .. } => *start,
+        }
+    }
+}
+
+/// Emitted once when user activation changes the selected date or dates.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CalendarEvent {
+    Change(CalendarSelection),
+}
+
+// Compositions can finish a single or completed range activation without
+// duplicating Change events for an already selected single date.
+#[derive(Clone)]
 pub(crate) struct CalendarActivation {
-    pub(crate) date: NaiveDate,
+    pub(crate) selection: CalendarSelection,
     pub(crate) changed: bool,
 }
 
-/// Retained single selection and one roving Tab stop for a Gregorian calendar.
+/// Retained selection and one roving Tab stop for a Gregorian calendar.
 ///
 /// The grid contains six Monday-first weeks, including adjacent-month dates.
 /// Keyboard navigation changes the visible month as necessary, without selecting
@@ -66,7 +93,7 @@ pub(crate) struct CalendarActivation {
 pub struct CalendarState {
     month: NaiveDate,
     cursor: NaiveDate,
-    selected: Option<NaiveDate>,
+    selection: CalendarSelection,
     minimum: NaiveDate,
     maximum: NaiveDate,
     disabled: bool,
@@ -76,7 +103,7 @@ pub struct CalendarState {
 }
 
 impl CalendarState {
-    /// Starts with `initial_date` focused in its month, and no selected value.
+    /// Starts with `initial_date` focused in its month, in empty single-date mode.
     ///
     /// # Panics
     /// `initial_date` must have a year in 1..=9999.
@@ -88,7 +115,7 @@ impl CalendarState {
         Self {
             month: initial_date.with_day(1).unwrap(),
             cursor: initial_date,
-            selected: None,
+            selection: CalendarSelection::Single(None),
             minimum: NaiveDate::from_ymd_opt(1, 1, 1).unwrap(),
             maximum: NaiveDate::from_ymd_opt(9999, 12, 31).unwrap(),
             disabled: false,
@@ -99,7 +126,8 @@ impl CalendarState {
     }
 
     /// Sets inclusive selectable bounds before mounting. Focus is clamped into
-    /// the range, and an out-of-range initial selection is cleared.
+    /// the range. Out-of-range single or multiple dates are removed; a range
+    /// with an out-of-range endpoint is cleared.
     ///
     /// # Panics
     /// Bounds must be ordered and lie within years 1..=9999.
@@ -112,24 +140,47 @@ impl CalendarState {
         self.maximum = maximum;
         self.cursor = self.cursor.clamp(minimum, maximum);
         self.month = self.cursor.with_day(1).unwrap();
-        self.selected = self
-            .selected
-            .filter(|date| (minimum..=maximum).contains(date));
+        self.selection = match self.selection {
+            CalendarSelection::Single(date) => {
+                CalendarSelection::Single(date.filter(|date| (minimum..=maximum).contains(date)))
+            }
+            CalendarSelection::Multiple(dates) => CalendarSelection::Multiple(
+                dates
+                    .into_iter()
+                    .filter(|date| (minimum..=maximum).contains(date))
+                    .collect(),
+            ),
+            CalendarSelection::Range { start, end } => {
+                if start.is_some_and(|date| !(minimum..=maximum).contains(&date))
+                    || end.is_some_and(|date| !(minimum..=maximum).contains(&date))
+                {
+                    CalendarSelection::Range {
+                        start: None,
+                        end: None,
+                    }
+                } else {
+                    CalendarSelection::Range { start, end }
+                }
+            }
+        };
         self
     }
 
-    /// Sets an initial selection and visible month without emitting an event.
+    /// Sets the selection mode and initial value without emitting an event.
+    /// Multiple dates are sorted and deduplicated. The first selected date also
+    /// becomes the cursor and visible month; empty selections retain navigation.
     ///
     /// # Panics
-    /// The date must lie inside the configured bounds.
-    pub fn default_value(mut self, date: NaiveDate) -> Self {
-        assert!(
-            (self.minimum..=self.maximum).contains(&date),
-            "Calendar default_value must lie inside its bounds"
-        );
-        self.selected = Some(date);
-        self.cursor = date;
-        self.month = date.with_day(1).unwrap();
+    /// Dates must lie inside the configured bounds. Range endpoints must be
+    /// ordered, and an end requires a start.
+    pub fn default_selection(mut self, selection: CalendarSelection) -> Self {
+        self.selection = self
+            .normalized_selection(selection)
+            .expect("Calendar default_selection must be ordered and inside its bounds");
+        if let Some(date) = self.selection.first_date() {
+            self.cursor = date;
+            self.month = date.with_day(1).unwrap();
+        }
         self
     }
 
@@ -137,8 +188,21 @@ impl CalendarState {
         self.cursor
     }
 
-    pub fn selected_date(&self) -> Option<NaiveDate> {
-        self.selected
+    pub fn selection(&self) -> &CalendarSelection {
+        &self.selection
+    }
+
+    /// Whether a date belongs to the current selection, including range interiors.
+    pub fn is_selected(&self, date: NaiveDate) -> bool {
+        match &self.selection {
+            CalendarSelection::Single(selected) => *selected == Some(date),
+            CalendarSelection::Multiple(dates) => dates.binary_search(&date).is_ok(),
+            CalendarSelection::Range {
+                start: Some(start),
+                end,
+            } => (*start..=end.unwrap_or(*start)).contains(&date),
+            CalendarSelection::Range { start: None, .. } => false,
+        }
     }
 
     /// The first day of the currently visible month.
@@ -199,21 +263,22 @@ impl CalendarState {
         }
     }
 
-    /// Replaces selection without emitting an event. A selected date also
-    /// becomes the cursor and visible month. Returns false for an out-of-range
-    /// date. Clearing selection preserves the cursor and visible month.
-    pub fn set_selected_date(
+    /// Replaces the selection mode and value without emitting an event. The first
+    /// selected date becomes the cursor and visible month. Empty values preserve
+    /// navigation. Invalid or out-of-bounds ranges/dates return false unchanged.
+    /// Programmatic changes remain allowed while the calendar is disabled.
+    pub fn set_selection(
         &mut self,
-        date: Option<NaiveDate>,
+        selection: CalendarSelection,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        if date.is_some_and(|date| !(self.minimum..=self.maximum).contains(&date)) {
+        let Some(selection) = self.normalized_selection(selection) else {
             return false;
-        }
-        let changed = self.selected != date;
-        self.selected = date;
-        if let Some(date) = date {
+        };
+        let changed = self.selection != selection;
+        self.selection = selection;
+        if let Some(date) = self.selection.first_date() {
             let focused = self.focused_index(window).is_some();
             self.set_cursor(date, focused, window, cx);
         }
@@ -222,6 +287,35 @@ impl CalendarState {
             window.refresh();
         }
         true
+    }
+
+    pub(crate) fn normalized_selection(
+        &self,
+        selection: CalendarSelection,
+    ) -> Option<CalendarSelection> {
+        let in_bounds = |date: &NaiveDate| (self.minimum..=self.maximum).contains(date);
+        match selection {
+            CalendarSelection::Single(date) => (!date.is_some_and(|date| !in_bounds(&date)))
+                .then_some(CalendarSelection::Single(date)),
+            CalendarSelection::Multiple(mut dates) => {
+                if !dates.iter().all(in_bounds) {
+                    return None;
+                }
+                dates.sort_unstable();
+                dates.dedup();
+                Some(CalendarSelection::Multiple(dates))
+            }
+            CalendarSelection::Range { start, end } => {
+                if start.is_some_and(|date| !in_bounds(&date))
+                    || end.is_some_and(|date| !in_bounds(&date))
+                    || matches!((start, end), (None, Some(_)))
+                    || matches!((start, end), (Some(start), Some(end)) if start > end)
+                {
+                    return None;
+                }
+                Some(CalendarSelection::Range { start, end })
+            }
+        }
     }
 
     /// Disables activation, navigation, and normal Tab entry. An already focused
@@ -310,14 +404,41 @@ impl CalendarState {
             return;
         }
         self.set_cursor(date, true, window, cx);
-        let changed = self.selected != Some(date);
+        let selection = match &self.selection {
+            CalendarSelection::Single(_) => CalendarSelection::Single(Some(date)),
+            CalendarSelection::Multiple(dates) => {
+                let mut dates = dates.clone();
+                match dates.binary_search(&date) {
+                    Ok(index) => {
+                        dates.remove(index);
+                    }
+                    Err(index) => dates.insert(index, date),
+                }
+                CalendarSelection::Multiple(dates)
+            }
+            CalendarSelection::Range {
+                start: Some(start),
+                end: None,
+            } => CalendarSelection::Range {
+                start: Some((*start).min(date)),
+                end: Some((*start).max(date)),
+            },
+            CalendarSelection::Range { .. } => CalendarSelection::Range {
+                start: Some(date),
+                end: None,
+            },
+        };
+        let changed = self.selection != selection;
         if changed {
-            self.selected = Some(date);
-            cx.emit(CalendarEvent::Change(date));
+            self.selection = selection;
+            cx.emit(CalendarEvent::Change(self.selection.clone()));
             cx.notify();
             window.refresh();
         }
-        cx.emit(CalendarActivation { date, changed });
+        cx.emit(CalendarActivation {
+            selection: self.selection.clone(),
+            changed,
+        });
     }
 
     fn move_days(&mut self, days: i64, window: &mut Window, cx: &mut Context<Self>) {
@@ -417,6 +538,10 @@ impl RenderOnce for Calendar {
         self.state
             .update(cx, |state, cx| state.bind_focus(window, cx));
         let disabled = self.state.read(cx).disabled;
+        let multiselectable = !matches!(
+            self.state.read(cx).selection(),
+            CalendarSelection::Single(_)
+        );
         let left = self.state.clone();
         let right = self.state.clone();
         let up = self.state.clone();
@@ -511,7 +636,7 @@ impl RenderOnce for Calendar {
                     }
                 });
             })
-            .a11y_disabled(disabled)
+            .a11y_selection(disabled, multiselectable)
     }
 }
 
@@ -578,7 +703,7 @@ impl RenderOnce for CalendarDay {
         let model = self.state.read(cx);
         let index = model.index_of(self.date);
         let disabled = model.is_date_disabled(self.date);
-        let selected = model.selected == Some(self.date);
+        let selected = model.is_selected(self.date);
         let focus = model.focus[index].clone();
         let tab_stop = model.cursor == self.date;
         let date = self.date;
@@ -700,7 +825,7 @@ mod tests {
         }
     }
 
-    type Changes = Rc<RefCell<Vec<NaiveDate>>>;
+    type Changes = Rc<RefCell<Vec<CalendarSelection>>>;
 
     fn date(year: i32, month: u32, day: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(year, month, day).unwrap()
@@ -715,7 +840,8 @@ mod tests {
         let (root, cx) = cx.add_window_view(move |window, cx| {
             let content = cx.new(|cx| {
                 let state = cx.new(|cx| {
-                    let state = CalendarState::new(initial, cx).default_value(initial);
+                    let state = CalendarState::new(initial, cx)
+                        .default_selection(CalendarSelection::Single(Some(initial)));
                     if let Some((minimum, maximum)) = bounds {
                         state.bounds(minimum, maximum)
                     } else {
@@ -741,8 +867,8 @@ mod tests {
             let state = view.read(cx).state.clone();
             let changes = changes.clone();
             cx.subscribe(&state, move |_, event: &CalendarEvent, _| {
-                let CalendarEvent::Change(date) = event;
-                changes.borrow_mut().push(*date);
+                let CalendarEvent::Change(selection) = event;
+                changes.borrow_mut().push(selection.clone());
             })
             .detach();
             window.activate_window();
@@ -779,7 +905,7 @@ mod tests {
             let state = view.read(cx).state.read(cx);
             assert_eq!(state.focused_date(), expected);
             assert_eq!(state.month(), expected.with_day(1).unwrap());
-            assert_eq!(state.selected_date(), selected);
+            assert_eq!(state.selection(), &CalendarSelection::Single(selected));
             assert!(state.focus_handle().is_focused(window));
         });
     }
@@ -794,12 +920,15 @@ mod tests {
         assert!(changes.borrow().is_empty());
         press(cx, "enter");
         press(cx, "space");
-        assert_eq!(*changes.borrow(), [date(2024, 2, 1)]);
+        assert_eq!(
+            *changes.borrow(),
+            [CalendarSelection::Single(Some(date(2024, 2, 1)))]
+        );
 
         cx.update(|window, cx| {
             let state = view.read(cx).state.clone();
             state.update(cx, |state, cx| {
-                assert!(state.set_selected_date(Some(initial), window, cx));
+                assert!(state.set_selection(CalendarSelection::Single(Some(initial)), window, cx));
             });
         });
         draw(cx);
@@ -814,7 +943,10 @@ mod tests {
             press(cx, key);
             assert_cursor(cx, &view, expected, Some(initial));
         }
-        assert_eq!(*changes.borrow(), [date(2024, 2, 1)]);
+        assert_eq!(
+            *changes.borrow(),
+            [CalendarSelection::Single(Some(date(2024, 2, 1)))]
+        );
 
         let adjacent = cx.debug_bounds("date-2025-02-24").unwrap().center();
         cx.simulate_event(MouseDownEvent {
@@ -839,7 +971,10 @@ mod tests {
         });
         draw(cx);
         assert_cursor(cx, &view, date(2025, 2, 24), Some(date(2025, 2, 24)));
-        assert_eq!(*changes.borrow(), [date(2024, 2, 1), date(2025, 2, 24)]);
+        assert_eq!(
+            *changes.borrow(),
+            [date(2024, 2, 1), date(2025, 2, 24)].map(|date| CalendarSelection::Single(Some(date)))
+        );
         cx.simulate_keystrokes("tab");
         draw(cx);
         cx.update(|window, cx| assert!(view.read(cx).after.is_focused(window)));
@@ -893,6 +1028,7 @@ mod tests {
             assert_eq!(node.label(), Some("November 2026"));
             assert_eq!(node.row_count(), Some(7));
             assert_eq!(node.column_count(), Some(7));
+            assert!(!node.is_multiselectable());
             for (date, disabled, selected, row, column) in [
                 (date(2026, 11, 8), true, false, 2, 6),
                 (minimum, false, true, 3, 0),
@@ -910,7 +1046,11 @@ mod tests {
                 assert_eq!(node.column_index(), Some(column));
             }
             state.update(cx, |state, cx| {
-                assert!(!state.set_selected_date(Some(date(2026, 11, 21)), window, cx));
+                assert!(!state.set_selection(
+                    CalendarSelection::Single(Some(date(2026, 11, 21))),
+                    window,
+                    cx
+                ));
                 state.set_disabled(true, window, cx);
             });
         });
@@ -925,7 +1065,7 @@ mod tests {
             assert!(view.read(cx).before.is_focused(window));
             let state = view.read(cx).state.clone();
             state.update(cx, |state, cx| {
-                assert!(state.set_selected_date(None, window, cx));
+                assert!(state.set_selection(CalendarSelection::Single(None), window, cx));
                 state.set_disabled(false, window, cx);
             });
         });
@@ -934,6 +1074,174 @@ mod tests {
         draw(cx);
         assert_cursor(cx, &view, maximum, None);
         press(cx, "space");
-        assert_eq!(*changes.borrow(), [maximum]);
+        assert_eq!(
+            *changes.borrow(),
+            [CalendarSelection::Single(Some(maximum))]
+        );
+    }
+
+    #[gpui::test]
+    fn range_selection_completes_reverses_restarts_and_marks_every_inclusive_day(
+        cx: &mut TestAppContext,
+    ) {
+        let initial = date(2024, 1, 31);
+        let (cx, view, changes) =
+            harness(cx, initial, Some((date(2024, 1, 20), date(2024, 3, 10))));
+        let range = |start, end| CalendarSelection::Range { start, end };
+        cx.update(|window, cx| {
+            let state = view.read(cx).state.clone();
+            assert!(state.update(cx, |state, cx| state.set_selection(
+                range(None, None),
+                window,
+                cx
+            )));
+        });
+        draw(cx);
+        cx.simulate_keystrokes("tab");
+        press(cx, "enter");
+        cx.simulate_keystrokes("right right right");
+        draw(cx);
+        cx.update(|_, cx| {
+            let state = view.read(cx).state.read(cx);
+            assert_eq!(state.focused_date(), date(2024, 2, 3));
+            assert_eq!(state.selection(), &range(Some(initial), None));
+        });
+        press(cx, "enter");
+        cx.update(|window, cx| {
+            let state = view.read(cx).state.clone();
+            let grid = Calendar::new("range-native-calendar", &state)
+                .render(window, cx)
+                .into_element();
+            let mut node = accesskit::Node::new(grid.a11y_role().unwrap());
+            grid.write_a11y_info(&mut node);
+            assert!(node.is_multiselectable());
+            for (date, selected) in [
+                (date(2024, 1, 30), false),
+                (initial, true),
+                (date(2024, 2, 1), true),
+                (date(2024, 2, 2), true),
+                (date(2024, 2, 3), true),
+                (date(2024, 2, 4), false),
+            ] {
+                let day = CalendarDay::new(&state, date)
+                    .render(window, cx)
+                    .into_element();
+                let mut node = accesskit::Node::new(day.a11y_role().unwrap());
+                day.write_a11y_info(&mut node);
+                assert_eq!(node.is_selected(), Some(selected));
+            }
+        });
+        press(cx, "left");
+        press(cx, "enter");
+        cx.simulate_keystrokes("left left");
+        press(cx, "space");
+        cx.update(|_, cx| {
+            assert_eq!(
+                view.read(cx).state.read(cx).selection(),
+                &range(Some(initial), Some(date(2024, 2, 2)))
+            )
+        });
+        press(cx, "enter");
+        press(cx, "space");
+        cx.update(|window, cx| {
+            let state = view.read(cx).state.clone();
+            assert_eq!(
+                state.read(cx).selection(),
+                &range(Some(initial), Some(initial))
+            );
+            for invalid in [
+                range(None, Some(initial)),
+                range(Some(initial), Some(date(2024, 1, 30))),
+                range(Some(initial), Some(date(2024, 3, 11))),
+            ] {
+                assert!(!state.update(cx, |state, cx| state.set_selection(invalid, window, cx)));
+            }
+            assert_eq!(
+                state.read(cx).selection(),
+                &range(Some(initial), Some(initial))
+            );
+        });
+        assert_eq!(
+            *changes.borrow(),
+            [
+                range(Some(initial), None),
+                range(Some(initial), Some(date(2024, 2, 3))),
+                range(Some(date(2024, 2, 2)), None),
+                range(Some(initial), Some(date(2024, 2, 2))),
+                range(Some(initial), None),
+                range(Some(initial), Some(initial)),
+            ]
+        );
+    }
+
+    #[gpui::test]
+    fn multiple_dates_toggle_in_order_without_changing_selection_during_navigation(
+        cx: &mut TestAppContext,
+    ) {
+        let first = date(2026, 11, 10);
+        let second = date(2026, 11, 11);
+        let third = date(2026, 11, 12);
+        let (cx, view, changes) = harness(cx, first, Some((date(2026, 11, 9), date(2026, 11, 20))));
+        cx.update(|window, cx| {
+            let state = view.read(cx).state.clone();
+            state.update(cx, |state, cx| {
+                assert!(state.set_selection(
+                    CalendarSelection::Multiple(vec![third, first, third]),
+                    window,
+                    cx
+                ));
+                assert_eq!(
+                    state.selection(),
+                    &CalendarSelection::Multiple(vec![first, third])
+                );
+                assert_eq!(state.selection().first_date(), Some(first));
+            });
+        });
+        draw(cx);
+        cx.simulate_keystrokes("tab right");
+        draw(cx);
+        assert!(changes.borrow().is_empty());
+        press(cx, "enter");
+        let point = cx.debug_bounds("date-2026-11-10").unwrap().center();
+        cx.simulate_click(point, Modifiers::default());
+        draw(cx);
+        cx.update(|window, cx| {
+            let state = view.read(cx).state.clone();
+            assert_eq!(
+                state.read(cx).selection(),
+                &CalendarSelection::Multiple(vec![second, third])
+            );
+            let grid = Calendar::new("multiple-native-calendar", &state)
+                .render(window, cx)
+                .into_element();
+            let mut node = accesskit::Node::new(grid.a11y_role().unwrap());
+            grid.write_a11y_info(&mut node);
+            assert!(node.is_multiselectable());
+            for (date, selected) in [(first, false), (second, true), (third, true)] {
+                let day = CalendarDay::new(&state, date)
+                    .render(window, cx)
+                    .into_element();
+                let mut node = accesskit::Node::new(day.a11y_role().unwrap());
+                day.write_a11y_info(&mut node);
+                assert_eq!(node.is_selected(), Some(selected));
+            }
+            state.update(cx, |state, cx| {
+                assert!(!state.set_selection(
+                    CalendarSelection::Multiple(vec![date(2026, 11, 21)]),
+                    window,
+                    cx
+                ));
+                state.set_disabled(true, window, cx);
+            });
+        });
+        draw(cx);
+        press(cx, "space");
+        assert_eq!(
+            *changes.borrow(),
+            [
+                CalendarSelection::Multiple(vec![first, second, third]),
+                CalendarSelection::Multiple(vec![second, third]),
+            ]
+        );
     }
 }

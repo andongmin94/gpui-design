@@ -1,4 +1,4 @@
-//! Editable single selection composed from Command's search and the existing Popup.
+//! Editable single or multiple selection over Command's search and the existing Popup.
 //! The native input owns the draft query; the combobox retains only the committed
 //! option and popup lifecycle. Applications supply all presentation.
 
@@ -11,6 +11,7 @@ use gpui::{
     StatefulInteractiveElement, StyleRefinement, Styled, Subscription, Window, div, px,
 };
 
+use crate::command::CommandGroup;
 use crate::{
     CommandEvent, CommandList, CommandOption, CommandState, Input, InputAccessibility, InputBase,
     InputState, InputStyles, Popup, SearchItem, TestSupportExt as _,
@@ -18,26 +19,27 @@ use crate::{
     input::{Enter, Escape, InputEvent, MoveDown, MoveUp},
 };
 
-/// Emitted once when a user commits a different option.
+/// Committed values after a user selection, removal, or clear, in item order.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ComboboxEvent {
-    Change(SharedString),
+    Change(Vec<SharedString>),
 }
 
-/// A fixed ordered collection with editable search and one committed value.
+/// An ordered collection with editable search and committed values.
 ///
 /// Opening with the pointer or an arrow clears the draft to show all options.
 /// Typing filters suggestions without changing the committed value. Enter or a
 /// result click commits; Escape, Tab, blur, and outside presses restore the
 /// committed label. Only the native input participates in Tab traversal.
 ///
-/// This first contract covers fixed single selection, not free-form values,
-/// asynchronous sources, multiple selection, or grouped results.
+/// Single selection is the default. Multiple mode toggles results without closing
+/// the popup or clearing the draft; consumers render selected-value chips.
 pub struct ComboboxState {
     search: Entity<CommandState>,
     input: Entity<InputState>,
     focus: FocusHandle,
-    selected: Option<usize>,
+    selected: Vec<usize>,
+    multiple: bool,
     open: bool,
     disabled: bool,
     deferred_context: Option<DeferredPopover>,
@@ -84,7 +86,8 @@ impl ComboboxState {
             search,
             input,
             focus,
-            selected: None,
+            selected: Vec::new(),
+            multiple: false,
             open: false,
             disabled: false,
             deferred_context: None,
@@ -92,6 +95,17 @@ impl ComboboxState {
             _search_actions: search_actions,
             _input_events: input_events,
         }
+    }
+
+    /// Allows several committed values. Configure before rendering the state.
+    /// Disabling multiple mode with more than one selected value is an error.
+    pub fn multiple(mut self, multiple: bool) -> Self {
+        assert!(
+            multiple || self.selected.len() <= 1,
+            "ComboboxState single mode cannot have multiple selected values"
+        );
+        self.multiple = multiple;
+        self
     }
 
     /// The native query state, also available for application text styling.
@@ -116,16 +130,33 @@ impl ComboboxState {
         self.search.read(cx).highlighted_index()
     }
 
-    pub fn selected_index(&self) -> Option<usize> {
+    pub fn selected_indices(&self) -> &[usize] {
+        &self.selected
+    }
+
+    pub fn is_selected(&self, index: usize) -> bool {
+        self.selected.binary_search(&index).is_ok()
+    }
+
+    pub fn selected_values(&self, cx: &App) -> Vec<SharedString> {
         self.selected
+            .iter()
+            .map(|&index| self.items(cx)[index].value().clone())
+            .collect()
     }
 
-    pub fn selected_item<'a>(&'a self, cx: &'a App) -> Option<&'a SearchItem> {
-        self.selected.map(|index| &self.items(cx)[index])
+    pub fn selected_items<'a>(&'a self, cx: &'a App) -> impl Iterator<Item = &'a SearchItem> {
+        self.selected
+            .iter()
+            .map(move |&index| &self.items(cx)[index])
     }
 
-    pub fn selected_value<'a>(&'a self, cx: &'a App) -> Option<&'a SharedString> {
-        self.selected_item(cx).map(SearchItem::value)
+    pub fn visible_groups(&self, cx: &App) -> Vec<SharedString> {
+        self.search.read(cx).visible_groups()
+    }
+
+    pub fn visible_group_indices(&self, group: Option<&str>, cx: &App) -> Vec<usize> {
+        self.search.read(cx).visible_group_indices(group)
     }
 
     pub fn is_open(&self) -> bool {
@@ -136,31 +167,105 @@ impl ComboboxState {
         self.disabled
     }
 
-    /// Sets a committed value and closes the draft without emitting Change.
-    /// None clears selection. An unknown or disabled value is rejected.
-    pub fn set_selected_value(
+    /// Sets committed values and closes the draft without emitting Change.
+    /// Unknown/disabled values and multiple values in single mode are rejected.
+    pub fn set_selected_values<V: AsRef<str>>(
         &mut self,
-        value: Option<&str>,
+        values: impl IntoIterator<Item = V>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        let selected = match value {
-            Some(value) => {
-                let Some(index) = self
-                    .items(cx)
-                    .iter()
-                    .position(|item| item.value().as_ref() == value && !item.is_disabled())
-                else {
-                    return false;
-                };
-                Some(index)
+        let mut selected = Vec::new();
+        for value in values {
+            let Some(index) = self
+                .items(cx)
+                .iter()
+                .position(|item| item.value().as_ref() == value.as_ref() && !item.is_disabled())
+            else {
+                return false;
+            };
+            if !selected.contains(&index) {
+                selected.push(index);
             }
-            None => None,
-        };
+        }
+        if !self.multiple && selected.len() > 1 {
+            return false;
+        }
+        selected.sort_unstable();
         self.selected = selected;
         self.close(window, cx);
         cx.notify();
         true
+    }
+
+    /// Replaces options without emitting Change. Selection follows stable values;
+    /// missing or disabled values are removed. An active native draft and IME
+    /// composition remain untouched. Closed single selection refreshes its label.
+    pub fn set_items(
+        &mut self,
+        items: impl IntoIterator<Item = SearchItem>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let values = self.selected_values(cx);
+        self.search
+            .update(cx, |search, cx| search.set_items(items, window, cx));
+        self.selected = self
+            .items(cx)
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| !item.is_disabled() && values.contains(item.value()))
+            .map(|(index, _)| index)
+            .collect();
+        if !self.open && !self.is_composing(window, cx) {
+            self.close(window, cx);
+        }
+        cx.notify();
+        window.refresh();
+    }
+
+    /// Removes a committed value as a user action, returning focus to the query.
+    /// Disabled controls and active native composition reject the request.
+    pub fn remove_value(
+        &mut self,
+        value: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.disabled || self.is_composing(window, cx) {
+            return false;
+        }
+        let Some(position) = self
+            .selected
+            .iter()
+            .position(|&index| self.items(cx)[index].value().as_ref() == value)
+        else {
+            return false;
+        };
+        self.focus.focus(window, cx);
+        self.selected.remove(position);
+        if !self.multiple {
+            self.close(window, cx);
+        }
+        self.emit_change(window, cx);
+        true
+    }
+
+    /// Clears committed values and the query as a user action, preserving whether
+    /// results are open. Application-owned clear buttons call this method.
+    pub fn clear(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.disabled || self.is_composing(window, cx) {
+            return false;
+        }
+        let changed = !self.selected.is_empty();
+        self.focus.focus(window, cx);
+        self.selected.clear();
+        self.search
+            .update(cx, |search, cx| search.set_query("", window, cx));
+        if changed {
+            self.emit_change(window, cx);
+        }
+        changed
     }
 
     /// Starts a focused draft query without changing the committed selection.
@@ -201,6 +306,8 @@ impl ComboboxState {
         }
         let highlighted = self
             .selected
+            .first()
+            .copied()
             .or_else(|| self.items(cx).iter().position(|item| !item.is_disabled()));
         self.search.update(cx, |search, cx| {
             search.set_query("", window, cx);
@@ -214,10 +321,14 @@ impl ComboboxState {
 
     /// Discards the draft, restores the committed label, and preserves current focus.
     pub fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let label = self
-            .selected_item(cx)
-            .map(|item| item.label().clone())
-            .unwrap_or_default();
+        let label = if self.multiple {
+            SharedString::default()
+        } else {
+            self.selected
+                .first()
+                .map(|&index| self.items(cx)[index].label().clone())
+                .unwrap_or_default()
+        };
         let changed = self.input.read(cx).value() != label;
         let was_open = self.open;
         self.open = false;
@@ -266,12 +377,32 @@ impl ComboboxState {
         let Some(index) = self.items(cx).iter().position(|item| item.value() == value) else {
             return;
         };
-        let changed = self.selected != Some(index);
-        self.selected = Some(index);
-        self.close(window, cx);
-        if changed {
-            cx.emit(ComboboxEvent::Change(value.clone()));
+        if self.items(cx)[index].is_disabled() || self.is_composing(window, cx) {
+            return;
         }
+        let changed = if self.multiple {
+            match self.selected.binary_search(&index) {
+                Ok(position) => {
+                    self.selected.remove(position);
+                }
+                Err(position) => self.selected.insert(position, index),
+            }
+            true
+        } else {
+            let changed = self.selected != [index];
+            self.selected = vec![index];
+            self.close(window, cx);
+            changed
+        };
+        if changed {
+            self.emit_change(window, cx);
+        }
+    }
+
+    fn emit_change(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        cx.emit(ComboboxEvent::Change(self.selected_values(cx)));
+        cx.notify();
+        window.refresh();
     }
 }
 
@@ -497,8 +628,8 @@ impl RenderOnce for ComboboxInput {
     }
 }
 
-/// A named scrolling list. Render direct ComboboxOption children in the exact
-/// order returned by visible_indices; keep empty text outside the list.
+/// A named scrolling list. Render ComboboxOption children in result order,
+/// optionally inside ComboboxGroup wrappers. Keep empty text outside the list.
 #[derive(IntoElement)]
 pub struct ComboboxList {
     base: crate::ObservedElement<gpui::Stateful<gpui::Div>>,
@@ -535,7 +666,66 @@ impl ParentElement for ComboboxList {
 
 impl RenderOnce for ComboboxList {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        CommandList::from_base(self.base, &self.state.read(cx).search, self.label)
+        let state = self.state.read(cx);
+        CommandList::from_base(self.base, &state.search, self.label, state.multiple)
+    }
+}
+
+/// A named result group and heading over the existing Command list navigation.
+/// Items with one group label must be contiguous in the collection. Render only
+/// this group's visible indices; empty groups have no layout or native nodes.
+#[derive(IntoElement)]
+pub struct ComboboxGroup {
+    base: crate::ObservedElement<gpui::Stateful<gpui::Div>>,
+    state: Entity<ComboboxState>,
+    label: SharedString,
+    heading: gpui::Div,
+    children: Vec<AnyElement>,
+}
+
+impl ComboboxGroup {
+    pub fn new(
+        id: impl Into<ElementId>,
+        state: &Entity<ComboboxState>,
+        label: impl Into<SharedString>,
+    ) -> Self {
+        let label = label.into();
+        Self {
+            base: div().id(id).test_support(),
+            state: state.clone(),
+            heading: div().child(label.clone()),
+            label,
+            children: Vec::new(),
+        }
+    }
+
+    pub fn heading(mut self, build: impl FnOnce(gpui::Div) -> gpui::Div) -> Self {
+        self.heading = build(self.heading);
+        self
+    }
+}
+
+impl Styled for ComboboxGroup {
+    fn style(&mut self) -> &mut StyleRefinement {
+        self.base.style()
+    }
+}
+
+impl ParentElement for ComboboxGroup {
+    fn extend(&mut self, children: impl IntoIterator<Item = AnyElement>) {
+        self.children.extend(children);
+    }
+}
+
+impl RenderOnce for ComboboxGroup {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+        CommandGroup::from_base(
+            self.base,
+            &self.state.read(cx).search,
+            self.label,
+            self.heading,
+        )
+        .children(self.children)
     }
 }
 
@@ -594,7 +784,7 @@ impl RenderOnce for ComboboxOption {
             self.base,
             &state.search,
             self.index,
-            state.selected == Some(self.index),
+            state.is_selected(self.index),
         )
     }
 }
@@ -623,6 +813,37 @@ mod tests {
         fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
             let state = self.combo.read(cx);
             let cancels = self.outer_cancels.clone();
+            let option = |index| {
+                ComboboxOption::new(&self.combo, index)
+                    .debug_selector(move || format!("choice-{index}").into())
+                    .h(px(32.))
+                    .child(state.items(cx)[index].label().clone())
+            };
+            let groups = state.visible_groups(cx);
+            let mut list = ComboboxList::new("preset-results", &self.combo)
+                .accessibility_label("Presets")
+                .w(px(320.))
+                .max_h(px(if groups.is_empty() { 160. } else { 64. }));
+            if groups.is_empty() {
+                list = list.children(state.visible_indices(cx).iter().copied().map(option));
+            } else {
+                for group in groups {
+                    list = list.child(
+                        ComboboxGroup::new(
+                            (ElementId::from("group"), group.clone()),
+                            &self.combo,
+                            group.clone(),
+                        )
+                        .heading(|heading| heading.h(px(24.)))
+                        .children(
+                            state
+                                .visible_group_indices(Some(&group), cx)
+                                .into_iter()
+                                .map(option),
+                        ),
+                    );
+                }
+            }
             div()
                 .w(px(320.))
                 .flex()
@@ -632,20 +853,7 @@ mod tests {
                     this.child(
                         Combobox::new("preset", &self.combo)
                             .input(|input| input.accessibility_label("Preset").w_full().h(px(32.)))
-                            .content(
-                                ComboboxList::new("preset-results", &self.combo)
-                                    .accessibility_label("Presets")
-                                    .w(px(320.))
-                                    .max_h(px(160.))
-                                    .children(state.visible_indices(cx).iter().map(|&index| {
-                                        ComboboxOption::new(&self.combo, index)
-                                            .debug_selector(move || {
-                                                format!("choice-{index}").into()
-                                            })
-                                            .h(px(32.))
-                                            .child(state.items(cx)[index].label().clone())
-                                    })),
-                            ),
+                            .content(list),
                     )
                 })
                 .child(
@@ -659,11 +867,18 @@ mod tests {
         }
     }
 
-    type Changes = Rc<RefCell<Vec<SharedString>>>;
+    type Changes = Rc<RefCell<Vec<Vec<SharedString>>>>;
 
     fn harness(cx: &mut TestAppContext) -> (&mut VisualTestContext, Entity<Harness>, Changes) {
+        harness_with_mode(cx, false)
+    }
+
+    fn harness_with_mode(
+        cx: &mut TestAppContext,
+        multiple: bool,
+    ) -> (&mut VisualTestContext, Entity<Harness>, Changes) {
         cx.update(crate::init);
-        let (root, cx) = cx.add_window_view(|window, cx| {
+        let (root, cx) = cx.add_window_view(move |window, cx| {
             let view = cx.new(|cx| {
                 let combo = cx.new(|cx| {
                     ComboboxState::new(
@@ -676,9 +891,10 @@ mod tests {
                         window,
                         cx,
                     )
+                    .multiple(multiple)
                 });
                 combo.update(cx, |state, cx| {
-                    assert!(state.set_selected_value(Some("balanced"), window, cx));
+                    assert!(state.set_selected_values(["balanced"], window, cx));
                 });
                 let observation = cx.observe(&combo, |_, _, cx| cx.notify());
                 Harness {
@@ -740,6 +956,191 @@ mod tests {
     }
 
     #[gpui::test]
+    fn multiple_toggles_preserve_drafts_and_user_removal_clear_respect_editability(
+        cx: &mut TestAppContext,
+    ) {
+        let (cx, view, changes) = harness_with_mode(cx, true);
+        press(cx, "down");
+        press(cx, "down");
+        press(cx, "enter");
+        cx.update(|_, cx| {
+            let state = view.read(cx).combo.read(cx);
+            assert!(state.is_open());
+            assert_eq!(state.selected_indices(), [0, 2]);
+        });
+        press(cx, "enter");
+        type_query(cx, "hq");
+        let option = cx.debug_bounds("choice-3").unwrap().center();
+        cx.simulate_click(option, Modifiers::default());
+        draw(cx);
+        cx.update(|window, cx| {
+            let combo = view.read(cx).combo.clone();
+            combo.update(cx, |state, cx| {
+                assert!(state.is_open());
+                assert_eq!(state.input().read(cx).value(), "hq");
+                assert_eq!(state.selected_indices(), [0, 3]);
+                assert!(state.remove_value("balanced", window, cx));
+                assert!(!state.remove_value("unavailable", window, cx));
+            });
+        });
+        draw(cx);
+        assert_eq!(changes.borrow().len(), 4);
+        cx.update(|window, cx| {
+            let combo = view.read(cx).combo.clone();
+            combo.update(cx, |state, cx| {
+                assert!(state.clear(window, cx));
+                assert!(!state.clear(window, cx));
+                assert!(state.is_open());
+                assert!(state.selected_indices().is_empty());
+                assert_eq!(state.input().read(cx).value(), "");
+                assert!(state.set_selected_values(["balanced", "quality"], window, cx));
+                state.set_query("hq", window, cx);
+                let input = state.input().clone();
+                input.update(cx, |input, cx| {
+                    input.replace_and_mark_text_in_range(None, "q", Some(1..1), window, cx);
+                });
+                assert!(!state.remove_value("balanced", window, cx));
+                assert!(!state.clear(window, cx));
+            });
+        });
+        draw(cx);
+        assert_eq!(changes.borrow().len(), 5);
+        press(cx, "enter");
+        assert_eq!(changes.borrow().len(), 5);
+        press(cx, "escape");
+        press(cx, "escape");
+        cx.update(|window, cx| {
+            let combo = view.read(cx).combo.clone();
+            combo.update(cx, |state, cx| {
+                assert!(!state.is_open());
+                assert_eq!(state.input().read(cx).value(), "");
+                assert_eq!(state.selected_indices(), [0, 3]);
+                state.set_disabled(true, window, cx);
+                assert!(!state.clear(window, cx));
+                assert!(!state.remove_value("balanced", window, cx));
+            });
+        });
+        assert_eq!(changes.borrow().len(), 5);
+    }
+
+    #[gpui::test]
+    fn grouped_results_scroll_and_replacement_preserves_query_composition_and_values(
+        cx: &mut TestAppContext,
+    ) {
+        let (cx, view, changes) = harness_with_mode(cx, true);
+        cx.update(|window, cx| {
+            let combo = view.read(cx).combo.clone();
+            combo.update(cx, |state, cx| {
+                state.set_items(
+                    [
+                        SearchItem::new("balanced", "Balanced").group("Standard"),
+                        SearchItem::new("unavailable", "Unavailable")
+                            .group("Standard")
+                            .disabled(true),
+                        SearchItem::new("presentation", "Presentation").group("Special"),
+                        SearchItem::new("quality", "High quality").group("Special"),
+                    ],
+                    window,
+                    cx,
+                );
+                state.open(window, cx);
+            });
+        });
+        draw(cx);
+        press(cx, "down");
+        #[cfg(feature = "test-support")]
+        let highlighted_bounds = cx.debug_bounds("choice-2").unwrap();
+        cx.update(|window, cx| {
+            let state = view.read(cx).combo.read(cx);
+            assert_eq!(state.highlighted_index(cx), Some(2));
+            assert!(state.focus_handle().is_focused(window));
+            #[cfg(feature = "test-support")]
+            {
+                let list =
+                    crate::test_support::find(window, &[], &"preset-results".into()).unwrap();
+                assert!(highlighted_bounds.top() >= list.bounds().top());
+                assert!(highlighted_bounds.bottom() <= list.bounds().bottom());
+                let group = crate::test_support::find(
+                    window,
+                    &[],
+                    &(ElementId::from("group"), SharedString::from("Special")).into(),
+                )
+                .unwrap();
+                assert_eq!(group.role(), Some(Role::Group));
+                assert_eq!(group.label(), Some("Special"));
+                let nodes = crate::test_support::snapshots(window);
+                assert!(
+                    nodes.iter().any(|node| node.role() == Some(Role::Heading)
+                        && node.label() == Some("Special"))
+                );
+            }
+        });
+        type_query(cx, "quality");
+        cx.update(|window, cx| {
+            let _ = window;
+            let state = view.read(cx).combo.read(cx);
+            assert_eq!(state.visible_groups(cx), [SharedString::from("Special")]);
+            #[cfg(feature = "test-support")]
+            assert!(
+                crate::test_support::find(
+                    window,
+                    &[],
+                    &(ElementId::from("group"), SharedString::from("Standard")).into()
+                )
+                .is_none()
+            );
+        });
+        press(cx, "enter");
+        cx.update(|window, cx| {
+            let combo = view.read(cx).combo.clone();
+            combo.update(cx, |state, cx| {
+                assert!(state.set_selected_values(
+                    ["balanced", "presentation", "quality"],
+                    window,
+                    cx
+                ));
+                state.set_query("quality", window, cx);
+                let input = state.input().clone();
+                input.update(cx, |input, cx| {
+                    input.replace_and_mark_text_in_range(Some(0..7), "q", Some(1..1), window, cx);
+                });
+                let before = input.read(cx).selected_range();
+                state.set_items(
+                    [
+                        SearchItem::new("query-preview", "Query preview").group("Special"),
+                        SearchItem::new("quality", "Quality renamed").group("Special"),
+                        SearchItem::new("balanced", "Balanced")
+                            .group("Special")
+                            .disabled(true),
+                    ],
+                    window,
+                    cx,
+                );
+                assert_eq!(state.selected_indices(), [1]);
+                assert_eq!(state.visible_indices(cx), [0, 1]);
+                assert_eq!(
+                    state.highlighted_index(cx),
+                    Some(1),
+                    "keep the highlighted value when a new matching item is inserted before it"
+                );
+                assert_eq!(state.selected_values(cx), [SharedString::from("quality")]);
+                assert_eq!(input.read(cx).value(), "q");
+                assert_eq!(input.read(cx).selected_range(), before);
+                input.update(cx, |input, cx| {
+                    assert!(input.marked_text_range(window, cx).is_some())
+                });
+                assert!(state.is_open());
+                assert!(state.focus_handle().is_focused(window));
+            });
+        });
+        assert_eq!(
+            changes.borrow().len(),
+            1,
+            "item replacement does not emit selection"
+        );
+    }
+
+    #[gpui::test]
     fn draft_search_commits_once_and_cancellation_restores_selection(cx: &mut TestAppContext) {
         let (cx, view, changes) = harness(cx);
         cx.simulate_keystrokes("down down");
@@ -752,7 +1153,7 @@ mod tests {
                 Some(2),
                 "disabled option is skipped"
             );
-            assert_eq!(state.selected_index(), Some(0));
+            assert_eq!(state.selected_indices(), [0]);
             assert!(state.focus_handle().is_focused(window));
         });
         press(cx, "escape");
@@ -765,7 +1166,10 @@ mod tests {
         cx.simulate_keystrokes("down down");
         press(cx, "enter");
         press(cx, "enter");
-        assert_eq!(*changes.borrow(), [SharedString::from("presentation")]);
+        assert_eq!(
+            *changes.borrow(),
+            [vec![SharedString::from("presentation")]]
+        );
         type_query(cx, "no matching preset");
         press(cx, "enter");
         cx.update(|_, cx| {
@@ -773,7 +1177,10 @@ mod tests {
             assert!(state.is_open());
             assert!(state.visible_indices(cx).is_empty());
             assert_eq!(
-                state.selected_value(cx).map(|value| value.as_ref()),
+                state
+                    .selected_items(cx)
+                    .next()
+                    .map(|item| item.value().as_ref()),
                 Some("presentation")
             );
         });
@@ -792,11 +1199,11 @@ mod tests {
         draw(cx);
         assert_eq!(
             *changes.borrow(),
-            ["presentation", "quality"].map(SharedString::from)
+            ["presentation", "quality"].map(|value| vec![SharedString::from(value)])
         );
         cx.update(|window, cx| {
             let state = view.read(cx).combo.read(cx);
-            assert_eq!(state.selected_index(), Some(3));
+            assert_eq!(state.selected_indices(), [3]);
             assert_eq!(state.input().read(cx).value(), "High quality");
             assert!(state.focus_handle().is_focused(window));
             #[cfg(feature = "test-support")]
@@ -810,7 +1217,7 @@ mod tests {
         });
         cx.update(|window, cx| {
             view.read(cx).combo.clone().update(cx, |state, cx| {
-                state.set_selected_value(None, window, cx);
+                state.set_selected_values(std::iter::empty::<&str>(), window, cx);
             });
         });
         press(cx, "down");
@@ -819,7 +1226,7 @@ mod tests {
         press(cx, "down");
         cx.update(|_, cx| {
             let state = view.read(cx).combo.read(cx);
-            assert_eq!(state.selected_index(), None);
+            assert!(state.selected_indices().is_empty());
             assert_eq!(state.highlighted_index(cx), Some(0));
         });
     }
@@ -844,7 +1251,7 @@ mod tests {
         cx.update(|window, cx| {
             let state = view.read(cx).combo.read(cx);
             assert!(state.is_open());
-            assert_eq!(state.selected_index(), Some(0));
+            assert_eq!(state.selected_indices(), [0]);
             assert_eq!(view.read(cx).outer_cancels.get(), 0);
             let input = state.input().clone();
             input.update(cx, |input, cx| {
@@ -855,7 +1262,10 @@ mod tests {
         assert!(changes.borrow().is_empty());
         draw(cx);
         press(cx, "enter");
-        assert_eq!(*changes.borrow(), [SharedString::from("presentation")]);
+        assert_eq!(
+            *changes.borrow(),
+            [vec![SharedString::from("presentation")]]
+        );
         cx.simulate_keystrokes("down");
         draw(cx);
         let after = cx.debug_bounds("after").unwrap().center();
@@ -881,7 +1291,7 @@ mod tests {
                 state.open(window, cx);
                 state.set_query("hq", window, cx);
                 assert!(!state.is_open());
-                assert_eq!(state.selected_index(), Some(2));
+                assert_eq!(state.selected_indices(), [2]);
             });
         });
         assert_eq!(changes.borrow().len(), 1);

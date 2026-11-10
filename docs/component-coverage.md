@@ -1,6 +1,6 @@
 # Component coverage
 
-Reference catalogue checked **2026-11-10**:
+Reference catalogue checked **2026-11-11**:
 [shadcn/ui All Components](https://ui.shadcn.com/docs/components).
 Its main catalogue contains **66 entries**, each listed once below. The separate
 AI Elements catalogue is outside this comparison; conversation components already
@@ -22,7 +22,8 @@ library, and reusable presentation and screen compositions whose source belongs
 to the application. The groups below describe our implementation responsibilities,
 not shadcn's internal architecture. The `two_styles` and `catalogue` native examples
 use the reusable [presentation recipes](presentation-recipes.md). Recipe source is distributed in
-this repository; a registry and installer are not yet available.
+this repository; a local source CLI installs recipes, dependencies, tokens and
+license into consumer-owned modules. A remote registry is not provided.
 
 ## Status meanings
 
@@ -48,8 +49,8 @@ in the [form guide](form-controls.md),
 | Button | Available | Native pointer/keyboard activation, disabled state, focus, accessible naming, and explicit current-page metadata independent of selected styling; content and styles belong to the application. |
 | Checkbox | Available | Controlled checked/unchecked/mixed state; the application supplies its indicator and label presentation. |
 | Collapsible | Available | One retained disclosure, Button trigger, active-only content, and focus handling when content closes. |
-| Combobox | Available | Editable search over fixed options, one committed selection, keyboard/pointer commit, and draft cancellation on dismissal. Free-form values, async sources, multiple selection, and groups are not included. |
-| Command | Available | Fixed command items, text filtering, keyboard/pointer actions, and composition with Dialog. Async sources, fuzzy ranking, and groups are not included. |
+| Combobox | Available | Editable single/multiple selection, grouped results, removable selected values and replaceable items that preserve native query/focus/IME and surviving choices. Fetching/request ordering remain application-owned; no free-form values or network manager. |
+| Command | Available | Replaceable command items, named result groups, text filtering, keyboard/pointer actions and Dialog composition. Native query and a surviving highlight are preserved on item replacement; fetching and fuzzy ranking are not supplied. |
 | Context Menu | Available | Secondary-click and keyboard opening, focusable target, shared plain/checked/mixed/radio commands and nested submenus with leaf dispatch, dismissal and focus restoration. Values are application-owned. Target content is noninteractive; touch long-press is not supplied. |
 | Dialog | Available | Modal open/close, initial focus, containment, dismissal, and return focus; the application supplies its surface and contents. |
 | Direction | Available | Scoped `DirectionProvider`, nested overrides, logical row layout, and inherited horizontal navigation for Tabs, RadioGroup, ToggleGroup, Slider, Carousel, Chart, Menubar and NavigationMenu. Slider pointer geometry also mirrors. Application layout uses `Direction::row`; GPUI owns text shaping and editing. |
@@ -116,12 +117,12 @@ popup, focus, and scrolling machinery.
 | --- | --- | --- |
 | Attachment | Recipe | Static native Group named by its full filename, with a visible media-type/size description and optional existing actions. Help derives in-memory JSON metadata from the same string as CodeBlock; Inspect JSON focuses that code viewport. Formatting and action behavior belong to the application. No file access, upload/download, progress, preview renderer, or container focus stop. |
 | Bubble | Recipe | Incoming/outgoing conversation surfaces, grouped author/time metadata and supplied reaction Buttons, demonstrated in the local transcript. Styling, reaction values and message content remain application-owned; no chat transport. |
-| Calendar | Available | Single-date selection, separate focused date, six Monday-first weeks, month/year navigation, and inclusive date bounds. Range/multiple selection, arbitrary disabled-day rules, and locale/week-start configuration are not included. |
+| Calendar | Available | Single/multiple/inclusive range selection, separate focus, six Monday-first weeks, bounded month/year navigation and native multiselectable metadata. Arbitrary disabled-day rules, configurable week starts and non-Gregorian calendars are not included. |
 | Carousel | Available | Fixed single-slide viewport, bounded or looping previous/next, horizontal/vertical keys, RTL, discrete pointer swipe, active-only slides and safe focus when a slide disappears. App-owned media/actions; no autoplay, inertia or multi-slide sizing engine. |
 | Chart | Available | Headless categorical data, visible series and pointer/keyboard point inspection; copyable native line/bar/area plot with axes, legend Toggles, exact-value readout and same-data Table. Negative values and zero baselines are supported. No time/log scales, stacking, pie/radar charts or external chart engine. |
 | Code Block | Recipe | Read-only multiline code with a full-text native Code name, a Button that copies the original string, and bounded two-axis ScrollArea overflow. The application retains its scroll/focus handles. Focused-code arrow/page/Home/End navigation and contained wheel scrolling preserve parent boundaries. No parser, syntax highlighting, editor, selection model, line numbers, or copy-feedback state. |
 | Data Table | Recipe | Fixed text columns and immutable stable-ID rows, case-insensitive filtering, one-column ascending/descending text sorting, pagination, empty-state recovery, and application row actions. Current choice is supplied by the application. No multi-row selection, numeric/date comparators, column hiding/reordering, server data, virtualization, or native sort-direction metadata. |
-| Date Picker | Available | A single Calendar date inside Popover, current selected-day focus, activation commit-and-close, dismissal, and disabled state. Trigger formatting and calendar appearance belong to the application; text parsing, ranges, multiple selection, and presets are not supplied. |
+| Date Picker | Available | Single/multiple/range Calendar values inside Popover; single/complete-range activation closes before events, partial/multiple values stay open. Preset Buttons use the same programmatic setter. Trigger formatting and appearance are application-owned; text parsing and preset fetching are not supplied. |
 | Drawer | Available | Bottom modal surface reusing Dialog focus, Escape and backdrop lifecycle, plus a dedicated downward drag handle with threshold dismissal and snap-back. Body scrolling/editing stays independent; no snap-point or nested-drag engine. |
 | Marker | Recipe | Static date/status boundary with one named native Label between two decorative Separators. The text wraps within a bounded width; its content and formatting belong to the application. Schedule reads the retained Calendar selection without another date or timeline state. No focus stop, action, or automatic live announcement. |
 | Message | Recipe | Read-only native Comment with application-supplied author/time Labels, a wrapping Paragraph body, and an optional existing action. Schedule presents the retained session note and its local edit time, with a Button returning focus to the shared Textarea. No message focus stop, delivery state, transport, history, streaming, or automatic live announcement. |
@@ -145,25 +146,29 @@ documented. Platform observations are recorded separately from automated checks.
 | Priority | Work | Exit condition | Current state |
 | --- | --- | --- | --- |
 | 1 | Existing correctness and core interaction gaps | Fix observed failures; support single-selection ToggleGroup and multiple-open Accordion; verify native values, keyboard/pointer activation, disabled state, and focus on closure | Implemented with focused tests and catalogue consumers |
-| 2 | Remaining common component contracts | Audit the official component examples against each scope above; implement manual Tabs activation, popup side/alignment, range inputs/date selection, and the remaining consumer-required selection/table/navigation capabilities with focused tests and examples | Manual Tabs, side/alignment popups and ordered Slider thumbs implemented; date selection, remaining selection/table/navigation contracts open |
+| 2 | Remaining common component contracts | Audit the official component examples against each scope above; implement manual Tabs activation, popup side/alignment, range inputs/date selection, and the remaining consumer-required selection/table/navigation capabilities with focused tests and examples | Manual Tabs, side/alignment popups, ordered Slider thumbs, date ranges/multiple dates and grouped multiple Combobox implemented; remaining table/navigation and date configuration contracts open |
 | 3 | Visual defaults and accessibility | Consistent visible keyboard focus, disabled/hover/selected/error states, reusable application-owned tokens, narrow-window layout, and usable light/dark presentations | Catalogue focus states and copyable light/dark token source implemented; wider native visual review pending |
-| 4 | Source distribution and developer experience | A small complete starter, compilable public examples, explicit supported API boundary, and a source-copy workflow that resolves recipe dependencies and tokens | Starter, doctest gate and recipe token source implemented; API boundary and automated source-copy workflow open |
+| 4 | Source distribution and developer experience | A small complete starter, compilable public examples, explicit supported API boundary, and a source-copy workflow that resolves recipe dependencies and tokens | Starter, doctest gate, recipe token source and local dependency-aware source CLI implemented; broader API boundary and distribution documentation audit open |
 | 5 | Release validation | Existing formatting, lint, full behavior suite and native example builds pass; representative native IME, screen-reader, DPI, and visual flows have platform-specific observations | Not complete |
 
 Implemented work includes priority 1, catalogue focus presentation, the starter,
 manual Tabs, collision-aware side/alignment popups, single/range/multiple Slider
-thumbs, and a standalone application token module for copied recipes. These
+thumbs, single/multiple/range dates, grouped multiple Combobox, and a local
+dependency-aware source CLI with standalone application tokens. These
 capabilities do not close the overall goal.
-The current Windows checkpoint passed 680 behavior/integration tests and 16
-doctests (two existing doctests remain ignored). Formatting, Clippy and the three
-default-feature example builds passed. Native observation covered the starter's
+The current Windows checkpoint passed 687 behavior/integration tests, five source
+CLI tests and 16 doctests (two existing doctests remain ignored). Formatting,
+workspace Clippy, the source CLI binary and three default-feature example builds
+passed. All 24 CLI recipe modules compiled in a standalone consumer with default
+and test-support features; repeated add after consumer rustfmt preserved files.
+The combined catalogue flow exercises range completion, grouped multiple targets,
+chip removal and item replacement. Native observation covered the starter's
 initial input focus, editing, disabled-to-enabled button, Tab focus indication,
 and Enter activation, plus the catalogue's initial layout. Further catalogue
 pointer checks were interrupted by concurrent desktop input. These observations
 do not establish Korean/CJK IME, screen-reader delivery, DPI or other-platform
-validation. The newest Tabs, Slider, popup positioning and token-source changes
-have automated coverage; no additional native visual observations were made for
-that change set.
+validation. The newer control and source-distribution changes have automated
+coverage; no additional native visual observations were made for them.
 The official [Accordion multiple example](https://ui.shadcn.com/docs/components/base/accordion#multiple),
 [Toggle Group usage](https://ui.shadcn.com/docs/components/base/toggle-group#usage),
 [Slider range](https://ui.shadcn.com/docs/components/base/slider#range),
@@ -191,8 +196,9 @@ those consumer-facing recipes as well as headless behavior.
 
 The current [Combobox](https://ui.shadcn.com/docs/components/base/combobox)
 documentation covers an editable autocomplete and additional selection variants;
-the implemented Combobox here covers fixed single selection. The other variants
-remain gaps in this family rather than extra completed components.
+the implementation here supplies grouped single/multiple selection and item
+replacement. Applications retain chip presentation and asynchronous request
+ownership; these capabilities deepen the same family rather than add components.
 [Command](https://ui.shadcn.com/docs/components/base/command) includes a dialog
 composition rather than requiring a second independent command engine.
 

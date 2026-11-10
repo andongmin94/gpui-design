@@ -12,19 +12,19 @@ use gpui::{
 };
 use gpui_design::{
     Accordion, AccordionHeader, AccordionItem, AccordionPanel, AccordionState, AlertDialog,
-    Breadcrumb, BreadcrumbItem, BreadcrumbList, Button, Calendar, CalendarDay, CalendarState,
-    Checkbox, CheckboxState, Collapsible, CollapsibleContent, CollapsibleState, CollapsibleTrigger,
-    Combobox, ComboboxList, ComboboxOption, ComboboxState, Command, CommandEvent, CommandInput,
-    CommandList, CommandOption, CommandState, ContextMenu, DatePicker, DatePickerState, Dialog,
-    DialogBackdrop, DialogClose, DialogDescription, DialogPopup, DialogState, DialogTitle,
-    DropdownMenu, Field, HoverCard, HoverCardState, Input, InputBase, Label, MenuEvent, MenuItem,
-    MenuOption, MenuState, NaiveDate, Popover, PopoverState, Progress, RadioGroup, RadioGroupState,
-    RadioItem, RadioOption, Resizable, ResizableState, ScrollArea, ScrollbarAxis, ScrollbarMode,
-    SearchItem, Select, SelectItem, SelectOption, SelectState, Separator, Slider, SliderState,
-    SliderThumb, Switch, Tab, TabItem, TabList, TabPanel, Table, TableCaption, TableCell,
-    TableColumn, TableRow, TabsState, TestSupportExt as _, TestTextExt as _, Textarea,
-    TextareaState, Toggle, ToggleGroup, ToggleGroupState, ToggleItem, ToggleOption, Tooltip,
-    TooltipState,
+    Breadcrumb, BreadcrumbItem, BreadcrumbList, Button, Calendar, CalendarDay, CalendarSelection,
+    CalendarState, Checkbox, CheckboxState, Collapsible, CollapsibleContent, CollapsibleState,
+    CollapsibleTrigger, Combobox, ComboboxList, ComboboxOption, ComboboxState, Command,
+    CommandEvent, CommandInput, CommandList, CommandOption, CommandState, ContextMenu, DatePicker,
+    DatePickerState, Dialog, DialogBackdrop, DialogClose, DialogDescription, DialogPopup,
+    DialogState, DialogTitle, DropdownMenu, Field, HoverCard, HoverCardState, Input, InputBase,
+    Label, MenuEvent, MenuItem, MenuOption, MenuState, NaiveDate, Popover, PopoverState, Progress,
+    RadioGroup, RadioGroupState, RadioItem, RadioOption, Resizable, ResizableState, ScrollArea,
+    ScrollbarAxis, ScrollbarMode, SearchItem, Select, SelectItem, SelectOption, SelectState,
+    Separator, Slider, SliderState, SliderThumb, Switch, Tab, TabItem, TabList, TabPanel, Table,
+    TableCaption, TableCell, TableColumn, TableRow, TabsState, TestSupportExt as _,
+    TestTextExt as _, Textarea, TextareaState, Toggle, ToggleGroup, ToggleGroupState, ToggleItem,
+    ToggleOption, Tooltip, TooltipState,
     input::{InputAccessibility, InputEditorStyle, InputEvent, InputState},
 };
 
@@ -135,7 +135,7 @@ impl Demo {
                 window,
                 cx,
             );
-            state.set_selected_value(Some("balanced"), window, cx);
+            state.set_selected_values(["balanced"], window, cx);
             state
         });
         preset.read(cx).input().clone().update(cx, |state, _| {
@@ -222,7 +222,7 @@ impl Demo {
                     NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
                     NaiveDate::from_ymd_opt(2027, 12, 31).unwrap(),
                 )
-                .default_value(initial)
+                .default_selection(CalendarSelection::Single(Some(initial)))
         });
         let date_picker = cx.new(|cx| DatePickerState::new(&calendar, window, cx));
         let schedule_split = cx.new(|cx| {
@@ -460,7 +460,7 @@ impl Demo {
     ) -> impl IntoElement + use<> {
         let state = self.calendar.read(cx);
         let month = state.month();
-        let selected = state.selected_date();
+
         let calendar = Calendar::new("recording-calendar", &self.calendar)
             .accessibility_label(format!("Recording date, {}", month.format("%B %Y")))
             .flex()
@@ -516,7 +516,7 @@ impl Demo {
                             .hover(|style| style.bg(palette.highlight))
                             .focus_visible(|style| style.border_color(palette.accent))
                             .styles(|styles| styles.disabled(|style| style.opacity(0.35)))
-                            .when(selected == Some(date), |day| {
+                            .when(state.is_selected(date), |day| {
                                 day.bg(palette.accent).text_color(palette.accent_foreground)
                             })
                             .child(date.day().to_string())
@@ -573,7 +573,7 @@ impl Demo {
         window: &Window,
         cx: &Context<Self>,
     ) -> impl IntoElement + use<> {
-        let selected_date = self.calendar.read(cx).selected_date();
+        let selected_date = self.calendar.read(cx).selection().first_date();
         let date_label = selected_date
             .map(|date| date.format("%Y-%m-%d").to_string())
             .unwrap_or_else(|| "Pick a date".to_string());
@@ -623,7 +623,8 @@ impl Demo {
         let preset = self
             .preset
             .read(cx)
-            .selected_item(cx)
+            .selected_items(cx)
+            .next()
             .map(|item| item.label().clone())
             .unwrap_or_else(|| "Choose a preset".into());
         let plan = Table::new(
@@ -751,15 +752,22 @@ impl Demo {
     fn render_preset_preview(&self, palette: Palette, cx: &Context<Self>) -> gpui::AnyElement {
         let preset_state = self.preset.read(cx);
         let preset_label = preset_state
-            .selected_item(cx)
+            .selected_items(cx)
+            .next()
             .map(|item| item.label().clone())
             .unwrap_or_else(|| "None".into());
         let preset_description = Self::preset_description(
             preset_state
-                .selected_value(cx)
+                .selected_items(cx)
+                .next()
+                .map(|item| item.value())
                 .map_or("", |value| value.as_ref()),
         );
-        let preset_value = preset_state.selected_value(cx).map(|value| value.as_ref());
+        let preset_value = preset_state
+            .selected_items(cx)
+            .next()
+            .map(|item| item.value())
+            .map(|value| value.as_ref());
         let (preset_initials, frame_ratio, frame_label) = match preset_value {
             Some("presentation") => ("PR", 4. / 3., "4:3"),
             Some("quality") => ("HQ", 16. / 9., "16:9"),
@@ -862,7 +870,7 @@ impl Demo {
                         "Recording date: {}",
                         self.calendar
                             .read(cx)
-                            .selected_date()
+                            .selection().first_date()
                             .map(|date| date.format("%Y-%m-%d").to_string())
                             .unwrap_or_else(|| "Not scheduled".to_string())
                     )))
@@ -1053,7 +1061,7 @@ impl Demo {
         let configuration = serde_json::json!({
             "session_name": self.input.read(cx).value().as_ref(),
             "notes": self.notes.read(cx).value().as_ref(),
-            "recording_preset": self.preset.read(cx).selected_value(cx).map(|value| value.as_ref()),
+            "recording_preset": self.preset.read(cx).selected_items(cx).next().map(|item| item.value()).map(|value| value.as_ref()),
             "drawing": {
                 "tool": self.select.read(cx).selected_item().map(|item| item.value().as_ref()),
                 "stroke": self.stroke.read(cx).selected_item().map(|item| item.value().as_ref()),
@@ -1214,13 +1222,15 @@ impl Demo {
         let date = self
             .calendar
             .read(cx)
-            .selected_date()
+            .selection()
+            .first_date()
             .map(|date| date.format("%Y-%m-%d").to_string())
             .unwrap_or_else(|| "Not selected".to_string());
         let preset = self
             .preset
             .read(cx)
-            .selected_item(cx)
+            .selected_items(cx)
+            .next()
             .map(|item| item.label().clone())
             .unwrap_or_else(|| "Not selected".into());
         let tool = self
@@ -1729,9 +1739,7 @@ impl Render for Demo {
                 )
                 .when(item.is_disabled(), |option| option.opacity(0.45))
                 .child(item.label().clone())
-                .when(preset_state.selected_index() == Some(index), |option| {
-                    option.child("✓")
-                })
+                .when(preset_state.is_selected(index), |option| option.child("✓"))
         });
         let preset = Combobox::new("recording-preset", &self.preset)
             .input(|input| {
@@ -1773,7 +1781,8 @@ impl Render for Demo {
                     }),
             );
         let preset_label = preset_state
-            .selected_item(cx)
+            .selected_items(cx)
+            .next()
             .map(|item| item.label().clone())
             .unwrap_or_else(|| "None".into());
         let preset_preview = self.render_preset_preview(palette, cx);
@@ -1946,10 +1955,16 @@ impl Render for Demo {
         let preset_table = DataTable::new("preset-catalogue", &self.preset_table, palette)
             .accessibility_label("Recording presets")
             .action_label("Use preset")
-            .selected_value(preset_state.selected_value(cx).cloned())
+            .selected_value(
+                preset_state
+                    .selected_items(cx)
+                    .next()
+                    .map(|item| item.value())
+                    .cloned(),
+            )
             .on_action(move |value, window, cx| {
                 table_preset.update(cx, |state, cx| {
-                    state.set_selected_value(Some(value.as_ref()), window, cx);
+                    state.set_selected_values([value.as_ref()], window, cx);
                 });
             });
         let sections = [
@@ -2203,7 +2218,7 @@ impl Render for Demo {
                                 "Recording date: {}",
                                 self.calendar
                                     .read(cx)
-                                    .selected_date()
+                                    .selection().first_date()
                                     .map(|date| date.format("%Y-%m-%d").to_string())
                                     .unwrap_or_else(|| "Not scheduled".to_string())
                             )))

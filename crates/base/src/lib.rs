@@ -82,7 +82,9 @@ pub use alert_dialog::AlertDialog;
 pub(crate) use auto_scroll::AutoScroll;
 pub use breadcrumb::{Breadcrumb, BreadcrumbItem, BreadcrumbList};
 pub use button::{Button, ButtonStyles};
-pub use calendar::{Calendar, CalendarDay, CalendarEvent, CalendarState, NaiveDate};
+pub use calendar::{
+    Calendar, CalendarDay, CalendarEvent, CalendarSelection, CalendarState, NaiveDate,
+};
 pub use carousel::{Carousel, CarouselControl, CarouselEvent, CarouselSlide, CarouselState};
 pub use chart::{Chart, ChartEvent, ChartSeries, ChartState};
 pub use checkbox::{Checkbox, CheckboxState, CheckboxStyles};
@@ -90,10 +92,12 @@ pub use collapsible::{
     Collapsible, CollapsibleContent, CollapsibleEvent, CollapsibleState, CollapsibleTrigger,
 };
 pub use combobox::{
-    Combobox, ComboboxEvent, ComboboxInput, ComboboxList, ComboboxOption, ComboboxState,
+    Combobox, ComboboxEvent, ComboboxGroup, ComboboxInput, ComboboxList, ComboboxOption,
+    ComboboxState,
 };
 pub use command::{
-    Command, CommandEvent, CommandInput, CommandList, CommandOption, CommandState, SearchItem,
+    Command, CommandEvent, CommandGroup, CommandInput, CommandList, CommandOption, CommandState,
+    SearchItem,
 };
 pub use component_traits::Selectable;
 pub use context_menu::ContextMenu;

@@ -33,9 +33,9 @@ validation. Catalogue coverage alone is not a claim of shadcn/ui-level completen
 | **Field** | Label focus, help/error descriptions, and required/invalid metadata for existing Input/Textarea-based controls | Layout, label/help/error styles, control rendering, and validation rules |
 | **Label** | Named native text label that focuses an existing control when clicked, with an explicit disabled flag and no extra Tab stop | Text, layout, styling, target accessible name, and matching disabled state |
 | **Select** | Single selection from fixed options, keyboard navigation, disabled options, commit, and focus | Trigger, popup content, and option rendering |
-| **Combobox** | Editable search over fixed options, separate committed selection, keyboard/pointer commit, and draft cancellation on dismissal | Query frame, suggestion surface, result rows, and empty state |
-| **Calendar** | Single date selection, separate focused date, bounded month/year navigation, and a Monday-first grid | Month controls, weekday/date labels, grid layout, and day styling |
-| **DatePicker** | Calendar selection inside Popover, selected-date or retained-cursor initial focus, commit-and-close, dismissal, and disabled state | Formatted trigger, calendar/month controls, and popup surface |
+| **Combobox** | Editable single/multiple selection, grouped search results, replaceable options, keyboard/pointer commit, and draft cancellation | Query frame, suggestion surface, result rows, selected chips, and empty state |
+| **Calendar** | Single/multiple/range date selection, separate focused date, bounded month/year navigation, and a Monday-first grid | Month controls, weekday/date labels, grid layout, and day styling |
+| **DatePicker** | Calendar selection inside Popover, selected-date or retained-cursor initial focus, single/complete-range closing, dismissal, and disabled state | Formatted trigger, calendar/month controls, presets, and popup surface |
 | **Slider** | One or more ordered numeric values, bounded steps, per-thumb focus and accessibility, keyboard/pointer adjustment, disabled state, vertical and RTL geometry | Track, fill, thumbs, sizing, and state styling |
 | **Progress** | Controlled percentage or indeterminate progress, accessible name and numeric range | Track, fill, label, and any animation |
 | **Breadcrumb** | Named navigation, ordered path items, and native current-page metadata | Path labels, ancestor actions, separators, layout, and styling |
@@ -120,9 +120,11 @@ controls' frame borders, radii, layout, design palette, and sizing scales.
 Select accepts a fixed, ordered collection when `SelectState` is created. Each
 option has a unique value; the state owns the selected value and keyboard cursor.
 Command and Combobox share `SearchItem` values, labels, aliases, and disabled
-flags. Combobox adds one committed selection to the shared query and result
-navigation; typing alone does not change that selection. Its current scope is
-fixed single selection, without free-form values, async sources, or groups.
+flags and group labels. Combobox adds single or multiple committed values to the
+shared query and result navigation; typing alone does not change selection.
+Applications can replace items while preserving native query editing and stable
+selected values. Fetching, request ordering and free-form values belong to the
+application rather than a second input or network engine.
 
 The [two-style example](crates/base/examples/two_styles.rs) applies a compact dark
 presentation and a light settings presentation to shared form controls, with
@@ -261,8 +263,8 @@ Popover; only the trigger interaction and requested placement differ.
 project application-owned state into native menu semantics. `MenuSubmenu` routes
 leaf activation through the root MenuState; it does not add another selection store.
 Command reuses Input for its query and can be hosted in Dialog. Combobox reuses
-Command's filtering, result cursor, scrolling, and activation, with one committed
-value and a suggestion surface positioned by Popup. Textarea renders the existing
+Command's filtering, result cursor, scrolling, and activation, with single or
+multiple committed values and a suggestion surface positioned by Popup. Textarea renders the existing
 multiline editing state. Field projects associated text into that native input's
 semantics. Label uses the target's existing FocusHandle for click-to-focus;
 the pinned GPUI API does not expose a native labelled-by relationship between
@@ -278,8 +280,9 @@ native table semantics. ScrollArea composes GPUI's ScrollHandle viewport with th
 retained Scrollbar implementation, without another scrolling engine.
 Breadcrumb supplies native navigation/list structure and current-page metadata;
 the consumer composes ordinary Buttons and owns their destination callbacks.
-Appearance belongs in the application. A separately distributed
-styled component catalog, installation CLI, and registry have not been added.
+Appearance belongs in the application. The local `gpui-design-cli` copies selected
+presentation recipes and their dependencies into consumer-owned modules. A remote
+registry and separately published styled component package are not provided.
 
 See the [form control guide](docs/form-controls.md) for state ownership, keyboard
 contracts, and application-owned styling. Checkbox and Switch report the next
@@ -351,10 +354,27 @@ the desired presentation recipes into the application using their
 The GPUI snapshot family is pinned to **`=0.3.11`**. Update those pins and
 `Cargo.lock` together when changing the rendering dependency.
 
+Copy application-owned presentation source with its required recipe modules,
+light/dark tokens and license:
+
+```sh
+cargo run -p gpui-design-cli --locked -- list
+cargo run -p gpui-design-cli --locked -- add data-table avatar --to ../my-app/src/ui
+```
+
+Declare `mod ui;` in the consumer. The tool preserves edits to previously installed
+recipe and palette files; modified generated module declarations or new-file
+conflicts stop before writing. It leaves Cargo dependencies to the consumer.
+See the [source-copy guide](docs/presentation-recipes.md#copy-into-an-application).
+The catalogue's Selection section demonstrates range/multiple dates, grouped
+recording targets, removable selected chips and replaceable local option data.
+
+
 ## Work on the source
 
 | Location | Responsibility |
 | --- | --- |
+| `crates/cli/` | Source-copy CLI and recipe dependency catalogue |
 | `crates/base/src/` | The `gpui-design` library and its behavior-level tests |
 | `crates/base/tests/` | Integration tests using the public API |
 | `crates/base/examples/starter.rs` | Small complete application using only public APIs |
@@ -381,9 +401,9 @@ Run the checks for the completed change set:
 
 ```sh
 cargo fmt --all -- --check
-cargo clippy -p gpui-design --all-targets --features test-support --locked -- -D warnings
-cargo test -p gpui-design --features test-support --locked
-cargo build -p gpui-design --examples --locked
+cargo clippy --workspace --all-targets --features gpui-design/test-support --locked -- -D warnings
+cargo test --workspace --features gpui-design/test-support --locked
+cargo build --workspace --bins --examples --locked
 ```
 
 The [Verify workflow](https://github.com/andongmin94/gpui-design/actions/workflows/verify.yml)
@@ -395,8 +415,9 @@ once; each platform still compiles its native dependencies and all examples.
 | Formatting and Clippy | Yes | — | — |
 | Full behavior and integration suite | Yes | — | — |
 | Real consumer composition flows | Included above | Yes | Yes |
+| Source CLI filesystem contracts | Included above | Yes | Yes |
 | Isolated recipe tests | Included above | — | — |
-| All native example builds | Yes | Yes | Yes |
+| Native examples and source CLI builds | Yes | Yes | Yes |
 
 Composition tests use representative session and catalogue flows instead of
 duplicating every scenario for each palette. Add tests for distinct behavior and
@@ -438,12 +459,14 @@ selection and roving focus to Toggle options.
 Collapsible adds retained visibility and content-closure focus to the upstream
 disclosure contract, reusing Button for its trigger. AlertDialog adapts the
 upstream Dialog specialization to the existing retained DialogState and parts.
-Command adds fixed-action search and activation over the existing Input engine.
+Command adds searchable, replaceable and grouped actions over the existing Input engine.
 Textarea exposes that engine's retained multiline state as a public control,
 with form Tab traversal and disabled-input Tab skipping. Separator adds static
 native semantics without imposing visual geometry.
 Combobox extends shared `SearchItem` search and activation with editable drafts,
-committed selection, and an anchored suggestion lifecycle. Field connects visible
+single/multiple committed selection, grouped and replaceable options, and an
+anchored suggestion lifecycle. Calendar and DatePicker retain single, multiple
+and inclusive-range values with independent keyboard navigation. Field connects visible
 labels and application validation feedback to existing text-input semantics;
 it does not own a separate form state or validation engine. Tooltip uses GPUI's
 native tooltip rendering with Button focus, hover timing, and dismissal behavior.

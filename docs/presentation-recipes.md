@@ -9,6 +9,29 @@ consumer's `Palette` or application-supplied `Styled` values.
 
 ## Copy into an application
 
+The source CLI copies a recipe with its transitive recipe dependencies, light/dark
+token source, module declarations, license and required assets:
+
+```sh
+cargo run -p gpui-design-cli --locked -- list
+cargo run -p gpui-design-cli --locked -- add data-table avatar --to ../my-app/src/ui
+```
+
+Declare `mod ui;` in the consumer and use `ui::recipes::{DataTable, Avatar}` and
+`ui::Appearance::Settings.palette()` or `ui::Appearance::Compact.palette()`.
+Use the matching Cargo dependencies in the README. The CLI does not change the
+consumer's manifest. It embeds the repository's current recipe source when built;
+there is no remote registry or update service.
+
+Run `add` again with more names to extend the same directory. Existing recipe
+and palette edits are preserved. Generated `mod.rs` declarations and
+`recipes/.gpui-design` track the installed set; if those scaffolds were edited,
+the CLI stops before writing and explains how to add declarations manually.
+Conflicting new files are also rejected. The copied source belongs to the
+application.
+
+To copy manually:
+
 1. Copy the desired files from
    [`crates/base/examples/recipes`](../crates/base/examples/recipes) into an
    application module, preserving the repository's license terms.
@@ -34,10 +57,9 @@ consumer's `Palette` or application-supplied `Styled` values.
 4. Import the types from that application module. They use `pub(crate)` visibility
    and are not exported from `gpui_design`. No extra dependency is required.
 
-The source in this repository is the distribution mechanism. The palette module
-and recipes are application source, outside the library exports. There is no
-recipe registry, installer, or global theme provider for these visual tokens.
-The existing crate continues to own interactive behavior.
+The palette module and recipes are application source, outside the library
+exports. The CLI provides local source distribution; these visual tokens do not
+install a global theme provider. The library continues to own interactive behavior.
 
 Some recipes compose other recipe modules. Copy those modules and their re-exports
 alongside the desired recipe:
@@ -299,7 +321,7 @@ DataTable::new("preset-catalogue", &state, palette)
     .selected_value(current_preset)
     .on_action(move |id, window, cx| {
         preset.update(cx, |state, cx| {
-            state.set_selected_value(Some(id.as_ref()), window, cx);
+            state.set_selected_values([id.as_ref()], window, cx);
         });
     })
 ```
@@ -727,7 +749,7 @@ presentation; supply a bounded width and allow the label's height to grow. The
 recipe uses GPUI's existing text layout and adds no text renderer or timeline state.
 
 Both appearances place Marker between Schedule's DatePicker and its notes/plan
-panes. The consumer reads `CalendarState::selected_date()` and formats
+panes. The consumer reads `CalendarState::selection().first_date()` and formats
 `Selected date · YYYY-MM-DD`, or `No date selected` when the selection is empty.
 Moving the calendar cursor without committing a selection does not change this
 boundary. Date formatting remains application-owned, and the marker does not

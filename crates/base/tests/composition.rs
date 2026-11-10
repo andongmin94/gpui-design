@@ -19,8 +19,8 @@ use gpui::{
     VisualTestContext, point, px,
 };
 use gpui_design::{
-    ComboboxEvent, CommandEvent, MenuEvent, NaiveDate, RadioGroupEvent, Root, SelectEvent,
-    TabsEvent, test_support,
+    CalendarSelection, ComboboxEvent, CommandEvent, MenuEvent, NaiveDate, RadioGroupEvent, Root,
+    SelectEvent, TabsEvent, test_support,
 };
 use two_styles::{Appearance, Demo};
 
@@ -2026,7 +2026,7 @@ fn settings_trace_discloses_current_values_with_retained_focus_and_parent_scroll
             });
             let calendar = demo.read(cx).calendar.clone();
             calendar.update(cx, |state, cx| {
-                assert!(state.set_selected_date(None, window, cx))
+                assert!(state.set_selection(CalendarSelection::Single(None), window, cx))
             });
         });
         draw(cx);
@@ -2089,7 +2089,7 @@ fn settings_trace_discloses_current_values_with_retained_focus_and_parent_scroll
             assert!(demo.settings_trace.read(cx).is_open());
             assert_eq!(demo.input.read(cx).value(), replacement_name);
             assert_eq!(demo.notes.read(cx).value(), replacement_notes);
-            assert_eq!(demo.calendar.read(cx).selected_date(), None);
+            assert_eq!(demo.calendar.read(cx).selection().first_date(), None);
             assert_eq!(demo.tabs.read(cx).selected_index(), Some(2));
             assert!(demo.accordion.read(cx).is_open(2));
             assert_eq!(
@@ -2942,7 +2942,11 @@ fn field_feedback_and_search_selection_work_inside_the_dialog(cx: &mut TestAppCo
         assert!(preset.is_open());
         assert_eq!(preset.visible_indices(cx), &[2]);
         assert_eq!(
-            preset.selected_value(cx).map(|value| value.as_ref()),
+            preset
+                .selected_items(cx)
+                .next()
+                .map(|item| item.value())
+                .map(|value| value.as_ref()),
             Some("balanced")
         );
     });
@@ -2969,14 +2973,18 @@ fn field_feedback_and_search_selection_work_inside_the_dialog(cx: &mut TestAppCo
         assert!(!preset.is_open());
         assert!(preset.focus_handle().is_focused(window));
         assert_eq!(
-            preset.selected_value(cx).map(|value| value.as_ref()),
+            preset
+                .selected_items(cx)
+                .next()
+                .map(|item| item.value())
+                .map(|value| value.as_ref()),
             Some("presentation")
         );
         assert_eq!(preset.input().read(cx).value(), "Presentation");
     });
     assert_eq!(
         changes.borrow().as_slice(),
-        &[gpui::SharedString::from("presentation")]
+        &[vec![gpui::SharedString::from("presentation")]]
     );
     cx.simulate_keystrokes(select_all);
     cx.simulate_input("no matching preset");
@@ -3051,7 +3059,9 @@ fn field_feedback_and_search_selection_work_inside_the_dialog(cx: &mut TestAppCo
             demo.read(cx)
                 .preset
                 .read(cx)
-                .selected_value(cx)
+                .selected_items(cx)
+                .next()
+                .map(|item| item.value())
                 .map(|value| value.as_ref()),
             Some("presentation")
         );
@@ -3110,7 +3120,7 @@ fn date_picker_and_split_panes_preserve_nested_form_state(cx: &mut TestAppContex
         let calendar = demo.calendar.read(cx);
         assert!(calendar.focus_handle().is_focused(window));
         assert_eq!(
-            calendar.selected_date(),
+            calendar.selection().first_date(),
             NaiveDate::from_ymd_opt(2026, 11, 9)
         );
         let day = test_support::snapshots(window)
@@ -3165,7 +3175,7 @@ fn date_picker_and_split_panes_preserve_nested_form_state(cx: &mut TestAppContex
             NaiveDate::from_ymd_opt(2026, 12, 10).unwrap()
         );
         assert_eq!(
-            calendar.selected_date(),
+            calendar.selection().first_date(),
             NaiveDate::from_ymd_opt(2026, 11, 9)
         );
         let grid = test_support::find(window, &[], &"recording-calendar".into()).unwrap();
@@ -3190,7 +3200,7 @@ fn date_picker_and_split_panes_preserve_nested_form_state(cx: &mut TestAppContex
         );
         assert!(demo.date_picker.read(cx).focus_handle().is_focused(window));
         assert_eq!(
-            demo.calendar.read(cx).selected_date(),
+            demo.calendar.read(cx).selection().first_date(),
             NaiveDate::from_ymd_opt(2026, 11, 9)
         );
         assert_eq!(
@@ -3215,7 +3225,7 @@ fn date_picker_and_split_panes_preserve_nested_form_state(cx: &mut TestAppContex
     draw(cx);
     cx.update(|window, cx| {
         assert_eq!(
-            demo.read(cx).calendar.read(cx).selected_date(),
+            demo.read(cx).calendar.read(cx).selection().first_date(),
             NaiveDate::from_ymd_opt(2026, 12, 10)
         );
         let demo = demo.read(cx);
@@ -3333,7 +3343,7 @@ fn date_picker_and_split_panes_preserve_nested_form_state(cx: &mut TestAppContex
         let demo = demo.read(cx);
         assert_eq!(demo.tabs.read(cx).selected_index(), Some(3));
         assert_eq!(
-            demo.calendar.read(cx).selected_date(),
+            demo.calendar.read(cx).selection().first_date(),
             NaiveDate::from_ymd_opt(2026, 12, 10)
         );
         assert!(!demo.date_picker.read(cx).is_open(cx));
@@ -3384,7 +3394,7 @@ fn schedule_marker_tracks_selection_at_narrow_widths_without_adding_focus(cx: &m
             cx.update(|window, cx| {
                 let calendar = demo.read(cx).calendar.clone();
                 calendar.update(cx, |state, cx| {
-                    assert!(state.set_selected_date(date, window, cx));
+                    assert!(state.set_selection(CalendarSelection::Single(date), window, cx));
                 });
             });
             draw(cx);
@@ -3428,7 +3438,7 @@ fn schedule_marker_tracks_selection_at_narrow_widths_without_adding_focus(cx: &m
                 assert!(text.bounds().left() >= marker.bounds().left());
                 assert!(text.bounds().right() <= marker.bounds().right() + px(1.));
                 let demo = demo.read(cx);
-                assert_eq!(demo.calendar.read(cx).selected_date(), date);
+                assert_eq!(demo.calendar.read(cx).selection().first_date(), date);
                 assert!(demo.date_picker.read(cx).focus_handle().is_focused(window));
                 assert_eq!(demo.fields_scroll.offset().x, px(0.));
             });
@@ -3598,7 +3608,11 @@ fn schedule_message_reuses_notes_and_preserves_metadata_focus_and_parent_scroll(
         cx.update(|window, cx| {
             let calendar = demo.read(cx).calendar.clone();
             calendar.update(cx, |state, cx| {
-                assert!(state.set_selected_date(NaiveDate::from_ymd_opt(2026, 12, 24), window, cx));
+                assert!(state.set_selection(
+                    CalendarSelection::Single(NaiveDate::from_ymd_opt(2026, 12, 24)),
+                    window,
+                    cx
+                ));
             });
         });
         draw(cx);
@@ -3693,7 +3707,7 @@ fn schedule_message_reuses_notes_and_preserves_metadata_focus_and_parent_scroll(
             assert_eq!(demo.notes.read(cx).value(), body);
             assert_eq!(demo.notes_edited_at, time);
             assert_eq!(
-                demo.calendar.read(cx).selected_date(),
+                demo.calendar.read(cx).selection().first_date(),
                 NaiveDate::from_ymd_opt(2026, 12, 24)
             );
             assert_eq!(
@@ -3838,7 +3852,9 @@ fn preset_table_filters_sorts_pages_and_applies_stable_rows(cx: &mut TestAppCont
             demo.read(cx)
                 .preset
                 .read(cx)
-                .selected_value(cx)
+                .selected_items(cx)
+                .next()
+                .map(|item| item.value())
                 .map(|value| value.as_ref()),
             Some("balanced")
         );
@@ -3887,7 +3903,11 @@ fn preset_table_filters_sorts_pages_and_applies_stable_rows(cx: &mut TestAppCont
     cx.update(|window, cx| {
         let preset = demo.read(cx).preset.read(cx);
         assert_eq!(
-            preset.selected_value(cx).map(|value| value.as_ref()),
+            preset
+                .selected_items(cx)
+                .next()
+                .map(|item| item.value())
+                .map(|value| value.as_ref()),
             Some("presentation")
         );
         assert_eq!(preset.input().read(cx).value(), "Presentation");
@@ -3920,7 +3940,9 @@ fn preset_table_filters_sorts_pages_and_applies_stable_rows(cx: &mut TestAppCont
         assert_eq!(
             demo.preset
                 .read(cx)
-                .selected_value(cx)
+                .selected_items(cx)
+                .next()
+                .map(|item| item.value())
                 .map(|value| value.as_ref()),
             Some("presentation")
         );
@@ -4097,6 +4119,94 @@ fn catalogue_connects_confirmation_data_and_conversation(cx: &mut TestAppContext
             !test_support::snapshots(window)
                 .iter()
                 .any(|node| node.role() == Some(Role::Dialog))
+        );
+    });
+
+    section(cx, 4);
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    activate_key(cx, "enter");
+    activate_key(cx, "enter");
+    cx.update(|window, _| {
+        let picker = test_support::find(window, &[], &"recording-date-range".into()).unwrap();
+        assert_eq!(picker.expanded(), Some(true), "a partial range stays open");
+    });
+    cx.simulate_keystrokes("right right");
+    activate_key(cx, "enter");
+    cx.run_until_parked();
+    draw(cx);
+    cx.update(|window, _| {
+        let picker = test_support::find(window, &[], &"recording-date-range".into()).unwrap();
+        assert_eq!(picker.expanded(), Some(false));
+        assert_eq!(picker.focused(), Some(true));
+        assert_eq!(
+            picker.label(),
+            Some("Recording date range: Nov 11 – Nov 13, 2026")
+        );
+    });
+    // Previous month is disabled at the availability calendar's lower bound.
+    cx.simulate_keystrokes("tab tab tab tab");
+    draw(cx);
+    cx.update(|window, _| {
+        let nodes = test_support::snapshots(window);
+        let focused = nodes
+            .iter()
+            .filter(|node| node.focused() == Some(true))
+            .map(|node| (node.role(), node.label()))
+            .collect::<Vec<_>>();
+        assert!(
+            nodes.iter().any(|node| {
+                node.role() == Some(Role::ComboBox)
+                    && node.label() == Some("Search recording targets")
+                    && node.focused() == Some(true)
+            }),
+            "focused controls: {focused:?}"
+        );
+    });
+    cx.simulate_input("archive");
+    draw(cx);
+    activate_key(cx, "enter");
+    cx.update(|window, _| {
+        let nodes = test_support::snapshots(window);
+        assert!(
+            nodes
+                .iter()
+                .any(|node| node.role() == Some(Role::Group) && node.label() == Some("Online"))
+        );
+        assert!(
+            nodes
+                .iter()
+                .any(|node| node.role() == Some(Role::ComboBox) && node.expanded() == Some(true))
+        );
+        assert!(nodes.iter().any(|node| node.role() == Some(Role::Button)
+            && node.label() == Some("Remove Cloud archive")));
+    });
+    cx.simulate_keystrokes("escape tab tab");
+    draw(cx);
+    activate_key(cx, "enter");
+    draw(cx);
+    cx.update(|window, _| {
+        let nodes = test_support::snapshots(window);
+        assert!(!nodes.iter().any(|node| node.role() == Some(Role::Button)
+            && node.label() == Some("Remove Cloud archive")));
+        assert!(
+            nodes
+                .iter()
+                .any(|node| node.role() == Some(Role::ComboBox) && node.focused() == Some(true))
+        );
+    });
+    cx.simulate_keystrokes("tab tab tab");
+    activate_key(cx, "enter");
+    cx.simulate_keystrokes("shift-tab shift-tab shift-tab");
+    cx.simulate_input("Backup");
+    draw(cx);
+    activate_key(cx, "enter");
+    cx.update(|window, _| {
+        assert!(
+            test_support::snapshots(window).iter().any(|node| {
+                node.role() == Some(Role::Button) && node.label() == Some("Remove Backup archive")
+            }),
+            "the replaced item collection is selectable without recreating the editor"
         );
     });
 }

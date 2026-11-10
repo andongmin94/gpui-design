@@ -5,11 +5,13 @@ mod catalogue_conversation;
 mod catalogue_data;
 mod catalogue_forms;
 mod catalogue_navigation;
+mod catalogue_selection;
 
 use catalogue_conversation::ConversationCatalogue;
 use catalogue_data::DataCatalogue;
 use catalogue_forms::CatalogueForms;
 use catalogue_navigation::NavigationCatalogue;
+use catalogue_selection::SelectionCatalogue;
 use gpui::{
     AppContext as _, Context, Entity, FontWeight, InteractiveElement as _, IntoElement,
     ParentElement as _, Render, ScrollHandle, Styled as _, Subscription, Window, div, px, rgb,
@@ -22,6 +24,7 @@ pub(crate) struct Catalogue {
     forms: Entity<CatalogueForms>,
     data: Entity<DataCatalogue>,
     conversation: Entity<ConversationCatalogue>,
+    selection: Entity<SelectionCatalogue>,
     scroll: ScrollHandle,
     _selection: Subscription,
     _tabs_observation: Subscription,
@@ -36,6 +39,7 @@ impl Catalogue {
                     TabItem::new("forms", "Forms and feedback"),
                     TabItem::new("data", "Media and data"),
                     TabItem::new("conversation", "Conversation"),
+                    TabItem::new("selection", "Selection"),
                 ],
                 cx,
             )
@@ -53,6 +57,7 @@ impl Catalogue {
             forms: cx.new(|cx| CatalogueForms::new(window, cx)),
             data: cx.new(|cx| DataCatalogue::new(window, cx)),
             conversation: cx.new(|cx| ConversationCatalogue::new(window, cx)),
+            selection: cx.new(|cx| SelectionCatalogue::new(window, cx)),
             scroll: ScrollHandle::new(),
             _selection: selection,
             _tabs_observation: tabs_observation,
@@ -96,7 +101,8 @@ impl Render for Catalogue {
                 .child(TabPanel::new(&self.tabs,0).w_full().child(self.navigation.clone()))
                 .child(TabPanel::new(&self.tabs,1).w_full().child(self.forms.clone()))
                 .child(TabPanel::new(&self.tabs,2).w_full().child(self.data.clone()))
-                .child(TabPanel::new(&self.tabs,3).w_full().child(self.conversation.clone())))
+                .child(TabPanel::new(&self.tabs,3).w_full().child(self.conversation.clone()))
+                .child(TabPanel::new(&self.tabs,4).w_full().child(self.selection.clone())))
     }
 }
 
