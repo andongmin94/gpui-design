@@ -1,13 +1,15 @@
 //! Label, help, and validation presentation associated with one retained input.
 
 use gpui::{
-    AnyElement, App, Div, ElementId, Entity, InteractiveElement as _, IntoElement, ParentElement,
-    Refineable as _, RenderOnce, Role, SharedString, StatefulInteractiveElement as _,
-    StyleRefinement, Styled, Window, div, prelude::FluentBuilder as _,
+    AnyElement, App, Div, ElementId, Entity, InteractiveElement as _, IntoElement, MouseButton,
+    ParentElement, Refineable as _, RenderOnce, Role, SharedString,
+    StatefulInteractiveElement as _, StyleRefinement, Styled, Window, div,
+    prelude::FluentBuilder as _,
 };
 
 use crate::{
     StateStyle, StyledExt as _, TestSupportExt as _,
+    a11y_disabled::A11yDisabledExt as _,
     input::{InputAccessibility, InputBaseState, InputModeKind},
 };
 
@@ -148,6 +150,7 @@ impl<M: InputModeKind> RenderOnce for Field<M> {
             );
         });
 
+        let disabled = self.input.read(cx).presentation().is_disabled();
         let label_input = self.input;
         let label = div()
             .id((self.id.clone(), "label"))
@@ -156,14 +159,22 @@ impl<M: InputModeKind> RenderOnce for Field<M> {
             .aria_label(self.label.clone())
             .refine_style(&self.styles.label)
             .child(self.label)
-            .on_click(move |_, window, cx| {
-                label_input.update(cx, |state, cx| {
-                    if !state.presentation().is_disabled() {
-                        state.focus(window, cx);
-                    }
-                });
-                cx.stop_propagation();
-            });
+            .when(disabled, |label| {
+                label.on_mouse_down(MouseButton::Left, |_, _, cx| {
+                    cx.stop_propagation();
+                })
+            })
+            .when(!disabled, |label| {
+                label.on_click(move |_, window, cx| {
+                    label_input.update(cx, |state, cx| {
+                        if !state.presentation().is_disabled() {
+                            state.focus(window, cx);
+                        }
+                    });
+                    cx.stop_propagation();
+                })
+            })
+            .a11y_disabled(disabled);
 
         self.base
             .role(Role::Group)
@@ -196,7 +207,10 @@ impl<M: InputModeKind> RenderOnce for Field<M> {
 
 #[cfg(test)]
 mod tests {
-    use gpui::{AppContext as _, Element as _, Render as _, TestAppContext, accesskit};
+    use gpui::{
+        AppContext as _, Context, Element as _, FocusHandle, Modifiers, Render, TestAppContext,
+        accesskit, point, px,
+    };
 
     use super::*;
     use crate::InputState;
@@ -261,5 +275,100 @@ mod tests {
                 assert_eq!(node.description(), None);
             });
         });
+    }
+
+    #[gpui::test]
+    fn label_disabled_state_blocks_parent_focus_but_readonly_remains_focusable(
+        cx: &mut TestAppContext,
+    ) {
+        struct Harness {
+            input: Entity<InputState>,
+            outside: FocusHandle,
+            parent: FocusHandle,
+        }
+        impl Render for Harness {
+            fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+                div()
+                    .flex()
+                    .flex_col()
+                    .w(px(200.))
+                    .child(
+                        div().id("parent").track_focus(&self.parent).child(
+                            Field::new("field", &self.input, "Name")
+                                .flex()
+                                .flex_col()
+                                .styles(|styles| styles.label(|style| style.h(px(32.))))
+                                .child(
+                                    crate::InputBase::new("input")
+                                        .h(px(32.))
+                                        .child(crate::Input::new(&self.input)),
+                                ),
+                        ),
+                    )
+                    .child(
+                        crate::Button::new("outside")
+                            .track_focus(&self.outside)
+                            .h(px(32.))
+                            .child("Outside"),
+                    )
+            }
+        }
+        cx.update(crate::init);
+        let (root, cx) = cx.add_window_view(|window, cx| {
+            let view = cx.new(|cx| Harness {
+                input: cx.new(|cx| InputState::new(window, cx).default_value("Name")),
+                outside: cx.focus_handle(),
+                parent: cx.focus_handle(),
+            });
+            crate::Root::new(view, window, cx)
+        });
+        let view = root
+            .read_with(cx, |root, _| root.view().clone())
+            .downcast::<Harness>()
+            .unwrap();
+        for (disabled, readonly) in [(true, false), (false, true), (false, false)] {
+            view.update(cx, |view, cx| {
+                view.input.update(cx, |input, cx| {
+                    input.set_disabled(disabled, cx);
+                    input.set_readonly(readonly, cx);
+                });
+                cx.notify();
+            });
+            cx.update(|window, cx| {
+                window.activate_window();
+                view.read(cx).outside.clone().focus(window, cx);
+                window.draw(cx).clear(cx);
+            });
+            cx.simulate_click(point(px(20.), px(16.)), Modifiers::default());
+            cx.update(|window, cx| {
+                window.draw(cx).clear(cx);
+                let view = view.read(cx);
+                if disabled {
+                    assert!(
+                        view.outside.is_focused(window),
+                        "a disabled field label must not focus its parent"
+                    );
+                } else {
+                    assert!(
+                        view.input
+                            .read(cx)
+                            .presentation()
+                            .focus_handle()
+                            .is_focused(window)
+                    );
+                }
+                #[cfg(feature = "test-support")]
+                {
+                    let label = crate::test_support::find(
+                        window,
+                        &[],
+                        &(ElementId::from("field"), "label").into(),
+                    )
+                    .unwrap();
+                    assert_eq!(label.disabled(), disabled.then_some(true));
+                    assert_eq!(label.focused(), None);
+                }
+            });
+        }
     }
 }

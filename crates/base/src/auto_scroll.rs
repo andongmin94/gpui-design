@@ -44,14 +44,17 @@ impl AutoScroll {
         // with no flat sections or discontinuities.
         const OUTER_RAMP: f32 = 80.0;
 
-        let bottom_trigger = bounds.bottom() - px(INNER_ZONE);
-        let top_trigger = bounds.top() + px(INNER_ZONE);
+        // Short viewports must not let the top and bottom trigger zones overlap.
+        let inner_zone = px(INNER_ZONE).min(bounds.size.height / 2.);
+        let bottom_trigger = bounds.bottom() - inner_zone;
+        let top_trigger = bounds.top() + inner_zone;
+        let ramp = inner_zone + px(OUTER_RAMP);
 
         if y > bottom_trigger {
-            let t = ((y - bottom_trigger) / px(INNER_ZONE + OUTER_RAMP)).min(1.0);
+            let t = ((y - bottom_trigger) / ramp).min(1.0);
             Some(px(MIN_SPEED + t * (MAX_SPEED - MIN_SPEED)))
         } else if y < top_trigger {
-            let t = ((top_trigger - y) / px(INNER_ZONE + OUTER_RAMP)).min(1.0);
+            let t = ((top_trigger - y) / ramp).min(1.0);
             Some(px(-(MIN_SPEED + t * (MAX_SPEED - MIN_SPEED))))
         } else {
             None
@@ -139,6 +142,16 @@ mod tests {
         let bottom = AutoScroll::compute_delta(px(220.), bounds).unwrap();
         assert_eq!(top, -bottom);
         assert!(top < px(-12.));
+
+        let short = Bounds::new(point(px(0.), px(100.)), size(px(200.), px(24.)));
+        assert_eq!(AutoScroll::compute_delta(short.center().y, short), None);
+        let top = AutoScroll::compute_delta(short.top() + px(1.), short).unwrap();
+        let bottom = AutoScroll::compute_delta(short.bottom() - px(1.), short).unwrap();
+        assert!(top < px(0.));
+        assert_eq!(
+            top, -bottom,
+            "short viewports keep opposite edge directions"
+        );
     }
 
     #[test]

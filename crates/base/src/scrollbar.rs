@@ -11,9 +11,10 @@ use crate::{
 use gpui::{
     Anchor, App, Axis, Background, BorderStyle, Bounds, ContentMask, CursorStyle, Edges, Element,
     ElementId, EntityId, GlobalElementId, Hitbox, HitboxBehavior, Hsla, InspectorElementId,
-    IntoElement, LayoutId, ListState, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
-    Pixels, Point, Position, ScrollEvent, ScrollHandle, Size, Style, TouchDragEvent, TouchPhase,
-    UniformListScrollHandle, Window, fill, point, prelude::FluentBuilder, px, relative, size,
+    IntoElement, LayoutId, ListState, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    PaintQuad, Pixels, Point, Position, ScrollEvent, ScrollHandle, Size, Style, TouchDragEvent,
+    TouchPhase, UniformListScrollHandle, Window, fill, point, prelude::FluentBuilder, px, relative,
+    size,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -1733,7 +1734,10 @@ impl Element for Scrollbar {
                             let scroll_handle = self.scroll_handle.clone();
 
                             move |event: &MouseDownEvent, phase, window, cx| {
-                                if phase.bubble() && bar_hitbox.is_hovered(window) {
+                                if phase.bubble()
+                                    && event.button == MouseButton::Left
+                                    && bar_hitbox.is_hovered(window)
+                                {
                                     cx.stop_propagation();
 
                                     if thumb_bounds.contains(&event.position) {
@@ -1846,7 +1850,10 @@ impl Element for Scrollbar {
                         let scroll_handle = self.scroll_handle.clone();
 
                         move |event: &MouseUpEvent, phase, _, cx| {
-                            if phase.bubble() && state.get().dragged_axis == Some(axis) {
+                            if phase.bubble()
+                                && event.button == MouseButton::Left
+                                && state.get().dragged_axis == Some(axis)
+                            {
                                 scroll_handle.set_offset(active_geometry.drag_offset(
                                     axis,
                                     event.position,
@@ -2509,6 +2516,16 @@ mod tests {
             ScrollbarMode::Always,
             size(px(100.), px(500.)),
         );
+        for button in [MouseButton::Right, MouseButton::Middle] {
+            let position = point(px(95.), px(80.));
+            cx.simulate_mouse_down(position, button, Modifiers::default());
+            cx.simulate_mouse_up(position, button, Modifiers::default());
+            assert_eq!(
+                vertical.offset(),
+                Point::default(),
+                "only primary presses scroll"
+            );
+        }
         cx.simulate_click(point(px(95.), px(80.)), Modifiers::default());
         assert!(vertical.offset().y < px(0.));
         assert_eq!(vertical.offset().x, px(0.));
@@ -3032,6 +3049,18 @@ mod tests {
             Some(MouseButton::Left),
             Modifiers::default(),
         );
+        let dragged_offset = handle.offset();
+        cx.simulate_mouse_up(
+            point(px(95.), px(30.)),
+            MouseButton::Right,
+            Modifiers::default(),
+        );
+        assert_eq!(
+            handle.drag_ends.get(),
+            0,
+            "a secondary release must not end the drag"
+        );
+        assert_eq!(handle.offset(), dragged_offset);
         cx.simulate_mouse_up(
             point(px(95.), px(70.)),
             MouseButton::Left,

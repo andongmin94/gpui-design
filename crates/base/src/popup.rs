@@ -85,27 +85,6 @@ impl Popup {
         self.content = Some(content.into_any_element());
         self
     }
-
-    pub fn resolved_corner(anchor: Anchor, trigger_bounds: Bounds<Pixels>) -> Point<Pixels> {
-        match anchor {
-            Anchor::TopLeft => trigger_bounds.origin,
-            Anchor::TopCenter => trigger_bounds.top_center(),
-            Anchor::TopRight => trigger_bounds.top_right(),
-            Anchor::BottomLeft => Point {
-                x: trigger_bounds.origin.x,
-                y: trigger_bounds.origin.y - trigger_bounds.size.height,
-            },
-            Anchor::BottomCenter => Point {
-                x: trigger_bounds.top_center().x,
-                y: trigger_bounds.origin.y - trigger_bounds.size.height,
-            },
-            Anchor::BottomRight => Point {
-                x: trigger_bounds.top_right().x,
-                y: trigger_bounds.origin.y - trigger_bounds.size.height,
-            },
-            Anchor::LeftCenter | Anchor::RightCenter => trigger_bounds.origin,
-        }
-    }
 }
 
 /// Match the popup's anchor to the opposite edge of the measured trigger.
@@ -220,22 +199,6 @@ mod tests {
     use super::*;
     use gpui::{Context, Render, px};
 
-    #[test]
-    fn resolved_corner_preserves_existing_anchor_math() {
-        let bounds = Bounds {
-            origin: Point::new(px(100.), px(100.)),
-            size: gpui::Size::new(px(200.), px(50.)),
-        };
-        assert_eq!(
-            Popup::resolved_corner(Anchor::TopCenter, bounds),
-            Point::new(px(200.), px(100.))
-        );
-        assert_eq!(
-            Popup::resolved_corner(Anchor::BottomRight, bounds),
-            Point::new(px(300.), px(50.))
-        );
-    }
-
     struct Harness;
 
     impl Render for Harness {
@@ -260,12 +223,14 @@ mod tests {
     struct OcclusionHarness {
         background_hovered: Rc<Cell<bool>>,
         content_hovered: Rc<Cell<bool>>,
+        resolved: Rc<Cell<Option<ResolvedPosition>>>,
     }
 
     impl Render for OcclusionHarness {
         fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
             let background = self.background_hovered.clone();
             let content = self.content_hovered.clone();
+            let resolved = self.resolved.clone();
             div()
                 .relative()
                 .size(px(200.))
@@ -277,12 +242,17 @@ mod tests {
                         .on_mouse_move(move |_, _, _| background.set(true)),
                 )
                 .child(
-                    Popup::new("popup", div().size(px(100.))).content(
-                        div()
-                            .id("content")
-                            .size(px(40.))
-                            .on_mouse_move(move |_, _, _| content.set(true)),
-                    ),
+                    Popup::new("popup", div().size(px(100.)))
+                        .offset(px(0.25))
+                        .on_position(move |position, _| resolved.set(Some(position)))
+                        .content(
+                            div()
+                                .id("content")
+                                .debug_selector(|| "surface".into())
+                                .m(px(8.5))
+                                .size(px(40.))
+                                .on_mouse_move(move |_, _, _| content.set(true)),
+                        ),
                 )
         }
     }
@@ -291,16 +261,24 @@ mod tests {
     fn the_popup_surface_blocks_the_panel_it_covers(cx: &mut gpui::TestAppContext) {
         let background_hovered = Rc::new(Cell::new(false));
         let content_hovered = Rc::new(Cell::new(false));
+        let resolved = Rc::new(Cell::new(None));
         let (_, window) = cx.add_window_view({
             let background_hovered = background_hovered.clone();
             let content_hovered = content_hovered.clone();
+            let resolved = resolved.clone();
             move |_, _| OcclusionHarness {
                 background_hovered,
                 content_hovered,
+                resolved,
             }
         });
         window.update(|window, cx| window.draw(cx).clear(cx));
         window.update(|window, cx| window.draw(cx).clear(cx));
+        assert_eq!(
+            resolved.get().unwrap().bounds,
+            window.debug_bounds("surface").unwrap(),
+            "reported and occluding bounds must match the painted surface"
+        );
 
         window.simulate_mouse_move(
             gpui::point(px(20.), px(110.)),

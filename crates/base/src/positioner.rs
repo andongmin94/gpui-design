@@ -229,8 +229,14 @@ fn resolve(
             align,
             offset,
         } => {
-            let placement =
-                resolve_placement(trigger_bounds, popup_size, viewport_size, margin, placement);
+            let placement = resolve_placement(
+                trigger_bounds,
+                popup_size,
+                viewport_size,
+                margin,
+                placement,
+                offset,
+            );
             let origin = side_origin(trigger_bounds, popup_size, placement, align, offset);
             ResolvedPosition {
                 bounds: clamp(Bounds::new(origin, popup_size), viewport_size, margin),
@@ -246,13 +252,14 @@ fn resolve_placement(
     viewport_size: Size<Pixels>,
     margin: Edges<Pixels>,
     preferred: Option<Placement>,
+    offset: Pixels,
 ) -> Placement {
     let right_limit = (viewport_size.width - margin.right).max(margin.left);
     let bottom_limit = (viewport_size.height - margin.bottom).max(margin.top);
-    let available_left = (trigger_bounds.left() - margin.left).max(px(0.));
-    let available_right = (right_limit - trigger_bounds.right()).max(px(0.));
-    let available_above = (trigger_bounds.top() - margin.top).max(px(0.));
-    let available_below = (bottom_limit - trigger_bounds.bottom()).max(px(0.));
+    let available_left = (trigger_bounds.left() - margin.left - offset).max(px(0.));
+    let available_right = (right_limit - trigger_bounds.right() - offset).max(px(0.));
+    let available_above = (trigger_bounds.top() - margin.top - offset).max(px(0.));
+    let available_below = (bottom_limit - trigger_bounds.bottom() - offset).max(px(0.));
 
     match preferred {
         Some(Placement::Right) if popup_size.width <= available_right => Placement::Right,
@@ -371,7 +378,7 @@ impl Element for Positioner {
         &mut self,
         _: Option<&GlobalElementId>,
         _: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
+        _: Bounds<Pixels>,
         request_layout: &mut Self::RequestLayoutState,
         window: &mut Window,
         cx: &mut App,
@@ -399,12 +406,20 @@ impl Element for Positioner {
         {
             *position = tracked.get();
         }
-        let position = resolve(
+        let mut position = resolve(
             strategy,
             popup_size,
             window.viewport_size(),
             frame.map(|inset| *inset + self.margin),
         );
+        let offset = position.bounds.origin - child_min;
+        let current_offset = window.element_offset();
+        // GPUI snaps the accumulated element offset when reading child bounds.
+        // Report and occlude that same geometry, including fractional placement.
+        let translation = window.pixel_snap_point(current_offset + offset)
+            - window.pixel_snap_point(current_offset);
+        position.bounds.origin = child_min + translation;
+
         if let Some(callback) = &self.on_position {
             callback(position);
         }
@@ -413,9 +428,6 @@ impl Element for Positioner {
         if self.occlude {
             window.insert_hitbox(position.bounds, HitboxBehavior::BlockMouse);
         }
-
-        let offset = position.bounds.origin - bounds.origin;
-        let offset = point(offset.x.round(), offset.y.round());
 
         window.with_element_offset(offset, |window| {
             for child in &mut self.children {
@@ -555,6 +567,50 @@ mod tests {
         );
 
         assert_eq!(position.bounds.top(), px(228.));
+
+        // The preferred side fits the surface alone, but not its requested gap.
+        for (trigger_bounds, placement, expected) in [
+            (
+                trigger(200., 40., 40., 20.),
+                Placement::Top,
+                Placement::Bottom,
+            ),
+            (
+                trigger(200., 340., 40., 20.),
+                Placement::Bottom,
+                Placement::Top,
+            ),
+            (
+                trigger(50., 200., 40., 20.),
+                Placement::Left,
+                Placement::Right,
+            ),
+            (
+                trigger(410., 200., 40., 20.),
+                Placement::Right,
+                Placement::Left,
+            ),
+        ] {
+            let position = resolve(
+                Strategy::Side {
+                    trigger_bounds,
+                    placement: Some(placement),
+                    align: Align::Center,
+                    offset: px(8.),
+                },
+                Size::new(px(40.), px(30.)),
+                viewport(),
+                Edges::all(MARGIN),
+            );
+            assert_eq!(position.placement, Some(expected));
+            let gap = match expected {
+                Placement::Top => trigger_bounds.top() - position.bounds.bottom(),
+                Placement::Bottom => position.bounds.top() - trigger_bounds.bottom(),
+                Placement::Left => trigger_bounds.left() - position.bounds.right(),
+                Placement::Right => position.bounds.left() - trigger_bounds.right(),
+            };
+            assert_eq!(gap, px(8.));
+        }
     }
 
     #[test]

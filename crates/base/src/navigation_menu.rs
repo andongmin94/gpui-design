@@ -275,13 +275,15 @@ impl NavigationMenuState {
         window.refresh();
     }
 
-    fn move_trigger(&mut self, right: bool, window: &mut Window, cx: &mut Context<Self>) {
+    fn move_trigger(
+        &mut self,
+        start: usize,
+        right: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let count = self.items.len();
-        if count == 0 {
-            return;
-        }
         let forward = self.resolved_direction.horizontal_forward(right);
-        let start = self.active.unwrap_or(if forward { count - 1 } else { 0 });
         for distance in 1..=count {
             let index = if forward {
                 (start + distance) % count
@@ -493,10 +495,10 @@ impl RenderOnce for NavigationMenuEntry {
                 }
             })
             .on_action(move |_: &SelectLeft, window, cx| {
-                left.update(cx, |state, cx| state.move_trigger(false, window, cx))
+                left.update(cx, |state, cx| state.move_trigger(index, false, window, cx))
             })
             .on_action(move |_: &SelectRight, window, cx| {
-                right.update(cx, |state, cx| state.move_trigger(true, window, cx))
+                right.update(cx, |state, cx| state.move_trigger(index, true, window, cx))
             })
             .on_action(move |_: &SelectFirst, window, cx| {
                 first.update(cx, |state, cx| state.edge(false, window, cx))
@@ -793,15 +795,19 @@ mod tests {
             navigation.update(cx, |state, cx| state.set_disabled(3, true, window, cx));
         });
         settle(cx);
-        press(cx, "home");
-        cx.update(|window, cx| {
-            assert!(
-                view.read(cx)
-                    .navigation
-                    .read(cx)
-                    .focus_handle(0, cx)
-                    .is_focused(window)
-            )
-        });
+        // Disabling the focused trigger changes the roving Tab entry, but
+        // arrows still start from the control that actually owns focus.
+        for (key, index) in [("right", 0), ("left", 2), ("home", 0)] {
+            press(cx, key);
+            cx.update(|window, cx| {
+                assert!(
+                    view.read(cx)
+                        .navigation
+                        .read(cx)
+                        .focus_handle(index, cx)
+                        .is_focused(window)
+                )
+            });
+        }
     }
 }
