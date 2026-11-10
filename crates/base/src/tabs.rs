@@ -265,6 +265,7 @@ pub struct TabList {
     state: Entity<TabsState>,
     label: Option<SharedString>,
     axis: Axis,
+    direction: Option<crate::Direction>,
     style: StyleRefinement,
     children: Vec<AnyElement>,
 }
@@ -276,6 +277,7 @@ impl TabList {
             state: state.clone(),
             label: None,
             axis: Axis::Horizontal,
+            direction: None,
             style: StyleRefinement::default(),
             children: Vec::new(),
         }
@@ -283,6 +285,12 @@ impl TabList {
 
     pub fn accessibility_label(mut self, label: impl Into<SharedString>) -> Self {
         self.label = Some(label.into());
+        self
+    }
+
+    /// Overrides the inherited logical direction for horizontal arrows.
+    pub fn direction(mut self, direction: crate::Direction) -> Self {
+        self.direction = Some(direction);
         self
     }
 
@@ -314,6 +322,9 @@ impl StatefulInteractiveElement for TabList {}
 
 impl RenderOnce for TabList {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let direction = self
+            .direction
+            .unwrap_or_else(|| crate::Direction::current(cx));
         self.state
             .update(cx, |state, cx| state.bind_focus(window, cx));
         let previous_state = self.state.clone();
@@ -336,10 +347,14 @@ impl RenderOnce for TabList {
                 .aria_orientation(accesskit::Orientation::Horizontal)
                 .key_context("TabList axis=horizontal")
                 .on_action(move |_: &SelectLeft, window, cx| {
-                    previous_state.update(cx, |state, cx| state.move_selection(false, window, cx));
+                    previous_state.update(cx, |state, cx| {
+                        state.move_selection(direction.horizontal_forward(false), window, cx)
+                    });
                 })
                 .on_action(move |_: &SelectRight, window, cx| {
-                    next_state.update(cx, |state, cx| state.move_selection(true, window, cx));
+                    next_state.update(cx, |state, cx| {
+                        state.move_selection(direction.horizontal_forward(true), window, cx)
+                    });
                 }),
             Axis::Vertical => base
                 .aria_orientation(accesskit::Orientation::Vertical)

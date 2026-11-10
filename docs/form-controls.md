@@ -491,6 +491,45 @@ supports multiple selection; RadioGroup supplies exclusive choice. The example
 uses Toggle for unknown progress and ToggleGroup for independent bold/italic
 summary-text styling.
 
+## InputOtp
+
+`InputOtpState::new(length, window, cx)` creates one retained `InputState` with a
+fixed nonzero slot count and an ASCII-digit/length validator. `InputOtp` paints
+application-supplied slots through `.slot(|slot, window, cx| ...)`; each slot
+receives its index, character, active/selected state and disabled/read-only flags.
+Use those facts for borders, grouping and selection presentation. A slot click
+selects a position in the same editor, and there is only one input Tab stop and
+native accessibility owner.
+
+Native paste, selection, arrow navigation, Backspace/Delete and undo remain with
+the existing editor. The entire resulting pasted value must be numeric and fit;
+text is not silently truncated or distributed among separate editors.
+`InputOtpEvent` reports the edited `value` and whether all slots are filled.
+`set_value` validates programmatic replacement; `input()` exposes the retained
+editor for existing Enter/focus integration without changing its validator.
+Completion is a length condition, and verification remains application-owned.
+
+The catalogue Forms and feedback view uses the local code `742915`: completing
+entry enables Review session, which opens a real confirmation Drawer; confirming
+closes the modal before showing a timed Toast. Editing the code clears the local
+confirmation state. No remote verification or transport is involved.
+
+## Questionnaire
+
+`QuestionnaireState<A>` stores the application's answer type and a fixed linear
+flow. `submit_answer` receives an answer plus the application's validation result,
+retains the answer even when rejected, and advances only after successful
+validation. Validation errors keep the current question available for correction. `back()` returns to
+a previous question/review without discarding answers; `complete()` transitions
+from Review to Complete. An empty questionnaire begins at Review.
+
+`Questionnaire::new(id, label)` supplies a named semantic group for the current
+stage. Compose existing editors and ordinary navigation Buttons, notify the
+owning view after state changes, and move focus before unmounting an editor. The
+catalogue demonstrates two retained Input entities, validation, Back, review and
+completion into the local conversation. There is no schema language, branching
+engine, submission backend or duplicate field registry.
+
 ## Verification boundary
 
 The existing GPUI tests cover pointer and native key event routing, checked/mixed

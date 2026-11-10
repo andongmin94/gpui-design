@@ -16,6 +16,8 @@ mod auto_scroll;
 mod breadcrumb;
 mod button;
 mod calendar;
+mod carousel;
+mod chart;
 mod checkbox;
 mod collapsible;
 mod combobox;
@@ -24,6 +26,8 @@ mod component_traits;
 mod context_menu;
 mod date_picker;
 mod dialog;
+mod direction;
+mod drawer;
 mod dropdown_menu;
 mod element_ext;
 mod event;
@@ -33,16 +37,21 @@ mod geometry;
 mod global_state;
 mod hover_card;
 pub mod input;
+mod input_otp;
 mod label;
 #[cfg(all(target_os = "macos", not(test)))]
 mod macos_accessibility;
 mod menu;
+mod menubar;
+mod message_scroller;
+mod navigation_menu;
 mod observe;
 mod overscroll;
 mod popover;
 mod popup;
 mod positioner;
 mod progress;
+mod questionnaire;
 mod radio_group;
 mod reduce_motion;
 mod resizable;
@@ -60,6 +69,7 @@ mod table;
 mod tabs;
 mod text_boundary;
 mod theme;
+mod toast;
 mod toggle;
 mod toggle_group;
 mod tooltip;
@@ -73,6 +83,8 @@ pub(crate) use auto_scroll::AutoScroll;
 pub use breadcrumb::{Breadcrumb, BreadcrumbItem, BreadcrumbList};
 pub use button::{Button, ButtonStyles};
 pub use calendar::{Calendar, CalendarDay, CalendarEvent, CalendarState, NaiveDate};
+pub use carousel::{Carousel, CarouselControl, CarouselEvent, CarouselSlide, CarouselState};
+pub use chart::{Chart, ChartEvent, ChartSeries, ChartState};
 pub use checkbox::{Checkbox, CheckboxState, CheckboxStyles};
 pub use collapsible::{
     Collapsible, CollapsibleContent, CollapsibleEvent, CollapsibleState, CollapsibleTrigger,
@@ -90,6 +102,8 @@ pub use dialog::{
     Dialog, DialogBackdrop, DialogChangeReason, DialogClose, DialogDescription, DialogEvent,
     DialogPopup, DialogState, DialogTitle,
 };
+pub use direction::{Direction, DirectionProvider};
+pub use drawer::{Drawer, DrawerState};
 pub use dropdown_menu::DropdownMenu;
 pub use element_ext::ElementExt;
 pub use event::{InteractiveElementExt, OngoingScrollExt};
@@ -103,15 +117,23 @@ pub use input::{
     Input, InputAccessibility, InputBase, InputEditorStyle, InputState, InputStyles, Textarea,
     TextareaState,
 };
+pub use input_otp::{InputOtp, InputOtpEvent, InputOtpSlot, InputOtpState};
 pub use label::Label;
 #[cfg(all(target_os = "macos", not(test)))]
 pub(crate) use macos_accessibility::install_window_hit_test_forwarder;
-pub use menu::{MenuEvent, MenuItem, MenuOption, MenuState};
+pub use menu::{MenuEvent, MenuItem, MenuOption, MenuState, MenuSubmenu};
+pub use menubar::{Menubar, MenubarItem, MenubarMenu, MenubarState};
+pub use message_scroller::{MessageScroller, MessageScrollerState};
+pub use navigation_menu::{
+    NavigationMenu, NavigationMenuEntry, NavigationMenuEvent, NavigationMenuItem,
+    NavigationMenuLink, NavigationMenuState,
+};
 pub use observe::{ObservedElement, ObservedTextElement, TestSupportExt, TestTextExt};
 pub use popover::{Popover, PopoverState};
 pub use popup::{POPUP_PRIORITY, Popup};
 pub use positioner::{Align, Positioner, ResolvedPosition};
 pub use progress::Progress;
+pub use questionnaire::{Questionnaire, QuestionnaireStage, QuestionnaireState};
 pub use radio_group::{RadioGroup, RadioGroupEvent, RadioGroupState, RadioItem, RadioOption};
 pub use reduce_motion::apply_system_reduce_motion;
 pub use resizable::{Resizable, ResizableEvent, ResizableHandle, ResizableState};
@@ -133,6 +155,7 @@ pub use switch::{Switch, SwitchStyles};
 pub use table::{Table, TableCaption, TableCell, TableColumn, TableRow};
 pub use tabs::{Tab, TabItem, TabList, TabPanel, TabsEvent, TabsState};
 pub use theme::{InputColors, ScrollbarTheme, Theme, ThemeAppearance};
+pub use toast::{Toast, ToastClose, ToastDismissReason, ToastEvent, ToastState};
 pub use toggle::Toggle;
 pub use toggle_group::{ToggleGroup, ToggleGroupEvent, ToggleGroupState, ToggleItem, ToggleOption};
 pub use tooltip::{Tooltip, TooltipState};
@@ -153,17 +176,22 @@ pub fn init(cx: &mut App) {
     reduce_motion::init(cx);
     accordion::init(cx);
     calendar::init(cx);
+    carousel::init(cx);
+    chart::init(cx);
     context_menu::init(cx);
     dialog::init(cx);
     dropdown_menu::init(cx);
     focus_trap::init(cx);
     menu::init(cx);
+    menubar::init(cx);
+    navigation_menu::init(cx);
     popover::init(cx);
     radio_group::init(cx);
     resizable::init(cx);
     select::init(cx);
     slider::init(cx);
     tabs::init(cx);
+    toast::init(cx);
     toggle_group::init(cx);
     input::init(cx);
     root::init(cx);

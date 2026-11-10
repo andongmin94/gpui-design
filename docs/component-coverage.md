@@ -1,23 +1,27 @@
 # Component coverage
 
-Reference catalogue checked **2026-11-09**:
+Reference catalogue checked **2026-11-10**:
 [shadcn/ui All Components](https://ui.shadcn.com/docs/components).
 Its main catalogue contains **66 entries**, each listed once below. The separate
 AI Elements catalogue is outside this comparison; conversation components already
 in the main catalogue remain included.
 
-GPUI Design currently documents **32 public library families and twenty-two copyable
-presentation/composition recipes**, covering **54 catalogue entries** within the scopes below.
-This is not 54/66 feature parity: a family can exist with a deliberately limited
-contract, and several shadcn entries describe combinations of other parts.
-These counts do not measure performance, accessibility conformance, or completion
-of native desktop validation.
+GPUI Design documents **42 public library families and 23 copyable
+presentation/composition recipes**, supplying **65 distinct implementations**.
+The remaining catalogue entry, Native Select, is explicitly **mapped to Select**
+for GPUI. All **66 reference entries have an implemented scope or platform
+mapping** below; none remains unassigned or Pending.
+
+This is catalogue coverage, not complete shadcn/ui feature parity. Each contract
+has explicit limits, and the HTML-specific mapping does not implement a browser
+control or an operating-system picker. These counts do not measure performance,
+accessibility conformance, or completion of native desktop validation.
 
 The target is comparable application-building breadth: shared behavior in the
 library, and reusable presentation and screen compositions whose source belongs
 to the application. The groups below describe our implementation responsibilities,
-not shadcn's internal architecture. The two-style example uses the reusable
-[presentation recipes](presentation-recipes.md). Recipe source is distributed in
+not shadcn's internal architecture. The `two_styles` and `catalogue` native examples
+use the reusable [presentation recipes](presentation-recipes.md). Recipe source is distributed in
 this repository; a registry and installer are not yet available.
 
 ## Status meanings
@@ -25,9 +29,8 @@ this repository; a registry and installer are not yet available.
 - **Available:** a public family and consumer example cover the stated scope.
 - **Recipe:** reusable application source and a working consumer example cover
   the stated presentation; the recipe is outside the library's public exports.
-- **Pending:** no supported public component or reusable recipe is provided yet.
-- **Platform mapping:** the browser-specific contract needs a deliberate GPUI
-  equivalent; a name alias would not supply that behavior.
+- **Mapped:** an explicit GPUI platform equivalent supplies the native application
+  need; the browser-only contract is documented instead of hidden behind an alias.
 
 ## Behavior and semantic foundations
 
@@ -47,18 +50,18 @@ in the [form guide](form-controls.md),
 | Collapsible | Available | One retained disclosure, Button trigger, active-only content, and focus handling when content closes. |
 | Combobox | Available | Editable search over fixed options, one committed selection, keyboard/pointer commit, and draft cancellation on dismissal. Free-form values, async sources, multiple selection, and groups are not included. |
 | Command | Available | Fixed command items, text filtering, keyboard/pointer actions, and composition with Dialog. Async sources, fuzzy ranking, and groups are not included. |
-| Context Menu | Available | Secondary-click placement, Shift-F10/Menu-key opening, a focusable target, and shared plain/boolean checked Menu command navigation, dismissal, and focus restoration. Checked values belong to the application. Target content is noninteractive; submenus, mixed checked values, radio groups, and touch long-press are not supplied. |
+| Context Menu | Available | Secondary-click and keyboard opening, focusable target, shared plain/checked/mixed/radio commands and nested submenus with leaf dispatch, dismissal and focus restoration. Values are application-owned. Target content is noninteractive; touch long-press is not supplied. |
 | Dialog | Available | Modal open/close, initial focus, containment, dismissal, and return focus; the application supplies its surface and contents. |
-| Direction | Pending | A consistent RTL layout and navigation policy has not been established. Text rendering alone does not establish this support. |
-| Dropdown Menu | Available | A Button entry point to the shared Menu state, fixed plain or application-controlled boolean checked commands, enabled-item navigation, single-character search, and dismissal. Activation closes before emitting the shared action event. Submenus, mixed checked values, and radio menu groups are not included. |
+| Direction | Available | Scoped `DirectionProvider`, nested overrides, logical row layout, and inherited horizontal navigation for Tabs, RadioGroup, ToggleGroup, Slider, Carousel, Chart, Menubar and NavigationMenu. Slider pointer geometry also mirrors. Application layout uses `Direction::row`; GPUI owns text shaping and editing. |
+| Dropdown Menu | Available | Button entry to shared menus, application-controlled checked/mixed/radio semantics, enabled-item navigation, single-character search and nested submenu navigation. Leaf activation closes the menu tree before emitting one root action; no second selection store. |
 | Field | Available | Label focus, help/error descriptions, and required/invalid metadata for existing Input/Textarea-based controls, including a Combobox query. Validation remains application-owned; arbitrary control types are not yet covered. |
 | Hover Card | Available | Noninteractive rich preview on delayed hover or trigger focus, delayed closing across trigger/card pointer travel, dismissal, disabled state, and retained-state unmount cleanup. Opening and dismissal preserve existing focus; interactive preview controls and touch long-press are not supplied. |
 | Input | Available | Single-line editing, selection, clipboard, focus, and the native input interface through the retained editing engine. |
-| Input OTP | Pending | Segmented entry and paste distribution are not provided by ordinary Input. |
+| Input OTP | Available | One retained numeric editor with application-rendered slots, selection, clipboard, deletion, undo, disabled/read-only states and completion events. Full resulting pasted value must fit and contain ASCII digits; no transport or code verification. |
 | Label | Available | Named native plain-text label with click-to-focus through a supplied existing FocusHandle, an explicit disabled flag, and no additional Tab stop. The application keeps the target mounted and supplies its accessible name and matching disabled state. No activation forwarding or native labelled-by relationship; Field retains its richer text-input association. |
-| Menubar | Pending | Coordinated focus and menu switching across multiple top-level menus are not implemented. |
-| Native Select | Platform mapping | The reference is an HTML select. Define the required native GPUI experience before adding another family; do not duplicate Select under an alias. |
-| Navigation Menu | Pending | Navigation items and coordinated popup interaction are not supplied by Tabs or standalone DropdownMenu. |
+| Menubar | Available | Coordinated top-level menus with one Tab entry, logical Left/Right and Home/End movement, Down/Up opening, open-menu pointer switching and shared Menu command semantics. |
+| Native Select | Mapped | Use the existing GPUI `Select` for one value from fixed options, keyboard selection, disabled options and native accessibility metadata. HTML form submission, optgroup markup and browser/OS picker UI are not GPUI contracts. No duplicate NativeSelect export. |
+| Navigation Menu | Available | Named navigation with destination Links, explicit disclosure entries, coordinated popups, roving focus, logical arrows and open-menu pointer switching. Popup contents remain ordinary groups with normal Tab traversal; navigation destinations are application-owned. |
 | Popover | Available | Anchored non-modal content, retained open state, dismissal, normal focus traversal, and return focus. |
 | Progress | Available | Controlled known progress or an indeterminate state; the application owns fill geometry and animation. |
 | Radio Group | Available | Fixed items, exclusive selection, roving Tab entry, and immediate arrow selection. |
@@ -70,7 +73,7 @@ in the [form guide](form-controls.md),
 | Switch | Available | Controlled boolean state, native activation, disabled state, and focus; the application supplies track and thumb. |
 | Tabs | Available | Fixed items, automatic activation, orientation-aware navigation, and active-only panels. |
 | Textarea | Available | Public multiline renderer over the existing `TextareaState` editing engine; no second editor implementation. |
-| Toast | Pending | Notification lifetime, dismissal, and presentation are not provided by the current overlays. |
+| Toast | Available | Retained notification lifetime and explicit/timeout dismissal; hover, contained focus and inactive windows pause remaining time. Showing never takes focus; explicit focused dismissal restores prior focus. Applications own message, actions and stacking; no queue service. |
 | Toggle | Available | Controlled pressed state composed from Button's activation and focus behavior. |
 | Toggle Group | Available | Fixed multiple-selection items and roving focus; moving focus does not change the pressed values. |
 | Tooltip | Available | Plain text descriptions for a Button, delayed pointer hover, immediate keyboard focus, Escape dismissal, and native GPUI tooltip positioning. Rich content and touch long-press behavior are not included. |
@@ -112,42 +115,37 @@ popup, focus, and scrolling machinery.
 | Catalogue entry | Status | Current scope or gap |
 | --- | --- | --- |
 | Attachment | Recipe | Static native Group named by its full filename, with a visible media-type/size description and optional existing actions. Help derives in-memory JSON metadata from the same string as CodeBlock; Inspect JSON focuses that code viewport. Formatting and action behavior belong to the application. No file access, upload/download, progress, preview renderer, or container focus stop. |
-| Bubble | Pending | Conversation surfaces, grouping, and reactions have no published composition. |
+| Bubble | Recipe | Incoming/outgoing conversation surfaces, grouped author/time metadata and supplied reaction Buttons, demonstrated in the local transcript. Styling, reaction values and message content remain application-owned; no chat transport. |
 | Calendar | Available | Single-date selection, separate focused date, six Monday-first weeks, month/year navigation, and inclusive date bounds. Range/multiple selection, arbitrary disabled-day rules, and locale/week-start configuration are not included. |
-| Carousel | Pending | Coordinated item navigation and viewport behavior are not supplied. |
-| Chart | Pending | No chart rendering and interaction integration is provided. |
+| Carousel | Available | Fixed single-slide viewport, bounded or looping previous/next, horizontal/vertical keys, RTL, discrete pointer swipe, active-only slides and safe focus when a slide disappears. App-owned media/actions; no autoplay, inertia or multi-slide sizing engine. |
+| Chart | Available | Headless categorical data, visible series and pointer/keyboard point inspection; copyable native line/bar/area plot with axes, legend Toggles, exact-value readout and same-data Table. Negative values and zero baselines are supported. No time/log scales, stacking, pie/radar charts or external chart engine. |
 | Code Block | Recipe | Read-only multiline code with a full-text native Code name, a Button that copies the original string, and bounded two-axis ScrollArea overflow. The application retains its scroll/focus handles. Focused-code arrow/page/Home/End navigation and contained wheel scrolling preserve parent boundaries. No parser, syntax highlighting, editor, selection model, line numbers, or copy-feedback state. |
 | Data Table | Recipe | Fixed text columns and immutable stable-ID rows, case-insensitive filtering, one-column ascending/descending text sorting, pagination, empty-state recovery, and application row actions. Current choice is supplied by the application. No multi-row selection, numeric/date comparators, column hiding/reordering, server data, virtualization, or native sort-direction metadata. |
 | Date Picker | Available | A single Calendar date inside Popover, current selected-day focus, activation commit-and-close, dismissal, and disabled state. Trigger formatting and calendar appearance belong to the application; text parsing, ranges, multiple selection, and presets are not supplied. |
-| Drawer | Pending | Modal infrastructure exists; drawer interaction and presentation are not implemented. |
+| Drawer | Available | Bottom modal surface reusing Dialog focus, Escape and backdrop lifecycle, plus a dedicated downward drag handle with threshold dismissal and snap-back. Body scrolling/editing stays independent; no snap-point or nested-drag engine. |
 | Marker | Recipe | Static date/status boundary with one named native Label between two decorative Separators. The text wraps within a bounded width; its content and formatting belong to the application. Schedule reads the retained Calendar selection without another date or timeline state. No focus stop, action, or automatic live announcement. |
 | Message | Recipe | Read-only native Comment with application-supplied author/time Labels, a wrapping Paragraph body, and an optional existing action. Schedule presents the retained session note and its local edit time, with a Button returning focus to the shared Textarea. No message focus stop, delivery state, transport, history, streaming, or automatic live announcement. |
-| Message Scroller | Pending | Transcript anchoring and streaming/history scroll behavior are not implemented by the scrollbar support alone. |
-| Questionnaire | Pending | Individual form controls exist; multi-step question flow and response composition are missing. |
+| Message Scroller | Available | Existing ScrollArea with stable message keys, initial/append/stream bottom following, same-frame preservation of a visible history anchor, unread count and jump-to-latest. No virtualization, transport or forced focus changes. |
+| Questionnaire | Available | Typed application-owned answers with a linear question/review/complete state, validation-gated advance, Back and retained answers. The example connects real Input editors and app-owned focus changes; no schema interpreter or conditional branching. |
 | Sidebar | Recipe | Named navigation with ordinary Buttons, per-entry Tab traversal, explicit pointer/Enter/Space selection, and native current-page metadata over a dedicated retained TabsState. Settings renders only the selected named Region and stacks the Sidebar above it below 640 px; Compact keeps its separate tabbed presentation. No roving arrow selection, routing, collapse, nested groups, or reuse of a state previously bound by TabList. |
 | Trace | Recipe | Application-supplied summary, named read-only Paragraph details, and an optional existing action over retained Collapsible state. Shared Button activation, expanded/disabled metadata, active-only content, and focus on closure are preserved. Help presents current form values rather than recorded operations. No execution history, streaming, parser, separate disclosure state, or scroll controller. |
 
-## Next priorities
+## Completion boundary
 
-1. Extend data-table operations only where an application needs them, including
-   typed ordering or row selection. Preserve shared focus and activation behavior
-   instead of duplicating those public foundations.
-2. Extend the remaining source-owned recipes alongside working flows. Keep
-   layout, navigation destinations, and data with the application, composing
-   shared state and controls with explicit keyboard contracts.
-3. Extend menu composition where real screens need submenus or radio groups.
-   Continue composing panes with Resizable/ScrollArea;
-   virtualization and transcript anchoring remain separate work.
-4. Build the larger conversation and data compositions on these shared parts.
-   Track their actual supported scope here rather than counting aliases or
-   unfinished wrappers as coverage.
+The 66-entry catalogue pass is complete at the documented scopes. Use
+`cargo run -p gpui-design --example two_styles --locked -- settings` for the
+session controls and `cargo run -p gpui-design --example catalogue --locked` for
+navigation, OTP/Drawer/Toast, media/chart, and conversation/questionnaire flows.
 
-A supported entry needs a documented library API or copyable recipe and a consumer
-example that works end to end. Verify each new behavior at the layer that owns it,
-extend existing composition flows when appropriate, and keep the existing CI
-platform split.
-Native IME, screen-reader, visual, and performance observations must be reported
-separately from automated behavior checks.
+Further work should deepen capabilities required by actual consuming screens,
+not inflate the entry count. Known family limits are stated in the rows above:
+for example multi-select/async Combobox, range Calendar, richer table operations,
+and chart variants are additional feature work rather than new component names.
+A registry/installer is a separate distribution capability.
+
+Behavior is verified at its owning layer, with representative native consumer
+compositions in the existing CI platform split. Native IME, screen-reader,
+visual, DPI, and performance observations remain separate from automated checks.
 
 ## Reference distinctions
 

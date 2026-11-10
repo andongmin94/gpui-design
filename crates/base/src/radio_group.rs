@@ -199,6 +199,7 @@ pub struct RadioGroup {
     state: Entity<RadioGroupState>,
     label: Option<SharedString>,
     axis: Axis,
+    direction: Option<crate::Direction>,
     style: StyleRefinement,
     children: Vec<AnyElement>,
 }
@@ -210,6 +211,7 @@ impl RadioGroup {
             state: state.clone(),
             label: None,
             axis: Axis::Vertical,
+            direction: None,
             style: StyleRefinement::default(),
             children: Vec::new(),
         }
@@ -222,6 +224,12 @@ impl RadioGroup {
 
     /// Sets semantic orientation, without imposing layout. Both pairs of arrow
     /// keys navigate the fixed option order in either orientation.
+    /// Overrides the inherited logical direction for horizontal arrows.
+    pub fn direction(mut self, direction: crate::Direction) -> Self {
+        self.direction = Some(direction);
+        self
+    }
+
     pub fn axis(mut self, axis: Axis) -> Self {
         self.axis = axis;
         self
@@ -250,6 +258,9 @@ impl StatefulInteractiveElement for RadioGroup {}
 
 impl RenderOnce for RadioGroup {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+        let direction = self
+            .direction
+            .unwrap_or_else(|| crate::Direction::current(cx));
         let disabled = self.state.read(cx).disabled;
         let up_state = self.state.clone();
         let down_state = self.state.clone();
@@ -271,10 +282,14 @@ impl RenderOnce for RadioGroup {
                 down_state.update(cx, |state, cx| state.move_selection(true, window, cx));
             })
             .on_action(move |_: &SelectLeft, window, cx| {
-                left_state.update(cx, |state, cx| state.move_selection(false, window, cx));
+                left_state.update(cx, |state, cx| {
+                    state.move_selection(direction.horizontal_forward(false), window, cx)
+                });
             })
             .on_action(move |_: &SelectRight, window, cx| {
-                right_state.update(cx, |state, cx| state.move_selection(true, window, cx));
+                right_state.update(cx, |state, cx| {
+                    state.move_selection(direction.horizontal_forward(true), window, cx)
+                });
             })
             .children(self.children)
             .refine_style(&self.style)

@@ -5,6 +5,9 @@
 #[path = "../examples/two_styles.rs"]
 mod two_styles;
 
+#[path = "../examples/catalogue.rs"]
+mod catalogue;
+
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -3975,4 +3978,125 @@ fn disabled_select_and_composition_commit_do_not_leak_actions(cx: &mut TestAppCo
             assert!(demo.tabs.read(cx).tab_focus_handle(0).is_focused(window));
         });
     }
+}
+
+#[gpui::test]
+fn catalogue_connects_confirmation_data_and_conversation(cx: &mut TestAppContext) {
+    cx.update(gpui_design::init);
+    let (root, cx) = cx.add_window_view(|window, cx| {
+        let catalogue = cx.new(|cx| catalogue::Catalogue::new(window, cx));
+        Root::new(catalogue, window, cx)
+    });
+    let view = root
+        .read_with(cx, |root, _| root.view().clone())
+        .downcast::<catalogue::Catalogue>()
+        .unwrap();
+    cx.update(|window, cx| {
+        window.activate_window();
+        window.draw(cx).clear(cx);
+    });
+    cx.run_until_parked();
+    cx.update(|window, _| {
+        let nodes = test_support::snapshots(window);
+        assert!(
+            nodes.iter().any(|node| node.role() == Some(Role::MenuBar)
+                && node.label() == Some("Document commands"))
+        );
+        assert!(
+            nodes
+                .iter()
+                .any(|node| node.role() == Some(Role::Navigation)
+                    && node.label() == Some("Documentation pages"))
+        );
+    });
+
+    let section = |cx: &mut VisualTestContext, index: usize| {
+        cx.update(|window, cx| {
+            let tabs = view.read(cx).tabs.clone();
+            tabs.update(cx, |tabs, cx| {
+                let value = tabs.items()[index].value().clone();
+                tabs.select_value(value, window, cx);
+                tabs.tab_focus_handle(index).focus(window, cx);
+            });
+            window.draw(cx).clear(cx);
+        });
+        cx.run_until_parked();
+        draw(cx);
+    };
+    section(cx, 1);
+    cx.simulate_keystrokes("tab");
+    cx.simulate_input("742915");
+    draw(cx);
+    cx.update(|window, _| {
+        let input = test_support::find(window, &[], &"session-code".into()).unwrap();
+        assert_eq!(input.value(), Some("742915"));
+    });
+    cx.simulate_keystrokes("tab");
+    activate_key(cx, "enter");
+    cx.run_until_parked();
+    draw(cx);
+    cx.update(|window, _| {
+        let nodes = test_support::snapshots(window);
+        assert!(nodes.iter().any(|node| node.role() == Some(Role::Dialog)
+            && node.label() == Some("Confirm this local session")));
+        assert_eq!(
+            test_support::find(window, &[], &"confirm-session".into())
+                .unwrap()
+                .focused(),
+            Some(true)
+        );
+    });
+    activate_key(cx, "enter");
+    cx.run_until_parked();
+    draw(cx);
+    cx.update(|window, _| {
+        let nodes = test_support::snapshots(window);
+        assert!(!nodes.iter().any(|node| node.role() == Some(Role::Dialog)));
+        assert!(nodes.iter().any(|node| node.role() == Some(Role::Status)
+            && node.label() == Some("Session confirmed in this local example.")));
+        assert_eq!(
+            test_support::find(window, &[], &"review-session".into())
+                .unwrap()
+                .focused(),
+            Some(true)
+        );
+    });
+
+    section(cx, 2);
+    cx.update(|window, _| {
+        let nodes = test_support::snapshots(window);
+        assert!(nodes.iter().any(|node| node.role() == Some(Role::Region)
+            && node.label() == Some("Local media review previews")));
+        assert!(nodes.iter().any(|node| node.role() == Some(Role::Group)
+            && node.label() == Some("Transfer samples in megabytes")));
+        assert!(nodes.iter().any(|node| node.role() == Some(Role::Table)
+            && node.label() == Some("All transfer values in megabytes, including hidden series")));
+    });
+    section(cx, 3);
+    cx.update(|window, _| {
+        let nodes = test_support::snapshots(window);
+        assert!(
+            nodes
+                .iter()
+                .any(|node| node.role() == Some(Role::ScrollView)
+                    && node.label() == Some("Local conversation history"))
+        );
+        assert!(nodes.iter().any(
+            |node| node.role() == Some(Role::Group) && node.label() == Some("Question 1 of 2")
+        ));
+    });
+    section(cx, 1);
+    cx.update(|window, _| {
+        assert_eq!(
+            test_support::find(window, &[], &"session-code".into())
+                .unwrap()
+                .value(),
+            Some("742915")
+        );
+        assert!(
+            !test_support::snapshots(window)
+                .iter()
+                .any(|node| node.role() == Some(Role::Dialog))
+        );
+    });
 }

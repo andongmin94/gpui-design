@@ -199,6 +199,59 @@ switching tabs preserves text and ratio because the application retains their
 states. The component does not implement zero-size collapse, pixel constraints,
 an arbitrary multi-pane solver, or automatic storage/persistence.
 
+## Carousel
+
+`CarouselState::new(labels, cx)` retains a fixed ordered collection and selected
+slide. Selection is bounded by default; `.looping(true)` permits wrapping.
+`Carousel::new(id, &state, label)` supplies a named focusable region, and
+`CarouselSlide::new(&state, index)` mounts only the active slide. The application
+retains slide data and supplies media, sizing, content and indicator presentation.
+`CarouselControl::previous/next` compose Button with boundary disabled behavior.
+
+Left/Right act while the horizontal region itself holds focus, Up/Down for a
+vertical region; Home/End select the ends. Slide descendants keep their own keys.
+The scope and slides accept matching axis and direction settings, with inherited
+Direction by default. A pointer drag of 40 logical pixels snaps once per gesture.
+Changing away from a slide containing focus returns focus to the carousel scope
+before unmounting it; external previous/next controls retain focus. There is no
+autoplay, inertia, animated motion or multi-slide sizing system.
+
+## Chart
+
+`ChartState` accepts category labels and `ChartSeries` values. Each series has one
+finite value per category. The retained state supplies visible series, inspected
+category, exact-value descriptions, and a zero-inclusive signed numeric range.
+Hiding all series or using all-zero data yields a usable `0..1` range. `Chart`
+provides a named plot focus region: pointer travel and Left/Right/Home/End inspect
+evenly spaced categories, including RTL. It emits inspection/visibility events
+without prescribing colors or draw paths.
+
+The copyable `examples/recipes/chart.rs` builds on this behavior with GPUI canvas
+line, grouped bar and area plots, axis labels, Toggle-based series legend, an
+exact-value readout and an ordinary Table containing the same complete dataset.
+The catalogue's Media and data view switches plot kind and direction and retains
+legend/inspection state. Plot geometry, palette and numeric formatting belong to
+the consumer. This categorical contract does not supply stacking, time/log scales,
+pie/radar charts, zoom, streaming data ingestion or a separate rendering engine.
+
+## MessageScroller
+
+`MessageScrollerState::new(cx)` owns the existing ScrollHandle plus the previous
+frame's stable message keys and reading position. Give
+`MessageScroller::new(id, &state, cx)` a bounded height and add each message with
+`.item(stable_id, content)`. IDs must be unique within a conversation; create a
+new state when changing to another conversation. Existing ScrollArea performs
+wheel/trackpad scrolling, clipping and scrollbar interaction.
+
+The first frame starts at the bottom. Appending messages, streaming edits and
+resize keep following while the reader is at the bottom. When the reader moves
+away, the first visible message keeps its pixel position as history is prepended
+or earlier items change height; correction happens in the same layout frame.
+Removing the anchor uses ordinary native offset clamping. Appends while
+away increase `unread_count`, and `jump_to_latest` resumes following without
+moving focus from the caller's control. Returning to the bottom clears unread.
+There is no virtualization or chat transport.
+
 ## Verification boundary
 
 Focused tests cover column alignment, table metadata, interactive cell children,

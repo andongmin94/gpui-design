@@ -77,6 +77,22 @@ supplied children. The native property is AccessKit's `AriaCurrent::Page` on the
 ListItem itself. That contract does not establish how a particular desktop
 screen reader announces the path.
 
+## Direction
+
+Wrap a subtree with `DirectionProvider::new(Direction::Rtl)` or `Direction::Ltr`.
+Descendant controls resolve the nearest direction while rendering. Nested
+providers restore the enclosing direction for following siblings, and a control's
+explicit `.direction(...)` overrides inheritance. `Direction::current(cx)` is
+available while constructing descendants inside the scope.
+
+Direction controls logical horizontal navigation for Tabs, RadioGroup,
+ToggleGroup, Slider, Carousel, Chart, Menubar and NavigationMenu. Slider also
+mirrors horizontal pointer coordinates. Up/Down and logical Home/End retain
+their normal meaning. Supply matching application layout with
+`direction.row(div())` or `direction.row(TabList::new(...))`; the provider does
+not rewrite arbitrary GPUI flex containers. It aligns text to logical start,
+while GPUI still owns shaping, bidirectional editing and platform IME behavior.
+
 ## Tabs
 
 The tab family consists of `TabsState`, `TabList`, `Tab`, and `TabPanel`:
@@ -314,8 +330,8 @@ MenuOption::new(&menu, index)
 Checked commands use the same navigation, disabled behavior, and
 `MenuEvent::Action(value)` as plain commands. Activation closes the menu and
 restores focus before delivering the event. The application handles that action
-and renders its next boolean; MenuState neither stores nor automatically toggles
-the checked value. Changing the supplied value does not dispatch an action.
+and renders its next checked value; MenuState neither stores nor automatically
+toggles the checked value. Changing the supplied value does not dispatch an action.
 The example's Show cursor and Keep toolbar visible commands share the retained
 application booleans used by its Checkbox and Switch. Both DropdownMenu and
 ContextMenu render those values through the same menu-content composition.
@@ -352,15 +368,62 @@ the highlighted option supplies its active descendant. A containing Dialog still
 bounds Tab traversal, and external pointer presses retain their normal action.
 
 Keep the menu host mounted while closed. The same host-removal focus contract as
-Popover applies. This version provides plain and boolean checked commands;
-submenus, mixed checked values, and radio menu groups are not included.
+Popover applies. `check_state(CheckboxState::Indeterminate)` supplies a mixed
+checkbox command; `radio_checked(bool)` supplies MenuItemRadio semantics. The
+application owns mutually exclusive radio values, grouping, and their rendering.
 
 Native metadata includes a Button trigger with expanded/disabled state, a Menu
-scope, named MenuItem commands or MenuItemCheckBox commands with their supplied
-checked state, and the active descendant. It does not emit a
+scope, named plain/checkbox/radio commands with their supplied checked state,
+submenu expanded state, and the active descendant. It does not emit a
 native has-popup property or a trigger-to-menu controls relationship. These
 contracts describe the implemented behavior, not a claim of full accessibility
 pattern conformance or completed screen-reader validation.
+
+### Submenus
+
+Create child `MenuState` entities before their parent. A parent item declares
+`.submenu(&child)`; render that item using `MenuSubmenu::new(&parent, index)` with
+`.trigger(|option| ...)` and `.content(...)` containing the child's options.
+The submenu host owns popup positioning and reuses the child's existing Popover
+lifecycle. Menu trees must be acyclic, and a child belongs to one parent.
+
+The expansion arrow opens the highlighted submenu; the opposite arrow or Escape
+closes one submenu and restores the parent menu scope. Pointer hover opens the
+corresponding child and closes sibling branches. Plain leaf activation closes
+the whole tree and emits exactly one `MenuEvent::Action` on the root state.
+Tab/Shift-Tab leave the complete menu tree through the root Popover traversal.
+The application subscribes to the root and owns leaf actions and checked/radio
+values. Keep all hosts in the composition while closed.
+
+## Menubar
+
+Build `MenubarState` from ordered `MenubarItem` values referring to existing
+`MenuState` entities. Render `Menubar` with one `MenubarMenu` per item. Each menu
+entry supplies its trigger and content while retaining the shared Menu command
+contract, including nested submenus and controlled check/radio values.
+
+Only one top-level item is a Tab stop. Left/Right move in logical order and
+Home/End reach the ends, skipping disabled entries. Down/Up open the first/last
+enabled command. While a menu is open, arrows and pointer travel can switch to
+another top-level menu; only one branch remains open. Escape returns to the
+corresponding entry. The catalogue Navigation view demonstrates these transitions
+and routes leaf commands to retained application state.
+
+## NavigationMenu
+
+`NavigationMenuState` retains an ordered set of `NavigationMenuItem` values.
+A plain item is a destination; `.with_popup()` declares a disclosure. Render a
+named `NavigationMenu` with one `NavigationMenuEntry` per item. Popup contents
+are ordinary groups, not command menus or dialogs. Supply existing Links or
+Buttons and optional initial focus. `NavigationMenuLink` emits a destination
+through `NavigationMenuEvent::Navigate`; the application owns routing.
+
+The top row uses roving focus and logical Left/Right/Home/End keys. Activation
+or Down opens a disclosure. When one is already open, pointer travel switches
+between popup entries; mere hover over an otherwise closed bar does not open
+unrequested content. Popup controls retain normal Tab traversal and Popover's
+Escape/outside-dismissal/return-focus behavior. Destination links can mark the
+current page independently of the open disclosure.
 
 ## ContextMenu
 
@@ -411,9 +474,9 @@ that application update. Retained popup state is dismissed on detachment.
 
 Native metadata includes a named target, expanded/disabled state, the Shift-F10
 shortcut and ShowContextMenu action, plus the shared Menu, MenuItem, and
-MenuItemCheckBox semantics. This scope covers fixed plain and boolean checked
-commands on a noninteractive target. Interactive descendant targets, submenus,
-mixed checked values, radio groups, and touch long-press are not included.
+MenuItemCheckBox/MenuItemRadio and submenu semantics. The same command tree can
+be supplied to DropdownMenu or ContextMenu. Interactive descendant targets and
+touch long-press are not included.
 
 ## Command
 
@@ -591,11 +654,44 @@ The example's Reset preview menu command opens this host. Cancel initially owns
 focus and preserves the current preview. Only the explicit Reset preview button
 restores 40% known progress, then returns focus to the menu trigger.
 
+## Drawer
+
+`DrawerState` composes one `DialogState`. Construct it with `new(window, cx)` or
+adopt a configured Dialog through `with_dialog`; mount that state in one Drawer.
+`open`/`close`, initial focus, containment, Escape, backdrop dismissal and return
+focus remain owned by Dialog. The state forwards `DialogEvent` and exposes
+`dialog()` for ordinary DialogClose controls.
+
+`Drawer::new(id, &state)` places a viewport-limited modal surface at the bottom.
+Supply its `.handle(...)`, optional `.backdrop(...)` and styled body/actions.
+Only a press on the dedicated handle starts a downward drag; scrolling or editing
+in the body does not. Releasing after the displacement threshold closes through
+Dialog; a shorter or cancelled drag returns the surface to its resting position.
+Window deactivation cancels an active drag. This contract has one resting point,
+with no inertial physics or snap-point configuration.
+
+## Toast
+
+`ToastState::new(window, cx)` owns a five-second notification lifetime; set a
+nonzero `.with_duration(...)` before mounting if needed. Keep the matching
+`Toast::new(id, &state)` in the view even while closed. Set its accessible message,
+body and ordinary action Buttons; `ToastClose` provides the dismiss action.
+Applications own stacking and content, rather than a second queue service.
+
+`show` starts or replaces the message without taking focus. The mounted countdown
+pauses on hover, contained focus and window inactivity, then resumes from its
+remaining duration. `dismiss`, Escape and the close button are explicit dismissals;
+timeout is reported separately by `ToastEvent`. If an explicit dismissal removes
+the focused notification, its captured prior focus is restored. Unfocused
+dismissal preserves whatever control the user is using. Native live metadata is
+polite by default and assertive for `.urgent(true)`; actual screen-reader delivery
+must still be checked on each platform.
+
 ## Validation
 
 The existing GPUI test framework checks selected and disabled metadata, orientation,
 focus traversal, inactive panels, popup dismissal, command dispatch, and the
-representative composed flows across both appearances. Composition tests cover a command
+representative composed flows across both appearances and the catalogue. Composition tests cover a command
 opening Dialog, header navigation without expansion, collapse of a panel with
 an open Popover, disclosure mounting, and explicit preview reset confirmation.
 The consumer flows cover command search into the multiline settings

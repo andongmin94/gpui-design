@@ -8,7 +8,7 @@ Headless separates control behavior from application-owned presentation; the
 examples render native GPUI windows.
 
 This is an early foundation for an independent component ecosystem. It currently
-includes 32 public library families and twenty-two copyable presentation recipes. An
+includes 42 public library families and 23 copyable presentation recipes. An
 executable example composes shared controls into compact tabbed and spacious
 sidebar presentations. The source is maintained in this repository, with GPUI
 kept as an exactly pinned rendering
@@ -41,8 +41,8 @@ dependency.
 | **Tooltip** | Plain text description on Button hover/focus, delayed hover, Escape dismissal, and native tooltip positioning | Button and tooltip text-surface styling |
 | **HoverCard** | Delayed rich preview on hover, trigger-to-card pointer travel, focus preview without moving focus, and dismissal | Button action, preview content, surface, and placement |
 | **Popover** | Non-modal open/close state, anchored placement, focus, outside dismissal, and Escape | Trigger, popup contents, and surface styling |
-| **DropdownMenu** | Plain or boolean checked command semantics, activation, enabled-item navigation, single-character search, dismissal, and focus | Trigger, menu surface, command rendering, and controlled checked values |
-| **ContextMenu** | Secondary-click or keyboard opening, pointer-position placement, and the shared menu's plain/checked commands, navigation, dismissal, and focus | Focusable target, menu surface, command rendering, and controlled checked values |
+| **DropdownMenu** | Plain, checked/mixed/radio and nested submenu semantics, navigation, leaf dispatch, dismissal, and focus | Trigger, menu surface, command rendering, and controlled checked values |
+| **ContextMenu** | Secondary-click or keyboard opening, pointer placement, and the shared menu tree's commands, navigation, dismissal, and focus | Focusable target, menu surface, command rendering, and controlled checked values |
 | **Command** | Text search, enabled-result navigation, pointer/Enter action dispatch, and highlighted-result scrolling | Query frame, result rows, empty state, and optional Dialog composition |
 | **Dialog** | Open/close state, modal focus, initial focus, dismissal, and focus restoration | Backdrop, popup, title, description, and close control |
 | **AlertDialog** | Dialog's modal lifecycle with alert semantics and blocked backdrop dismissal | Decision text, cancellation control, and explicit application confirmation |
@@ -50,6 +50,16 @@ dependency.
 | **Table** | Shared fixed/flexible columns, header/body/footer structure, and native row/cell semantics | Width, cell content, typography, borders, and data operations |
 | **ScrollArea** | Native viewport, existing overlay scrollbar, retained offsets, and descendant reveal on enabled axes | Viewport dimensions, content layout, and scrollbar appearance |
 | **Resizable** | Two-pane ratio, pointer/keyboard resizing, fractional limits, retained sizes, and native splitter semantics | Frame size, pane content, divider thickness, and grip styling |
+| **Direction** | Scoped logical direction, nested overrides, and consistent horizontal keys/pointer geometry | Logical row layout through `Direction::row`, application spacing and typography |
+| **InputOtp** | One numeric editor, native selection/paste/delete/undo, digit slots and completion events | Slot/group presentation and application verification |
+| **Menubar** | One top-level focus entry, menu switching, opening and shared command trees | Menu labels, surfaces, commands and styling |
+| **NavigationMenu** | Coordinated disclosures, roving focus and destination Link activation | Destination callbacks, panel content and layout |
+| **Toast** | Retained lifetime, hover/focus/window pause and safe dismissal | Message, action controls, placement and stacking |
+| **Drawer** | Dialog lifecycle plus bottom drag-to-dismiss through a dedicated handle | Backdrop, grip, surface, scrolling body and confirmation |
+| **Carousel** | Active slide, bounded/looping navigation, discrete swipe, RTL and focus restoration | Slide content, viewport size, controls and indicators |
+| **Chart** | Categorical series, visible-series domain, point inspection and exact native values | Copyable native line/bar/area plot, axes, legend, readout and Table |
+| **MessageScroller** | Bottom following, keyed history anchoring, unread count and jump-to-latest | Stable message identities, content, dimensions and jump control |
+| **Questionnaire** | Linear question/review/complete flow, validated answers and Back | Editors, prompts, validation, focus and submission |
 
 Shared support includes the window root, popup positioning, input infrastructure,
 and opt-in test observations. Internal editing machinery retained for Input is
@@ -87,14 +97,17 @@ These types live in the example, outside the `gpui_design` crate exports.
 | **Message** | Read-only comment with author/time metadata, a wrapping paragraph, and optional existing actions | Schedule's current session note, with Edit note returning to the shared Textarea |
 | **Attachment** | Named file-metadata group with a filename, supplied media type and size, and optional existing actions | The current configuration JSON's in-memory metadata, with Inspect JSON focusing the existing CodeBlock |
 | **Trace** | Expandable summary and named read-only details over the existing Collapsible lifecycle, with an optional action | Current form values in Help, with Close details returning focus to the summary |
+| **Bubble** | Incoming/outgoing surfaces, grouped author/time labels and supplied reactions | Catalogue transcript with retained reaction Buttons |
 
 The breadth target is the range of screens and interactions supported by
 shadcn/ui. The [component coverage map](docs/component-coverage.md) compares all
 66 entries in its current main catalogue with the actual public scope here.
 It distinguishes behavior, source-owned presentation recipes, and larger
-compositions. The 32 library families and twenty-two recipes cover 54 catalogue entries
-within defined scopes. The map records each entry's limits and the work still
-needed; this count does not establish full shadcn/ui feature parity.
+compositions. The 42 library families and 23 recipes supply 65 distinct
+implementations; Native Select maps explicitly to the existing GPUI Select. All
+66 reference entries now have an implemented scope or a platform mapping. The
+map records each entry's limits; catalogue coverage does not establish complete
+shadcn/ui feature parity or native desktop validation.
 
 Input provides a small, readable baseline for unset text, caret, and selection
 colors. Explicit `InputEditorStyle` values take precedence. Applications own the
@@ -207,6 +220,15 @@ and keeps no separate message history or copy of the note.
 An informational Alert explains that the example retains preferences without
 scheduling an actual recording. Its date bounds are 2026–2027.
 
+The separate [catalogue example](crates/base/examples/catalogue.rs) connects the
+remaining families into four retained views. Navigation demonstrates coordinated
+menus and destination links; Forms and feedback runs numeric code entry through
+a confirmation Drawer into a pausing Toast; Media and data supplies RTL-aware
+Carousel slides and inspectable line/bar/area charts with an exact data table;
+Conversation combines incoming/outgoing bubbles, anchored history/streaming,
+reactions and a validated question/review/complete flow. These examples are local
+and make no network requests.
+
 ## Layers and source ownership
 
 | Layer | Implementation and origin | Responsibility |
@@ -231,8 +253,9 @@ that layer: Toggle and Collapsible triggers compose Button, ToggleGroup composes
 Toggle, and AlertDialog composes Dialog. DropdownMenu and ContextMenu share
 MenuState, MenuItem, MenuOption, and MenuEvent. Their common menu behavior composes
 Popover; only the trigger interaction and requested placement differ.
-`MenuOption::checked(bool)` projects an application-owned boolean into native
-checkbox-menu semantics without adding another selection store.
+`MenuOption::checked(bool)`, `check_state(CheckboxState)` and `radio_checked(bool)`
+project application-owned state into native menu semantics. `MenuSubmenu` routes
+leaf activation through the root MenuState; it does not add another selection store.
 Command reuses Input for its query and can be hosted in Dialog. Combobox reuses
 Command's filtering, result cursor, scrolling, and activation, with one committed
 value and a suggestion surface positioned by Popup. Textarea renders the existing
@@ -294,6 +317,7 @@ git clone https://github.com/andongmin94/gpui-design.git
 cd gpui-design
 cargo run -p gpui-design --example two_styles --locked -- compact
 cargo run -p gpui-design --example two_styles --locked -- settings
+cargo run -p gpui-design --example catalogue --locked
 ```
 
 `compact` is the default when no appearance argument is supplied. Both commands
@@ -331,12 +355,12 @@ Run the checks for the completed change set:
 cargo fmt --all -- --check
 cargo clippy -p gpui-design --all-targets --features test-support --locked -- -D warnings
 cargo test -p gpui-design --features test-support --locked
-cargo build -p gpui-design --example two_styles --locked
+cargo build -p gpui-design --examples --locked
 ```
 
 The [Verify workflow](https://github.com/andongmin94/gpui-design/actions/workflows/verify.yml)
 uses one matrix for Linux, Windows, and macOS. Platform-independent checks run
-once; each platform still compiles its native dependencies and example.
+once; each platform still compiles its native dependencies and both examples.
 
 | Check | Linux | Windows | macOS |
 | --- | --- | --- | --- |
@@ -344,9 +368,9 @@ once; each platform still compiles its native dependencies and example.
 | Full behavior and integration suite | Yes | — | — |
 | Real consumer composition flows | Included above | Yes | Yes |
 | Isolated recipe tests | Included above | — | — |
-| Native example build | Yes | Yes | Yes |
+| Both native example builds | Yes | Yes | Yes |
 
-Composition tests use representative flows across the two appearances instead of
+Composition tests use representative session and catalogue flows instead of
 duplicating every scenario for each palette. Add tests for distinct behavior and
 observed regressions. Windows and macOS run the composition target with
 `--skip two_styles::recipes::`, leaving isolated recipe tests to Linux while

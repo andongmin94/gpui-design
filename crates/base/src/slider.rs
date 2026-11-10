@@ -188,6 +188,7 @@ impl SliderState {
     fn value_at_pointer(
         &mut self,
         axis: Axis,
+        direction: crate::Direction,
         position: Point<Pixels>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -202,7 +203,12 @@ impl SliderState {
         if length <= px(0.) {
             return;
         }
-        let fraction = (offset / length).clamp(0., 1.) as f64;
+        let fraction = (offset / length).clamp(0., 1.);
+        let fraction = if axis == Axis::Horizontal {
+            direction.physical_fraction(fraction)
+        } else {
+            fraction
+        } as f64;
         let value = self.min as f64 + (self.max as f64 - self.min as f64) * fraction;
         self.set_value(value as f32, window, cx);
     }
@@ -231,6 +237,7 @@ pub struct Slider {
     base: crate::ObservedElement<gpui::Stateful<gpui::Div>>,
     state: Entity<SliderState>,
     axis: Axis,
+    direction: Option<crate::Direction>,
     label: Option<SharedString>,
     children: Vec<AnyElement>,
 }
@@ -241,9 +248,17 @@ impl Slider {
             base: div().id(id).test_support(),
             state: state.clone(),
             axis: Axis::Horizontal,
+            direction: None,
             label: None,
             children: Vec::new(),
         }
+    }
+
+    /// Mirrors horizontal keys and pointer geometry in RTL. Application-owned
+    /// fill/thumb layout can use `direction.physical_fraction(percentage)`.
+    pub fn direction(mut self, direction: crate::Direction) -> Self {
+        self.direction = Some(direction);
+        self
     }
 
     pub fn axis(mut self, axis: Axis) -> Self {
@@ -283,6 +298,9 @@ impl RenderOnce for Slider {
         let focus = model.focus.clone();
         let disabled = model.disabled;
         let axis = self.axis;
+        let direction = self
+            .direction
+            .unwrap_or_else(|| crate::Direction::current(cx));
         let entity_id = self.state.entity_id();
         let geometry = self.state.clone();
         let drag_start = self.state.clone();
@@ -305,16 +323,34 @@ impl RenderOnce for Slider {
             .when(!disabled || focus.is_focused(window), |this| {
                 this.track_focus(&focus.tab_stop(!disabled))
             })
-            .on_action(
-                window.listener_for(&self.state, |state, _: &SelectLeft, window, cx| {
-                    state.step_by(-1., window, cx);
-                }),
-            )
-            .on_action(
-                window.listener_for(&self.state, |state, _: &SelectRight, window, cx| {
-                    state.step_by(1., window, cx);
-                }),
-            )
+            .on_action(window.listener_for(
+                &self.state,
+                move |state, _: &SelectLeft, window, cx| {
+                    state.step_by(
+                        if axis == Axis::Horizontal && direction.is_rtl() {
+                            1.
+                        } else {
+                            -1.
+                        },
+                        window,
+                        cx,
+                    );
+                },
+            ))
+            .on_action(window.listener_for(
+                &self.state,
+                move |state, _: &SelectRight, window, cx| {
+                    state.step_by(
+                        if axis == Axis::Horizontal && direction.is_rtl() {
+                            -1.
+                        } else {
+                            1.
+                        },
+                        window,
+                        cx,
+                    );
+                },
+            ))
             .on_action(
                 window.listener_for(&self.state, |state, _: &SelectDown, window, cx| {
                     state.step_by(-1., window, cx);
@@ -356,7 +392,7 @@ impl RenderOnce for Slider {
                         move |state, event: &MouseDownEvent, window, cx| {
                             if !state.disabled {
                                 state.focus.focus(window, cx);
-                                state.value_at_pointer(axis, event.position, window, cx);
+                                state.value_at_pointer(axis, direction, event.position, window, cx);
                             }
                         },
                     ),
@@ -364,7 +400,7 @@ impl RenderOnce for Slider {
                 .on_drag(DragSlider(entity_id), move |drag, _, window, cx| {
                     let position = window.mouse_position();
                     drag_start.update(cx, |state, cx| {
-                        state.value_at_pointer(axis, position, window, cx)
+                        state.value_at_pointer(axis, direction, position, window, cx)
                     });
                     cx.stop_propagation();
                     cx.new(|_| drag.clone())
@@ -373,7 +409,13 @@ impl RenderOnce for Slider {
                     &self.state,
                     move |state, event: &DragMoveEvent<DragSlider>, window, cx| {
                         if event.drag(cx).0 == entity_id {
-                            state.value_at_pointer(axis, event.event.position, window, cx);
+                            state.value_at_pointer(
+                                axis,
+                                direction,
+                                event.event.position,
+                                window,
+                                cx,
+                            );
                         }
                     },
                 ))

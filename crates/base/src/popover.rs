@@ -185,7 +185,7 @@ impl PopoverState {
         }
     }
 
-    fn tab(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn tab(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
         let trap = crate::active_focus_trap(window, cx);
         let previous = window.focused(cx);
         if forward {

@@ -121,8 +121,8 @@ mod tests {
     };
     use gpui::{
         AppContext as _, Context, FocusHandle, KeyDownEvent, KeyUpEvent, Keystroke, Modifiers,
-        MouseButton, ParentElement as _, Render, Role, Subscription, TestAppContext,
-        VisualTestContext, div,
+        MouseButton, ParentElement as _, Render, Subscription, TestAppContext, VisualTestContext,
+        div,
     };
 
     struct Harness {
@@ -592,7 +592,7 @@ mod tests {
     fn accessibility_exposes_expanded_button_and_menu_commands_without_selection(
         cx: &mut TestAppContext,
     ) {
-        use gpui::{Element as _, accesskit, prelude::FluentBuilder as _};
+        use gpui::{Element as _, Role, accesskit, prelude::FluentBuilder as _};
 
         let (cx, view) = harness(cx, items());
         cx.update(|window, _| {
@@ -651,6 +651,33 @@ mod tests {
                     assert_eq!(node.is_selected(), None);
                     assert!(!node.supports_action(accesskit::Action::Focus));
                     assert_eq!(node.supports_action(accesskit::Action::Click), !disabled);
+                }
+                for (option, role, toggled) in [
+                    (
+                        MenuOption::new(&menu, index)
+                            .check_state(crate::CheckboxState::Indeterminate),
+                        Role::MenuItemCheckBox,
+                        accesskit::Toggled::Mixed,
+                    ),
+                    (
+                        MenuOption::new(&menu, index).radio_checked(false),
+                        Role::MenuItemRadio,
+                        accesskit::Toggled::False,
+                    ),
+                    (
+                        MenuOption::new(&menu, index).radio_checked(true),
+                        Role::MenuItemRadio,
+                        accesskit::Toggled::True,
+                    ),
+                ] {
+                    let element = option.render(window, cx).into_element();
+                    assert_eq!(element.a11y_role(), Some(role));
+                    let mut node = accesskit::Node::new(role);
+                    element.write_a11y_info(&mut node);
+                    assert_eq!(node.toggled(), Some(toggled));
+                    assert_eq!(node.is_disabled(), disabled);
+                    assert_eq!(node.is_selected(), None);
+                    assert!(!node.supports_action(accesskit::Action::Focus));
                 }
             }
             let dialogs = crate::test_support::snapshots(window)

@@ -1,7 +1,9 @@
 # Presentation recipes
 
-These twenty-two recipes are reusable application source, used by the native
-[two-style example](../crates/base/examples/two_styles.rs). They compose GPUI
+These 23 catalogue recipes are reusable application source, used by the native
+[two-style example](../crates/base/examples/two_styles.rs) and
+[catalogue example](../crates/base/examples/catalogue.rs). Chart also has a
+supporting presentation recipe for its public behavior family. They compose GPUI
 layout with the existing controls and keep colors, spacing, and sizing in the
 consumer's `Palette` or application-supplied `Styled` values.
 
@@ -1013,3 +1015,23 @@ disclosure retention, the Close details action, and surrounding Sheet scrolling
 and focus. The composition target retains its 1.5 MiB stack check. These tests
 exercise native metadata, layout, and simulated input; desktop rendering,
 screen-reader speech, IME, and performance still require separate validation.
+
+
+## Bubble and native chart presentation
+
+The catalogue adds two independent source-owned presentations under
+`crates/base/examples/recipes`. `bubble.rs` is the Bubble catalogue entry:
+incoming/outgoing alignment, grouped author/time metadata, a wrapping message
+body and supplied reaction actions. Existing Buttons own activation and focus;
+message grouping and reaction values belong to the conversation view. It adds no
+transport, persistence or alternate message-state engine.
+
+`chart.rs` is the presentation for the public Chart family, and is not counted
+as a second catalogue entry. It supplies native canvas line/bar/area paths, axes,
+series Toggles, an inspected-value readout and a same-data Table. Its color array,
+layout and formatting are application-owned. See the
+[layout and data guide](layout-and-data.md) for the shared Chart contract.
+
+Run `cargo run -p gpui-design --example catalogue --locked` to use these alongside
+MessageScroller/Questionnaire and Carousel/Direction respectively. The existing
+`two_styles` example continues to host the session-oriented recipes.

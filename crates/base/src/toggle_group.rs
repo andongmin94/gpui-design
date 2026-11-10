@@ -284,6 +284,7 @@ pub struct ToggleGroup {
     state: Entity<ToggleGroupState>,
     label: Option<SharedString>,
     axis: Axis,
+    direction: Option<crate::Direction>,
 }
 
 impl ToggleGroup {
@@ -293,11 +294,18 @@ impl ToggleGroup {
             state: state.clone(),
             label: None,
             axis: Axis::Horizontal,
+            direction: None,
         }
     }
 
     pub fn accessibility_label(mut self, label: impl Into<SharedString>) -> Self {
         self.label = Some(label.into());
+        self
+    }
+
+    /// Overrides the inherited logical direction for horizontal arrows.
+    pub fn direction(mut self, direction: crate::Direction) -> Self {
+        self.direction = Some(direction);
         self
     }
 
@@ -329,6 +337,9 @@ impl StatefulInteractiveElement for ToggleGroup {}
 
 impl RenderOnce for ToggleGroup {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let direction = self
+            .direction
+            .unwrap_or_else(|| crate::Direction::current(cx));
         self.state
             .update(cx, |state, cx| state.bind_focus(window, cx));
         let disabled = self.state.read(cx).disabled;
@@ -351,10 +362,14 @@ impl RenderOnce for ToggleGroup {
                 .aria_orientation(accesskit::Orientation::Horizontal)
                 .key_context("ToggleGroup axis=horizontal")
                 .on_action(move |_: &SelectLeft, window, cx| {
-                    previous.update(cx, |state, cx| state.move_focus(false, window, cx));
+                    previous.update(cx, |state, cx| {
+                        state.move_focus(direction.horizontal_forward(false), window, cx)
+                    });
                 })
                 .on_action(move |_: &SelectRight, window, cx| {
-                    next.update(cx, |state, cx| state.move_focus(true, window, cx));
+                    next.update(cx, |state, cx| {
+                        state.move_focus(direction.horizontal_forward(true), window, cx)
+                    });
                 }),
             Axis::Vertical => base
                 .aria_orientation(accesskit::Orientation::Vertical)
